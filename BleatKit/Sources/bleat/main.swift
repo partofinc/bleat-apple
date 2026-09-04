@@ -23,11 +23,16 @@ Against a host (omit <host> to use the local herdr):
   bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
   bleat schema     [host]
 
+Pairing:
+  bleat inspect [--port N] [--endpoint HOST[:PORT]]...
+
 Ctrl-] detaches: sends terminal.release and exits cleanly.
 """
 
 struct Options {
     var session: String?
+    var port: Int?
+    var endpoints: [String] = []
     var keyPath: String?
     var herdrPath: String?
     var takeover = false
@@ -51,6 +56,31 @@ func parse(_ argv: [String]) -> Options {
         case "--takeover": options.takeover = true
         case "--cols":     options.cols = next().flatMap(Int.init)
         case "--rows":     options.rows = next().flatMap(Int.init)
+        case "--port":
+            // Validated here, not passed through: an out-of-range port makes
+            // `Endpoint(string:)` reject every endpoint the QR carries, so the
+            // scan fails as "damaged code" with nothing pointing at the port.
+            // A non-numeric value used to become 22 silently, which is worse
+            // than refusing it.
+            guard let text = next() else { fail("--port needs a value") }
+            guard let port = Int(text), (1...65535).contains(port) else {
+                fail("not a valid port: \(text)  (expected 1-65535)")
+            }
+            options.port = port
+        // Overlays like Twingate never tell the host its own resolvable name,
+        // so those endpoints are supplied rather than detected.
+        case "--endpoint":
+            // A missing value is the same class of mistake as an invalid one;
+            // silently ignoring `--endpoint` at the end of the line would drop
+            // an endpoint the user believes they supplied.
+            guard let text = next() else { fail("--endpoint needs a value") }
+            // Validated now for a prompt error, but kept as text: the default
+            // port is not known until --port has been seen, and it may appear
+            // after this flag.
+            guard Endpoint(string: text) != nil else {
+                fail("not a valid endpoint: \(text)  (expected host, host:port or [v6]:port)")
+            }
+            options.endpoints.append(text)
         default:           options.positional.append(argv[index])
         }
         index += 1
@@ -102,6 +132,11 @@ var options = parse(Array(argv.dropFirst()))
 do {
     if command == "hosts" {
         try Hosts.run(registry: registry, options: options)
+        exit(0)
+    }
+
+    if command == "inspect" {
+        try Inspect.run(options: options)
         exit(0)
     }
 

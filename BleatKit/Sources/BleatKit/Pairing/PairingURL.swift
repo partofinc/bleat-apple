@@ -14,7 +14,7 @@ extension PairingPayload {
         case username = "u"
         case endpoints = "e"
         case enrollmentSeed = "k"
-        case hostKeyFingerprint = "h"
+        case hostKey = "h"
         case herdrPath = "p"
     }
 
@@ -99,7 +99,9 @@ extension PairingPayload: Codable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let endpointStrings = try c.decode([String].self, forKey: .endpoints)
-        let endpoints = endpointStrings.compactMap(Endpoint.init(string:))
+        // The wire format always writes an explicit port (`description` emits
+        // one), so the default here is never reached for a well-formed payload.
+        let endpoints = endpointStrings.compactMap { Endpoint(string: $0) }
         guard endpoints.count == endpointStrings.count, !endpoints.isEmpty else {
             throw PairingError.malformedPairingCode
         }
@@ -113,7 +115,7 @@ extension PairingPayload: Codable {
             username: try c.decode(String.self, forKey: .username),
             endpoints: endpoints,
             enrollmentSeed: seed,
-            hostKeyFingerprint: try c.decode(String.self, forKey: .hostKeyFingerprint),
+            hostKey: try c.decode(String.self, forKey: .hostKey),
             herdrPath: try c.decode(String.self, forKey: .herdrPath)
         )
     }
@@ -125,7 +127,7 @@ extension PairingPayload: Codable {
         try c.encode(username, forKey: .username)
         try c.encode(endpoints.map(\.description), forKey: .endpoints)
         try c.encode(Self.base64URLEncode(enrollmentSeed), forKey: .enrollmentSeed)
-        try c.encode(hostKeyFingerprint, forKey: .hostKeyFingerprint)
+        try c.encode(hostKey, forKey: .hostKey)
         try c.encode(herdrPath, forKey: .herdrPath)
     }
 }

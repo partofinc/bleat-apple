@@ -100,6 +100,19 @@ struct EndpointParsingTests {
         #expect(Endpoint(string: "\(endpoint)") == endpoint)
     }
 
+    /// `--endpoint host` alongside `--port 2222` means that host on 2222.
+    /// Defaulting it to 22 would produce an endpoint that looks right in the
+    /// list and refuses every connection.
+    @Test("an endpoint with no port of its own inherits the supplied default")
+    func inheritsDefaultPort() throws {
+        #expect(try #require(Endpoint(string: "herdr.dev", defaultPort: 2222)).port == 2222)
+        #expect(try #require(Endpoint(string: "fe80::1", defaultPort: 2222)).port == 2222)
+        #expect(try #require(Endpoint(string: "[fe80::1]", defaultPort: 2222)).port == 2222)
+        // An explicit port always wins over the default.
+        #expect(try #require(Endpoint(string: "herdr.dev:22", defaultPort: 2222)).port == 22)
+        #expect(try #require(Endpoint(string: "[fe80::1]:22", defaultPort: 2222)).port == 22)
+    }
+
     @Test("nonsense is rejected rather than guessed at")
     func rejects() {
         for text in ["", "   ", "herdr.dev:0", "herdr.dev:70000", "herdr.dev:port", "[fe80::1", "[]:22", ":22"] {

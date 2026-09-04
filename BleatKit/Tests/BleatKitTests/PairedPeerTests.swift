@@ -5,7 +5,7 @@ import Testing
 @Suite("Paired peer")
 struct PairedPeerTests {
 
-    private let fingerprint = "SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78"
+    private let hostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBPdxsAyNEaNtfx47Futg4ERIBkkAsvtWfxnTeKq0jct"
 
     private func peer(
         endpoints: [Endpoint],
@@ -15,7 +15,7 @@ struct PairedPeerTests {
         herdr: String = "/opt/homebrew/bin/herdr"
     ) -> PairedPeer {
         PairedPeer(
-            hostKeyFingerprint: fingerprint, name: name, username: user,
+            hostKey: hostKey, name: name, username: user,
             endpoints: endpoints, herdrPath: herdr, lastGoodEndpoint: lastGood
         )
     }
@@ -66,11 +66,11 @@ struct PairedPeerTests {
     func mergeRejectsDifferentHostKey() {
         let mine = peer(endpoints: [Endpoint(host: "a")])
         let other = PairedPeer(
-            hostKeyFingerprint: "SHA256:completely-different", name: "n", username: "u",
+            hostKey: "ssh-ed25519 AAAAdifferent", name: "n", username: "u",
             endpoints: [Endpoint(host: "b")], herdrPath: "/bin/herdr"
         )
         #expect(throws: PairingError.hostKeyMismatch(
-            expected: fingerprint, actual: "SHA256:completely-different"
+            expected: hostKey, actual: "ssh-ed25519 AAAAdifferent"
         )) {
             try mine.merging(other)
         }
@@ -82,10 +82,10 @@ struct PairedPeerTests {
             name: "rawillk.air", username: "ravil",
             endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "100.101.102.103")],
             enrollmentSeed: Data(repeating: 3, count: 32),
-            hostKeyFingerprint: fingerprint, herdrPath: "/opt/homebrew/bin/herdr"
+            hostKey: hostKey, herdrPath: "/opt/homebrew/bin/herdr"
         )
         let built = PairedPeer(payload: payload)
-        #expect(built.hostKeyFingerprint == fingerprint)
+        #expect(built.hostKey == hostKey)
         #expect(built.endpoints.count == 2)
         #expect(built.lastGoodEndpoint == nil)
     }
@@ -96,7 +96,7 @@ struct EndpointSelectionTests {
 
     private func peer(_ hosts: [String], lastGood: String? = nil) -> PairedPeer {
         PairedPeer(
-            hostKeyFingerprint: "SHA256:x", name: "n", username: "u",
+            hostKey: "ssh-ed25519 AAAAx", name: "n", username: "u",
             endpoints: hosts.map { Endpoint(host: $0) }, herdrPath: "/bin/herdr",
             lastGoodEndpoint: lastGood.map { Endpoint(host: $0) }
         )

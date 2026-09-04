@@ -237,9 +237,9 @@ The QR carries a **single-use enrollment key** instead:
    `~/.ssh/authorized_keys` with a marker comment identifying it as a Bleat
    enrollment key.
 2. The QR encodes: endpoints, port, username, the **raw 32-byte seed** of the
-   temporary key, and the **host key fingerprint**.
+   temporary key, and the **host key in OpenSSH `<algorithm> <base64>` form**.
 3. The phone scans, connects with the temporary key, and pins the host key by
-   comparing it to the fingerprint from the QR.
+   comparing it to the one from the QR.
 4. The phone's first action over that channel is to generate its **own** key in
    the Keychain, append that public key to `authorized_keys`, and delete the
    temporary line.
@@ -279,6 +279,58 @@ peer with two endpoints*, not two peers.
     shape against a real install before relying on it.
   - Twingate and similar overlays do not tell the host its own resolvable name.
     Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
+
+### The QR carries the host key, not its fingerprint
+
+`KnownHostsStore` pins the OpenSSH `<algorithm> <base64>` string —
+`PinningHostKeyValidator` builds exactly that via `String(openSSHPublicKey:)`
+— so that is the form the QR must carry. A `SHA256:` fingerprint can only be
+*displayed*, never compared against a pin, and shipping one would have made
+every paired connection fail its pin check. It costs about 30 bytes in the QR.
+Show the fingerprint derived from it; never store one as the identity.
+
+### Which host key the QR names (verified 4 Sept 2026)
+
+NIOSSH offers exactly `ssh-ed25519`, `ecdsa-sha2-nistp384`,
+`ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, in that order, and **the
+client's order wins** — `SSHKeyExchangeStateMachine` walks its own list and
+takes the first the server also offers. So on any host with an ed25519 host
+key, which is every modern OpenSSH, that is the key the phone sees, and its
+fingerprint is what belongs in the QR.
+
+Two consequences:
+
+- **NIOSSH does not speak `ssh-rsa` at all.** An RSA-only host cannot be
+  paired, and `bleat pair` should say so at the keyboard rather than hand out
+  a QR that fails on the phone.
+- A host commonly has four host keys (this Mac has dsa, ecdsa, ed25519, rsa).
+  Reading the wrong one yields a key that matches nothing, which surfaces as a
+  host key mismatch on every attempt.
+
+**Read the key from the running sshd, not from `/etc/ssh`.** `ssh-keyscan -p
+<port>` is ground truth; the files on disk are only the *system* sshd's keys.
+A host serving SSH on another port — including the throwaway `/usr/sbin/sshd`
+this file's own test procedure runs on 2222 — presents a different key
+entirely. Verified: with a throwaway sshd on 2222, `bleat inspect --port 2222`
+reports `SHA256:DxXu3g15…` while port 22 reports `SHA256:5kgLcSfL…`. Reading
+the file would have pinned the wrong one and made the phone reject every
+connection. The files remain a fallback for when nothing answers on the port.
+
+### Which local addresses are offered
+
+Only two of this Mac's ~30 addresses are usable endpoints. The filter drops
+loopback and AWDL (`lo0`, `awdl0`, `llw0`), interfaces that are not `UP` **and**
+`RUNNING` (a down port still prints its last address), host-only virtual
+interfaces (`bridge*`, `vmnet*`, `vnic*`, `vboxnet*` — Parallels, VMware and UTM
+addresses pass every other filter, and if the phone's LAN overlaps that range it
+reaches an unrelated device and fails *host key verification* rather than merely
+failing to connect), link-local (`fe80::/10`, `169.254.`), `deprecated`
+addresses, and — the one that would otherwise bite — **`temporary` addresses**. Those are RFC 4941 privacy addresses and rotate by design, so
+pinning one gives a peer that works today and fails tomorrow with nothing to
+show why. Only the stable `secured` address is kept.
+
+`bleat inspect` prints the whole list with each endpoint's reach, which is the
+first thing to run when pairing misbehaves.
 
 ### Endpoint selection on the phone
 

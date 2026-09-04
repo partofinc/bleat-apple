@@ -36,8 +36,8 @@ local Swift package, the `.xcodeproj` holds only targets, and the app target is
 a thin shell.
 
 ```
-Bleat.xcodeproj             # (next PR)
-App/                        # @main App struct and little else (next PR)
+Bleat.xcodeproj             # one app target; sources join via a synchronized group
+App/                        # @main App struct and little else
 BleatKit/                   # the local Swift package
   Package.swift
   Sources/
@@ -46,7 +46,10 @@ BleatKit/                   # the local Swift package
       Protocol/             # NDJSON codec, frame/command types
       Model/                # Codable models for herdr JSON (from schema.json)
       Client/               # HerdrClient: typed API over a transport
-    BleatUI/                # SwiftUI shared between app targets
+      Keys/                 # device ed25519 key + Keychain storage
+    BleatUI/                # SwiftUI shared between app targets; MainActor by default
+      Context/              # AppContext, routers, stores
+      Views/                # screens
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
@@ -225,6 +228,31 @@ above the transport changed when SSH landed.
 renderer. If it looks right there, SwiftTerm will render it in Phase 2. Ctrl-]
 sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`.
 
+## Concurrency settings (verified 4 Sept 2026)
+
+The package and the Xcode targets must state the same thing, or a file changes
+behaviour when it moves across the seam.
+
+| where | settings |
+|---|---|
+| Xcode targets | `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` |
+| package | `swiftLanguageModes: [.v6]`, `.enableUpcomingFeature("MemberImportVisibility")` on every target, `.defaultIsolation(MainActor.self)` on `BleatUI` only |
+
+- **`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately.** Its
+  package half, `NonisolatedNonsendingByDefault`, reproducibly segfaults the
+  test bundle on Swift 6.3.3: `swift test` dies with signal 11, while
+  `swift test --no-parallel` passes all 70 and every suite passes alone — so it
+  only bites under swift-testing's parallel execution. Enabling it for the app
+  alone would be worse than leaving it off for both, because then the seam
+  really would differ. Revisit on a newer toolchain.
+- **`.defaultIsolation(MainActor.self)` is on `BleatUI` only.** `BleatKit` is a
+  transport and domain library whose work belongs off the main actor, and the
+  console tool links it with no main actor in sight. Isolation there is
+  expressed per type.
+- `SWIFT_VERSION` is the setting that silently lags: the isolation settings can
+  be on while strict checking is not actually running. Check it before believing
+  the project is on Swift 6.
+
 ## Conventions
 
 - Swift 6.2, strict concurrency, `Sendable` everywhere in BleatKit.
@@ -249,6 +277,10 @@ sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`
     history survives on `main`. Never `--squash` or `--rebase` unless asked for
     that specific PR.
   - Phase 1 landed directly on `main`; that was the exception, not the pattern.
+  - The repo keeps `deleteBranchOnMerge: false` **on purpose**. Auto-delete
+    would pull the base branch out from under a stacked PR the moment its
+    parent merged. Delete merged branches deliberately instead, once nothing
+    is stacked on them.
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

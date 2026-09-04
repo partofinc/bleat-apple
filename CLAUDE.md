@@ -14,9 +14,11 @@ Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
-against a loopback sshd on 127.0.0.1:2222 (Remote Login is off on this Mac, and
-enabling it is a system change — run a throwaway `/usr/sbin/sshd` on a high port
-instead; it needs no root).
+against a loopback sshd on 127.0.0.1:2222. **Remote Login is now on** (verified
+4 Sept 2026: port 22 answers `SSH-2.0-OpenSSH_10.3`, and mDNSResponder advertises
+`_ssh._tcp` as `rawillkair.local:22`), so the throwaway-sshd dance is no longer
+required to exercise the SSH path — it remains the fallback on a Mac where
+Remote Login is off, since enabling it is a system change needing root.
 
 Read the phase gates before proposing work outside them.
 
@@ -67,6 +69,17 @@ target, and the iOS app simply does not link it. Verify with
 (the package is no longer at the repo root, so this fails from there). Use
 `-scheme bleat-Package` to compile every target at once, which is the check
 that actually catches a target the app would break on.
+
+**Linux is a planned host platform for the console tool.** The `#if os(macOS)`
+guards on `bleat` and `BleatProcess` exist to keep them off *iOS*, not because
+they need macOS; `#if !os(iOS)` is what opens Linux. Exactly two leaves are
+Apple-only and both carry an empty `#else` guard so the shape is already in
+place: `bleat/Attach.swift` (`import Darwin` for SIGWINCH/termios, needs
+`Glibc`) and `Keys/KeychainKeyStore.swift` (`import Security`, referenced only
+by `BleatUI` and never by the tool). `HostRegistry` and `KnownHostsStore`
+already persist to `~/.bleat/`, so the file-based storage a Linux host needs is
+written. QR generation is the open item: `CIQRCodeGenerator` is free on Apple
+platforms and has no Linux equivalent.
 
 **`BleatKit` stays free of SwiftUI**; shared views live in `BleatUI`. (Phase 1's
 note said "outside this package" — that predates the package having more than
@@ -205,6 +218,81 @@ update this file in the same commit.
   from `~/.ssh/config` in Phase 1. Bare IPv6 (`user@fe80::1`) is accepted;
   brackets are required to add a port (`user@[fe80::1]:2222`).
 
+## Pairing and peer identity (stable rules — do not relitigate per PR)
+
+Pairing is how a phone acquires a host. The Mac-side `bleat pair` does the hard
+part — it already knows everything the phone needs — and the phone scans one QR.
+
+### The key exchange: the durable private key never leaves the phone
+
+**Never put a long-lived private key in the QR.** A QR on screen is captured by
+anyone in the room, by any screen share, and by any recording; in a terminal it
+lands in scrollback, which iTerm2 persists to disk by default and tmux keeps in
+history, so the key outlives the pairing. An SSH private key is arbitrary
+command execution on the host — it is the highest-value secret in the flow.
+
+The QR carries a **single-use enrollment key** instead:
+
+1. `bleat pair` mints a temporary ed25519 key and appends it to
+   `~/.ssh/authorized_keys` with a marker comment identifying it as a Bleat
+   enrollment key.
+2. The QR encodes: endpoints, port, username, the **raw 32-byte seed** of the
+   temporary key, and the **host key fingerprint**.
+3. The phone scans, connects with the temporary key, and pins the host key by
+   comparing it to the fingerprint from the QR.
+4. The phone's first action over that channel is to generate its **own** key in
+   the Keychain, append that public key to `authorized_keys`, and delete the
+   temporary line.
+5. The tool confirms the swap and exits; on timeout or abort it removes the
+   temporary line itself. The temporary key is never reused.
+
+Two properties this buys that trust-on-first-use does not: the durable key is
+generated on the device and is never transmitted anywhere, and the host key is
+pinned **out-of-band** rather than trusted on first sight. Exposure of the
+enrollment key is bounded to the seconds between scan and swap, and it
+self-destructs regardless of outcome.
+
+Encode the raw 32-byte seed, not an OpenSSH PEM: ~150 bytes of payload instead
+of ~600, which is a materially easier scan.
+
+### A peer is a host key, not an address
+
+**The peer's identity is its SSH host key.** The same machine presents the same
+host key on every address it answers on — verified: reaching this Mac over
+loopback, `.local` and its LAN address all yield
+`SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78`.
+
+So a paired peer is **one host key plus an ordered list of endpoints**, never a
+single address. A machine reachable both on the LAN and over Tailscale is *one
+peer with two endpoints*, not two peers.
+
+- Re-pairing is idempotent: if the scanned host key matches an existing peer,
+  merge the new endpoint into it. Never create a duplicate peer.
+- A host key that changes for a known peer stays a **hard error**, as in Phase 1.
+  It is the identity; a mismatch is not a new endpoint.
+- `bleat pair` enumerates what it can and accepts `--endpoint` for the rest:
+  - mDNS name (`scutil --get LocalHostName` + `.local`) — LAN only
+  - routable interface addresses from `ifconfig` — LAN v4, global v6
+  - Tailscale MagicDNS name and IPs, when the CLI is present
+    (`tailscale status --json` → `Self.DNSName`, `Self.TailscaleIPs`).
+    **Unverified — Tailscale is not installed on the dev Mac.** Confirm the JSON
+    shape against a real install before relying on it.
+  - Twingate and similar overlays do not tell the host its own resolvable name.
+    Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
+
+### Endpoint selection on the phone
+
+Try last-known-good first with a short timeout, then race the remaining
+endpoints and keep whichever completes the SSH handshake first. Persist the
+winner per peer.
+
+**On cellular, skip `.local` and RFC1918 addresses entirely.** They cannot
+resolve or route off-LAN, and attempting them only spends the timeout.
+`NWPathMonitor` reports the interface type; that is the whole rule.
+
+Whichever endpoint wins, the host key is still checked against the peer's pin.
+The endpoint is a hint; the key is the identity.
+
 ## `bleat` console tool (Phase 1 acceptance)
 
 ```
@@ -227,6 +315,21 @@ above the transport changed when SSH landed.
 `attach` writing the ANSI bytes straight to a macOS terminal is the Phase 1
 renderer. If it looks right there, SwiftTerm will render it in Phase 2. Ctrl-]
 sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`.
+
+### `bleat pair` (Phase 2)
+
+```
+bleat pair [--endpoint HOST[:PORT]]...   # add endpoints detection cannot find
+```
+
+Checks that `herdr` is installed and resolvable, enumerates endpoints, mints the
+single-use enrollment key, renders the QR in the terminal, and waits for the
+phone to swap in its own key. See **Pairing and peer identity** for the rules
+that govern it — they are settled, not per-PR decisions.
+
+The QR must be rendered so it does not persist: draw it in the alternate screen
+buffer and restore on exit, so it never enters scrollback. This matters even
+with the enrollment key being single-use.
 
 ## Concurrency settings (verified 4 Sept 2026)
 

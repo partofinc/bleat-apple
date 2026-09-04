@@ -1,12 +1,15 @@
+#if canImport(Security)
 import Foundation
 import Security
 
 /// Stores the app's ed25519 private key in the Keychain.
 ///
-/// Security.framework is on both platforms, so this needs no `#if`. The item is
-/// `ThisDeviceOnly`: the private half is generated on the device and is not
-/// meant to sync to iCloud or restore onto another one — a second device gets
-/// its own key and its own line in `authorized_keys`.
+/// Security.framework is on **both Apple platforms**, so macOS and iOS share
+/// this file unbranched — the `canImport` guard is there for Linux, which has
+/// no Keychain and will need a file-based store under `~/.bleat/` instead. The
+/// item is `ThisDeviceOnly`: the private half is generated on the device and is
+/// not meant to sync to iCloud or restore onto another one — a second device
+/// gets its own key and its own line in `authorized_keys`.
 public struct KeychainKeyStore: Sendable {
     private let service: String
     private let account: String
@@ -117,3 +120,11 @@ extension KeychainError: CustomStringConvertible {
         }
     }
 }
+
+#else
+
+// Linux port pending: no Keychain. The console tool does not reference this
+// type — it keeps keys under `~/.bleat/`, like `HostRegistry` and
+// `KnownHostsStore` — so nothing on the Linux path needs it yet.
+
+#endif

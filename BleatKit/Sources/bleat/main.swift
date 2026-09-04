@@ -24,6 +24,7 @@ Against a host (omit <host> to use the local herdr):
   bleat schema     [host]
 
 Pairing:
+  bleat pair    [--port N] [--endpoint HOST[:PORT]]... [--timeout SECONDS]
   bleat inspect [--port N] [--endpoint HOST[:PORT]]...
 
 Ctrl-] detaches: sends terminal.release and exits cleanly.
@@ -32,6 +33,7 @@ Ctrl-] detaches: sends terminal.release and exits cleanly.
 struct Options {
     var session: String?
     var port: Int?
+    var timeout: Int?
     var endpoints: [String] = []
     var keyPath: String?
     var herdrPath: String?
@@ -67,6 +69,12 @@ func parse(_ argv: [String]) -> Options {
                 fail("not a valid port: \(text)  (expected 1-65535)")
             }
             options.port = port
+        case "--timeout":
+            guard let text = next() else { fail("--timeout needs a value") }
+            guard let seconds = Int(text), seconds > 0 else {
+                fail("not a valid timeout: \(text)  (expected whole seconds)")
+            }
+            options.timeout = seconds
         // Overlays like Twingate never tell the host its own resolvable name,
         // so those endpoints are supplied rather than detected.
         case "--endpoint":
@@ -137,6 +145,11 @@ do {
 
     if command == "inspect" {
         try Inspect.run(options: options)
+        exit(0)
+    }
+
+    if command == "pair" {
+        try Pair.run(options: options)
         exit(0)
     }
 

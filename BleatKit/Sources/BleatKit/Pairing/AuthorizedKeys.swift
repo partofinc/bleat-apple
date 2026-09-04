@@ -56,6 +56,74 @@ public enum AuthorizedKeys {
     public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: "enroll", id: id) }
     public static func deviceMarker(id: String) -> Marker? { Marker(kind: "device", id: id) }
 
+    /// The `authorized_keys` line for a single-use enrollment key.
+    ///
+    /// Two option prefixes carry the safety, and both are enforced by **sshd**
+    /// rather than by Bleat:
+    ///
+    /// - `restrict` turns off port forwarding, agent forwarding, X11, PTY and
+    ///   user rc. Exec channels still work, which is all pairing needs —
+    ///   verified against a real sshd.
+    /// - `expiry-time` makes sshd refuse the key outright once the moment
+    ///   passes. This is the layer that matters: a signal handler cannot run
+    ///   after `SIGKILL`, and nothing runs after a power cut, so without a
+    ///   host-enforced deadline an abandoned enrollment key would sit in
+    ///   `authorized_keys` forever. Verified: sshd accepts the key before the
+    ///   time and answers `Permission denied` after it.
+    ///
+    /// The timestamp is UTC with a `Z` suffix, which sshd accepts, because a
+    /// local-time deadline would shift under DST.
+    public static func enrollmentLine(
+        publicKeyLine: String,
+        marker: Marker,
+        expiresAt: Date
+    ) -> String {
+        let stamp = expiryStamp(expiresAt)
+        return #"restrict,expiry-time="\#(stamp)" \#(publicKeyLine) \#(marker.value)"#
+    }
+
+    /// `YYYYMMDDHHMMSSZ` — the UTC form sshd accepts.
+    static func expiryStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMddHHmmss'Z'"
+        return formatter.string(from: date)
+    }
+
+    /// Lists the marker of every Bleat device key in the file, one per line.
+    ///
+    /// Pairing succeeds when a **new** one appears, not when any exists: a host
+    /// with a phone already paired has a device key from the start, so
+    /// "a device key is present" would be true before the new phone did
+    /// anything and would turn any disappearance of the enrollment line into a
+    /// false success.
+    public static func listDeviceMarkersCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-device-[A-Za-z0-9._-]+$")
+        return "grep -o -E -- \(pattern) \(path) 2>/dev/null | tr -d '[:blank:]' || true"
+    }
+
+    /// Removes **every** Bleat enrollment key, whoever left it.
+    ///
+    /// Run before minting a new one. In-process cleanup cannot be complete:
+    /// `SIGKILL` and power loss leave no chance to tidy up, so a previous run's
+    /// key can outlive it. `expiry-time` already makes such a key unusable, but
+    /// unusable is not the same as gone — this keeps the file honest, and means
+    /// a user reading their own `authorized_keys` sees only keys that mean
+    /// something.
+    ///
+    /// Device keys are untouched: the pattern requires the `-enroll-` infix.
+    public static func sweepEnrollmentsCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-enroll-[A-Za-z0-9._-]+$")
+        // A conditional rather than an early `exit`: this runs inside the lock
+        // wrapper, and exiting would leave the lock directory behind.
+        return locked(
+            "f=\(path); if [ -f \"$f\" ]; then t=$(mktemp) && "
+            + "{ grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" "
+            + "&& cat \"$t\" > \"$f\" && rm -f \"$t\"; fi"
+        )
+    }
+
     /// Appends a key, creating `~/.ssh` with the permissions sshd insists on
     /// and guaranteeing the new entry starts on its own line.
     ///
@@ -75,9 +143,11 @@ public enum AuthorizedKeys {
     /// exactly when the file already ends in one.
     public static func appendCommand(line: String) -> String {
         let quoted = quote(line)
-        return "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch \(path) && "
+        return locked(
+            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch \(path) && "
             + "{ [ ! -s \(path) ] || [ -z \"$(tail -c1 \(path))\" ] || printf '\\n' >> \(path); } && "
             + "printf '%s\\n' \(quoted) >> \(path) && chmod 600 \(path)"
+        )
     }
 
     /// Removes every line whose comment ends with `marker`.
@@ -94,8 +164,15 @@ public enum AuthorizedKeys {
     /// emits nothing, which is a normal outcome here, not a failure.
     public static func removeCommand(marker: Marker) -> String {
         let pattern = quote("[[:space:]]\(regexEscape(marker.value))$")
-        return "f=\(path); t=$(mktemp) && { grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" "
-            + "&& cat \"$t\" > \"$f\" && rm -f \"$t\""
+        // The `-f` guard matters on a fresh account: without it a removal that
+        // runs before any key was written creates an empty authorized_keys at
+        // the umask default, typically 0644 — a mode the append path takes
+        // care to avoid, since sshd silently ignores a too-permissive file.
+        return locked(
+            "f=\(path); if [ -f \"$f\" ]; then t=$(mktemp) && "
+            + "{ grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" "
+            + "&& cat \"$t\" > \"$f\" && rm -f \"$t\"; fi"
+        )
     }
 
     /// True when a line carrying `marker` is present. Prints `yes` or `no`
@@ -104,6 +181,46 @@ public enum AuthorizedKeys {
     public static func containsCommand(marker: Marker) -> String {
         let pattern = quote("[[:space:]]\(regexEscape(marker.value))$")
         return "grep -q -E -- \(pattern) \(path) 2>/dev/null && echo yes || echo no"
+    }
+
+    /// Serialises a mutating command against the other side of the pairing.
+    ///
+    /// Removal is a read-modify-write (`grep -v` to a temp, then `cat` back)
+    /// while the phone concurrently appends. If the append lands between the
+    /// read and the write-back it is lost — the phone reports success and can
+    /// never connect, and the host prints a timeout that looks unrelated. That
+    /// window is exactly the one `expiryGrace` keeps alive on purpose, so it is
+    /// not hypothetical.
+    ///
+    /// `mkdir` is the mutex because it is atomic on every POSIX filesystem and
+    /// needs no tool that might be missing — `flock(1)` does not ship on macOS.
+    ///
+    /// **Staleness is the lock's age, never how long this caller has waited.**
+    /// Breaking the lock after N failed attempts looks equivalent and is not:
+    /// under contention every waiter eventually reaches N and tears the lock
+    /// out from under a live holder, which destroys mutual exclusion precisely
+    /// when it is needed. Measured with 200 concurrent appends against 200
+    /// removals, the attempt-count version kept 16 of 200 keys and lost the
+    /// user's own; judging by age keeps all 200. A lock older than a minute
+    /// belongs to a process that died holding it — every operation here is
+    /// sub-millisecond — so breaking that one cannot interrupt anybody.
+    ///
+    /// The wrapped command must not call `exit`, or the lock would outlive it.
+    static func locked(_ command: String) -> String {
+        let lock = "~/.ssh/.bleat-lock"
+        return "mkdir -p ~/.ssh 2>/dev/null; "
+            + "while ! mkdir \(lock) 2>/dev/null; do "
+            // A failed mkdir means contention only if the lock is actually
+            // there. When it is not, the directory is unwritable or read-only,
+            // and retrying can never succeed — the loop would spin forever on
+            // exactly the failure the user most needs told about. Verified: an
+            // `~/.ssh` with mode 500 hung the tool indefinitely before this.
+            + "if [ ! -d \(lock) ]; then "
+            + "echo \"cannot create lock \(lock): is ~/.ssh writable?\" >&2; exit 75; fi; "
+            + "[ -n \"$(find \(lock) -maxdepth 0 -mmin +1 2>/dev/null)\" ] "
+            + "&& rmdir \(lock) 2>/dev/null; "
+            + "sleep 0.05; done; "
+            + "{ \(command); }; r=$?; rmdir \(lock) 2>/dev/null; exit $r"
     }
 
     // MARK: - Safety

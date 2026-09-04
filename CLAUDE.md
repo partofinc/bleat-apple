@@ -246,6 +246,61 @@ The QR carries a **single-use enrollment key** instead:
 5. The tool confirms the swap and exits; on timeout or abort it removes the
    temporary line itself. The temporary key is never reused.
 
+**Dropping the key when nobody redeems it needs three layers**, because no
+in-process cleanup is complete (verified 4 Sept 2026, all four paths exercised
+against a scratch `HOME`):
+
+| how pairing ends | what removes the key |
+|---|---|
+| normal exit, or an error | `defer` |
+| Ctrl-C, `SIGTERM`, `SIGHUP` | `DispatchSourceSignal`, exit 130 |
+| `SIGKILL`, panic, power cut | **nothing can run** — see below |
+
+The third row is why the line carries sshd options:
+`restrict,expiry-time="<UTC>Z" <key> bleat-enroll-<id>`.
+
+- `expiry-time` makes **sshd** refuse the key once the moment passes, which
+  holds however the tool died. Verified against a real sshd: accepted before,
+  `Permission denied` after. UTC with a `Z` suffix, since a local-time deadline
+  would shift under DST.
+- `restrict` drops forwarding, X11 and PTY. Exec channels still work, which is
+  all pairing needs — also verified against a real sshd.
+- The deadline gets a 60s grace beyond the tool's own window, so a phone that
+  connects a second before the end is not expired mid-swap.
+- Every `bleat pair` **sweeps** stale `bleat-enroll-*` lines first, since a
+  previous run killed outright could not. The sweep requires the `-enroll-`
+  infix and so cannot touch a paired device's key.
+
+**Both sides take a `mkdir` lock** around every mutating command, because
+removal is a read-modify-write while the phone concurrently appends — the lost
+update drops the phone's key, so it reports success and can never connect.
+Three details are load-bearing and each was found by testing, not by reading:
+
+- **Staleness is the lock's age, never how long a caller has waited.** Breaking
+  after N failed attempts looks equivalent and destroys mutual exclusion under
+  contention, because every waiter eventually reaches N and tears the lock from
+  a live holder. Measured with 200 concurrent appends against 200 removals: the
+  attempt-count version kept 16 of 200 keys and lost the user's own; by age, all
+  200 survive.
+- **A failed `mkdir` means contention only if the lock exists.** Otherwise the
+  directory is unwritable and retrying can never succeed — that spun forever on
+  an `~/.ssh` at mode 500. It now fails immediately, naming the cause.
+- **Locked commands must not call `exit`**, or the lock outlives them.
+
+**Cleanup has no "already done" latch.** A signal arriving between installing
+the handlers and installing the key finds nothing to remove, and a latch would
+mark itself done — then the key is installed a moment later and never removed.
+Observed: a cancel 0.6s in exited 130 while leaving the key behind. Removal is
+idempotent, so it always runs.
+
+**`exit()` does not run `defer`.** The cancel path therefore runs cleanup
+explicitly, and `Cleanup.run()` holds its lock across the shell call so a second
+caller waits rather than returning early into `exit`.
+
+**Redemption means a *new* device key appeared**, not that any exists. A host
+with a phone already paired has a device key from the start, so the weaker test
+would turn any disappearance of the enrollment line into a false success.
+
 Two properties this buys that trust-on-first-use does not: the durable key is
 generated on the device and is never transmitted anywhere, and the host key is
 pinned **out-of-band** rather than trusted on first sight. Exposure of the

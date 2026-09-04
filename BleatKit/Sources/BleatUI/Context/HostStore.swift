@@ -4,8 +4,13 @@ import Observation
 /// Saved hosts and the device key, as the UI sees them.
 ///
 /// Wraps the file-backed `HostRegistry` and the Keychain rather than
-/// re-implementing either: the console tool and the app agree on the format,
-/// so a host added on the Mac is the same record the phone reads.
+/// re-implementing either, so the console tool and the app agree on the *format*
+/// of a host record.
+///
+/// They do **not** share a file: `HostRegistry.standard()` resolves under
+/// `NSHomeDirectory()`, which on iOS is the app's private container. A host
+/// added on the Mac is not visible to the phone. Until the add-host flow lands
+/// this list is therefore always empty on device.
 @Observable
 public final class HostStore {
     public private(set) var hosts: [HostEntry] = []

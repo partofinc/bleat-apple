@@ -42,23 +42,40 @@ public struct KeychainKeyStore: Sendable {
         }
     }
 
+    /// Stores a key, refusing to overwrite one that already exists.
+    ///
+    /// The refusal matters: `load()` can return nil while an item *is* present
+    /// under a different access group — after a team or provisioning-profile
+    /// change, say. Silently replacing it would kill the `authorized_keys` line
+    /// the user already installed, with no way to tell that had happened.
+    /// Rotation is `replace(_:)`, which is a deliberate call.
     public func save(_ pair: SSHKeyPair) throws {
-        var attributes = baseQuery
-        attributes[kSecValueData as String] = pair.rawRepresentation
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        let status = SecItemAdd(attributes as CFDictionary, nil)
+        let status = SecItemAdd(attributes(for: pair) as CFDictionary, nil)
         switch status {
         case errSecSuccess:
             return
         case errSecDuplicateItem:
-            // Replace rather than fail: re-adding is how a rotation lands.
-            let update = [kSecValueData as String: pair.rawRepresentation] as CFDictionary
-            let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update)
-            guard updateStatus == errSecSuccess else { throw KeychainError.status(updateStatus) }
+            throw KeychainError.keyAlreadyExists
         default:
             throw KeychainError.status(status)
         }
+    }
+
+    /// Replaces the stored key. The old key's `authorized_keys` line becomes
+    /// dead, so this is only for a rotation the user asked for.
+    public func replace(with pair: SSHKeyPair) throws {
+        // Delete then add, rather than SecItemUpdate: an update leaves the old
+        // item's accessibility in place, so a key could quietly end up more
+        // available than ThisDeviceOnly.
+        try delete()
+        try save(pair)
+    }
+
+    private func attributes(for pair: SSHKeyPair) -> [String: Any] {
+        var attributes = baseQuery
+        attributes[kSecValueData as String] = pair.rawRepresentation
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return attributes
     }
 
     /// Removes the key. The host's `authorized_keys` line becomes dead after
@@ -82,6 +99,9 @@ public struct KeychainKeyStore: Sendable {
 public enum KeychainError: Error, Sendable, Equatable {
     case status(OSStatus)
     case unexpectedFormat
+    /// An item exists but was not readable — usually a changed access group.
+    /// Overwriting it would silently invalidate an installed public key.
+    case keyAlreadyExists
 }
 
 extension KeychainError: CustomStringConvertible {
@@ -92,6 +112,8 @@ extension KeychainError: CustomStringConvertible {
             return "keychain error \(code): \(message)"
         case .unexpectedFormat:
             return "keychain returned something that is not a key"
+        case .keyAlreadyExists:
+            return "a key is already stored but could not be read; refusing to overwrite it"
         }
     }
 }

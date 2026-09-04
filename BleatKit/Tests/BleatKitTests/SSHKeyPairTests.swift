@@ -60,6 +60,41 @@ struct SSHKeyPairTests {
         #expect(SSHKeyPair().fingerprint != SSHKeyPair().fingerprint)
     }
 
+    @Test("a comment cannot inject a second authorized_keys entry")
+    func commentInjection() throws {
+        // A newline in the comment would append a whole extra key line to the
+        // host's authorized_keys when this is echoed into it.
+        let line = try vectorPair().authorizedKeyLine(
+            comment: "evil\nssh-ed25519 AAAAattacker attacker@host"
+        )
+        #expect(!line.contains("\n"))
+        #expect(line.split(separator: "\n").count == 1)
+    }
+
+    @Test("a comment cannot break the quoted shell instruction")
+    func commentQuoting() throws {
+        // The app renders `echo '<line>' >> ~/.ssh/authorized_keys`; a quote
+        // would end the literal early.
+        let line = try vectorPair().authorizedKeyLine(comment: "a'; rm -rf ~; '")
+        #expect(!line.contains("'"))
+        #expect(!line.contains("\""))
+        #expect(!line.contains("`"))
+        #expect(!line.contains("$"))
+    }
+
+    @Test("a comment stays one token")
+    func commentSpacing() throws {
+        let line = try vectorPair().authorizedKeyLine(comment: "my phone")
+        #expect(line.split(separator: " ").count == 3)
+    }
+
+    @Test("a comment of only unsafe characters degrades to no comment")
+    func commentAllStripped() throws {
+        let line = try vectorPair().authorizedKeyLine(comment: "\n\n")
+        #expect(line.split(separator: " ").count == 2)
+        #expect(!line.hasSuffix(" "))
+    }
+
     @Test("the line is a single line, safe to append to authorized_keys")
     func singleLine() throws {
         let line = try vectorPair().authorizedKeyLine(comment: "bleat")

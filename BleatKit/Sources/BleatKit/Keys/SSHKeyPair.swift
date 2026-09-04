@@ -28,9 +28,27 @@ public struct SSHKeyPair: Sendable {
     /// SSH public keys are `<type> <base64 blob> <comment>`, where the blob is
     /// SSH wire format: each field is a 4-byte big-endian length followed by
     /// its bytes, here the type name and then the 32-byte public key.
+    /// - Parameter comment: Trailing label. Sanitised, not trusted: a newline
+    ///   would append a *second* entry when this is written to
+    ///   `authorized_keys`, and a quote would break the shell instruction the
+    ///   app shows for installing it.
     public func authorizedKeyLine(comment: String = "bleat") -> String {
         let encoded = publicKeyBlob.base64EncodedString()
-        return comment.isEmpty ? "\(Self.keyType) \(encoded)" : "\(Self.keyType) \(encoded) \(comment)"
+        let safe = Self.sanitize(comment)
+        return safe.isEmpty ? "\(Self.keyType) \(encoded)" : "\(Self.keyType) \(encoded) \(safe)"
+    }
+
+    /// Keeps a comment to one harmless token: no newlines, no quotes, no
+    /// backslashes, and nothing that would split the line.
+    static func sanitize(_ comment: String) -> String {
+        let disallowed = CharacterSet(charactersIn: "'\"\\`$\n\r\t")
+            .union(.newlines)
+            .union(.controlCharacters)
+        return comment
+            .components(separatedBy: disallowed)
+            .joined()
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: " ", with: "-")
     }
 
     /// The fingerprint `ssh-keygen -l` prints for this key.

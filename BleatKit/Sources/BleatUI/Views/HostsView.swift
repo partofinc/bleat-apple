@@ -31,7 +31,11 @@ public struct HostsView: View {
                         .buttonStyle(.plain)
                     }
                     .onDelete { offsets in
-                        for index in offsets { context.hosts.remove(context.hosts.hosts[index]) }
+                        // Snapshot first: `remove` reloads the array, so
+                        // indices after the first are stale — a multi-select
+                        // delete would remove the wrong host or run off the end.
+                        let doomed = offsets.map { context.hosts.hosts[$0] }
+                        for entry in doomed { context.hosts.remove(entry) }
                     }
                 }
             }

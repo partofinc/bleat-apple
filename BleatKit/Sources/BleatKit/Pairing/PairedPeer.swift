@@ -9,8 +9,9 @@ import Foundation
 /// endpoints, not two peers, and pairing again from a different network merges
 /// rather than duplicating.
 public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
-    /// `SHA256:…` for the host key. The identity, and the primary key.
-    public let hostKeyFingerprint: String
+    /// The host key in OpenSSH `<algorithm> <base64>` form — the identity, and
+    /// what `KnownHostsStore` pins and compares.
+    public let hostKey: String
     public var name: String
     public var username: String
     /// Ordered by preference. `endpoint(for:)` decides what to try.
@@ -21,10 +22,13 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// Session to select by default, once the user has picked one.
     public var session: String?
 
-    public var id: String { hostKeyFingerprint }
+    public var id: String { hostKey }
+
+    /// `SHA256:…` for showing the user. Never used for comparison.
+    public var hostKeyFingerprint: String? { SSHPublicKeyLine(line: hostKey)?.fingerprint }
 
     public init(
-        hostKeyFingerprint: String,
+        hostKey: String,
         name: String,
         username: String,
         endpoints: [Endpoint],
@@ -32,7 +36,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         lastGoodEndpoint: Endpoint? = nil,
         session: String? = nil
     ) {
-        self.hostKeyFingerprint = hostKeyFingerprint
+        self.hostKey = hostKey
         self.name = name
         self.username = username
         self.endpoints = endpoints
@@ -43,7 +47,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
 
     public init(payload: PairingPayload) {
         self.init(
-            hostKeyFingerprint: payload.hostKeyFingerprint,
+            hostKey: payload.hostKey,
             name: payload.name,
             username: payload.username,
             endpoints: payload.endpoints,
@@ -65,10 +69,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     ///   QR, and a mismatched scan must show the user a message rather than
     ///   crash the app.
     public func merging(_ other: PairedPeer) throws -> PairedPeer {
-        guard other.hostKeyFingerprint == hostKeyFingerprint else {
-            throw PairingError.hostKeyMismatch(
-                expected: hostKeyFingerprint, actual: other.hostKeyFingerprint
-            )
+        guard other.hostKey == hostKey else {
+            throw PairingError.hostKeyMismatch(expected: hostKey, actual: other.hostKey)
         }
         var merged = self
         merged.name = other.name

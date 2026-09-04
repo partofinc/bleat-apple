@@ -14,6 +14,16 @@ public enum InterfaceAddresses {
     /// machine itself.
     static let ignoredInterfaces: Set<String> = ["lo0", "awdl0", "llw0"]
 
+    /// Interface families that carry host-only addresses.
+    ///
+    /// A Mac running Parallels, VMware Fusion, UTM or `vmnet` has `bridge100`,
+    /// `vmnet1` or `vnic0` holding addresses like `192.168.64.1` that pass
+    /// every other filter. Offering one costs the phone a connect timeout, and
+    /// worse — if its own LAN overlaps that range it reaches an unrelated
+    /// device and fails host key verification instead of merely failing to
+    /// connect, which reads as a security warning rather than a bad address.
+    static let ignoredPrefixes = ["bridge", "vmnet", "vnic", "vboxnet"]
+
     /// Every address worth offering as an endpoint, in the order `ifconfig`
     /// listed them.
     ///
@@ -31,15 +41,15 @@ public enum InterfaceAddresses {
     /// - `deprecated` addresses, which the stack is already retiring.
     public static func endpoints(ifconfigOutput: String, port: Int = 22) -> [Endpoint] {
         var result: [Endpoint] = []
-        var interface = ""
+        var usable = false
 
         for rawLine in ifconfigOutput.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(rawLine)
             if let name = interfaceName(of: line) {
-                interface = name
+                usable = isUsableInterface(name: name, headerLine: line)
                 continue
             }
-            guard !ignoredInterfaces.contains(interface) else { continue }
+            guard usable else { continue }
 
             // ifconfig indents address lines with a tab, so splitting on
             // spaces alone leaves "\tinet" as the first field.
@@ -58,6 +68,21 @@ public enum InterfaceAddresses {
         return result
     }
 
+    /// Whether an interface can carry an endpoint at all.
+    ///
+    /// A down or non-running interface still prints its last address, so
+    /// without the flag check a disconnected Wi-Fi or a dormant VPN
+    /// contributes a stale address that the phone will patiently time out on.
+    static func isUsableInterface(name: String, headerLine: String) -> Bool {
+        guard !ignoredInterfaces.contains(name) else { return false }
+        guard !ignoredPrefixes.contains(where: { name.hasPrefix($0) }) else { return false }
+        guard let open = headerLine.firstIndex(of: "<"),
+              let close = headerLine[open...].firstIndex(of: ">")
+        else { return false }
+        let flags = headerLine[headerLine.index(after: open)..<close].split(separator: ",")
+        return flags.contains("UP") && flags.contains("RUNNING")
+    }
+
     /// `en0: flags=8863<…> mtu 1500` — a line starting at column zero with a
     /// name and a colon.
     static func interfaceName(of line: String) -> String? {
@@ -68,10 +93,16 @@ public enum InterfaceAddresses {
         return name
     }
 
+    /// `fe80::/10` is `fe80`–`febf`, not just `fe80`. macOS only ever prints
+    /// `fe80`, but matching the actual range costs nothing and stops the check
+    /// being wrong on a platform that does not.
     static func isLinkLocal(_ address: String) -> Bool {
-        if address.lowercased().hasPrefix("fe80:") { return true }
-        if address.hasPrefix("169.254.") { return true }
-        if address == "127.0.0.1" || address == "::1" { return true }
-        return false
+        let lower = address.lowercased()
+        if lower.hasPrefix("169.254.") { return true }
+        if lower == "127.0.0.1" || lower == "::1" { return true }
+        guard let colon = lower.firstIndex(of: ":") else { return false }
+        let group = lower[lower.startIndex..<colon]
+        guard group.count == 4, let value = UInt16(group, radix: 16) else { return false }
+        return (0xfe80...0xfebf).contains(value)
     }
 }

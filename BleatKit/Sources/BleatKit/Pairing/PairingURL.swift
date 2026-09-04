@@ -14,7 +14,7 @@ extension PairingPayload {
         case username = "u"
         case endpoints = "e"
         case enrollmentSeed = "k"
-        case hostKeyFingerprint = "h"
+        case hostKey = "h"
         case herdrPath = "p"
     }
 
@@ -115,7 +115,7 @@ extension PairingPayload: Codable {
             username: try c.decode(String.self, forKey: .username),
             endpoints: endpoints,
             enrollmentSeed: seed,
-            hostKeyFingerprint: try c.decode(String.self, forKey: .hostKeyFingerprint),
+            hostKey: try c.decode(String.self, forKey: .hostKey),
             herdrPath: try c.decode(String.self, forKey: .herdrPath)
         )
     }
@@ -127,7 +127,7 @@ extension PairingPayload: Codable {
         try c.encode(username, forKey: .username)
         try c.encode(endpoints.map(\.description), forKey: .endpoints)
         try c.encode(Self.base64URLEncode(enrollmentSeed), forKey: .enrollmentSeed)
-        try c.encode(hostKeyFingerprint, forKey: .hostKeyFingerprint)
+        try c.encode(hostKey, forKey: .hostKey)
         try c.encode(herdrPath, forKey: .herdrPath)
     }
 }

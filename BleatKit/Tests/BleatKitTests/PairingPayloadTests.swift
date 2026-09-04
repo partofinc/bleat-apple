@@ -6,6 +6,10 @@ import Testing
 @Suite("Pairing payload")
 struct PairingPayloadTests {
 
+    /// The dev Mac's real host key, in the OpenSSH form the pin store compares.
+    static let hostKey =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBPdxsAyNEaNtfx47Futg4ERIBkkAsvtWfxnTeKq0jct"
+
     private func sample(version: Int = PairingPayload.currentVersion) -> PairingPayload {
         PairingPayload(
             version: version,
@@ -18,7 +22,7 @@ struct PairingPayloadTests {
                 Endpoint(host: "2a00:f3c:5ad0:0:c29:6db5:4a49:dc53", port: 2222),
             ],
             enrollmentSeed: Data(repeating: 0xA7, count: 32),
-            hostKeyFingerprint: "SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78",
+            hostKey: Self.hostKey,
             herdrPath: "/opt/homebrew/bin/herdr"
         )
     }
@@ -38,7 +42,7 @@ struct PairingPayloadTests {
             name: "n", username: "u",
             endpoints: [Endpoint(host: "h")],
             enrollmentSeed: pair.rawRepresentation,
-            hostKeyFingerprint: "SHA256:x", herdrPath: "/bin/herdr"
+            hostKey: "ssh-ed25519 AAAAx", herdrPath: "/bin/herdr"
         )
         let decoded = try PairingPayload(urlString: try payload.urlString())
         #expect(try decoded.enrollmentKey().fingerprint == pair.fingerprint)

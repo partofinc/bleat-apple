@@ -22,7 +22,7 @@ enum Inspect {
         print("name          \(report.name)")
         print("username      \(report.username)")
         print("herdr         \(report.herdrPath)")
-        print("host key      \(report.hostKeyFingerprint)")
+        print("host key      \(report.hostKeyFingerprint ?? report.hostKey)")
         print("endpoints     \(report.endpoints.isEmpty ? "(none found)" : "")")
         for endpoint in report.endpoints {
             let reach = switch endpoint.reach {

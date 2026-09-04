@@ -116,15 +116,27 @@ enum Pair {
            PairScreen.fits(matrix, in: terminal) {
             PairScreen.enter()
             cleanup.screenEntered()
-            PairScreen.draw(matrix: matrix, title: title, subtitle: subtitle, footer: footer)
+            PairScreen.draw(
+                matrix: matrix, title: title, subtitle: subtitle,
+                footer: footer, width: terminal.columns
+            )
         } else {
-            // No terminal, no room, or no generator: the link carries exactly
-            // the same payload, so pairing still works — it is only the
-            // convenience of scanning that is lost.
+            // No terminal, no room, or no generator. The link carries the same
+            // payload, so pairing still works — but it also carries the
+            // single-use enrollment key, and printing it here puts it in the
+            // scrollback the alternate screen exists to keep it out of. That is
+            // a trade the user should be told about rather than have made for
+            // them silently.
             print(title)
             print(subtitle)
             print("")
             print(url)
+            if PairScreen.isInteractive {
+                print("")
+                print("Note: this link contains a single-use key and is now in your")
+                print("scrollback. It stops working in \(describe(window)), and the key is")
+                print("removed when this exits — but clear the buffer if that matters.")
+            }
             if let matrix, let terminal, !PairScreen.fits(matrix, in: terminal) {
                 print("")
                 print(PairScreen.tooSmallMessage(matrix, terminal))

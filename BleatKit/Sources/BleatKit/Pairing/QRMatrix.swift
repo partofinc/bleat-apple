@@ -36,6 +36,41 @@ public struct QRMatrix: Sendable, Equatable {
         return QRMatrix(size: newSize, modules: grid)!
     }
 
+    /// Whether a 7×7 finder pattern sits with its corner at `(x, y)`.
+    ///
+    /// The pattern is a solid dark ring, a light ring inside it, then a 3×3
+    /// dark core — distinctive enough that finding one is not a coincidence.
+    public func hasFinderPattern(atX ox: Int, y oy: Int) -> Bool {
+        guard ox >= 0, oy >= 0, ox + 7 <= size, oy + 7 <= size else { return false }
+        func dark(_ x: Int, _ y: Int) -> Bool { self[ox + x, oy + y] }
+        for i in 0..<7 where !dark(i, 0) || !dark(i, 6) || !dark(0, i) || !dark(6, i) {
+            return false
+        }
+        for i in 1..<6 where dark(i, 1) || dark(i, 5) { return false }
+        for y in 2..<5 {
+            for x in 2..<5 where !dark(x, y) { return false }
+        }
+        return true
+    }
+
+    /// Whether the finder patterns sit where a QR reader expects them: top-left,
+    /// top-right and bottom-left, and **not** bottom-right.
+    ///
+    /// Worth checking explicitly because the obvious test does not catch a
+    /// mirror. `CIDetector` decodes a vertically flipped symbol without
+    /// complaint, so "it decoded" says nothing about orientation — while zbar,
+    /// ZXing and many Android scanners simply fail. This is the assertion that
+    /// distinguishes them.
+    ///
+    /// - Parameter quietZone: Light border to skip before looking.
+    public func hasCanonicalFinderPatterns(quietZone: Int) -> Bool {
+        let far = size - quietZone - 7
+        return hasFinderPattern(atX: quietZone, y: quietZone)
+            && hasFinderPattern(atX: far, y: quietZone)
+            && hasFinderPattern(atX: quietZone, y: far)
+            && !hasFinderPattern(atX: far, y: far)
+    }
+
     /// How many terminal rows `terminalLines` will produce.
     public var renderedRows: Int { (size + 1) / 2 }
 

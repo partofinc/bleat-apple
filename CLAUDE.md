@@ -405,9 +405,18 @@ are already portable.
 - **Set black-on-white explicitly.** The block glyphs carry the *foreground*
   colour as ink, so an unstyled render is inverted on a dark theme.
 - **`CIQRCodeGenerator` gives a 1-module quiet zone** and the spec wants 4, so
-  three more are added. Its bitmap origin is bottom-left while row 0 is the top,
-  so rows are read back reversed — a QR is not symmetric, and getting that
-  backwards yields a plausible-looking code that scans as garbage.
+  three more are added.
+- **Read the bitmap rows straight through — do not reverse them.** A
+  `CGBitmapContext`'s *coordinate* origin is bottom-left, but its backing buffer
+  is stored top row first, so `pixels[0..<size]` is already the top scanline.
+  Reasoning from the coordinate origin and reversing mirrors the symbol
+  vertically: finder patterns land top-left, bottom-left and bottom-right
+  instead of top-left, top-right and bottom-left. **This shipped once.**
+- **Decodability is not an orientation test.** `CIDetector` reads a mirrored
+  symbol without complaint, which is why a decode round-trip missed the bug
+  above; zbar, ZXing and many Android scanners do not. Assert finder positions —
+  `QRMatrix.hasCanonicalFinderPatterns(quietZone:)`, covered in
+  `BleatProcessTests` — and treat a decode as a separate, weaker check.
 - **Not a TTY means no QR**: a pipe or a redirect gets the link only.
 
 **Size, measured with a real payload (5 Sept 2026).** An earlier note quoted
@@ -433,8 +442,11 @@ Alongside it, three redundancies went:
   dirt and creases; this code is drawn pixel-exact, scanned from a foot away and
   gone in minutes.
 
-**`herdrPath` is deliberately not in the QR.** The phone resolves it with
-`command -v herdr` through a login shell on first connect. `bleat pair` already
+**`herdrPath` is deliberately not in the QR — and nothing resolves it yet.**
+The phone must run `command -v herdr` through a login shell on first connect and
+store the result on the peer; until that lands, `PairedPeer.herdrPath` is always
+nil and `SSHTransport`'s bare `"herdr"` default will fail on sshd's non-login
+shell. **This is an open item for the iOS PR, not finished behaviour.** `bleat pair` already
 refuses to pair a host without herdr, so it exists; a baked path costs 24 bytes
 and goes stale the moment herdr moves, so discovering it is both smaller and
 more robust. `PairedPeer.herdrPath` is therefore optional — nil until first use.
@@ -465,7 +477,9 @@ rather than guessed. Only the light modules move; dimming the dark ones would
 spend the same margin while making the ink itself less distinct.
 
 Verified end to end: the glyphs written to a pty were parsed back into modules
-and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.
+and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL. That
+proves the *payload* survives the render; it says nothing about orientation, for
+which see the finder-pattern note above.
 
 ### Endpoint selection on the phone
 
@@ -581,6 +595,12 @@ behaviour when it moves across the seam.
   Bleat may show that as a badge later. Not a Phase 1 concern.
 
 ## Open questions (resolve against the live host, then delete)
+
+- **The phone must resolve `herdrPath` on first connect** (`sh -lc 'command -v
+  herdr'`, verified working when host inspection landed) and store it on the
+  `PairedPeer`. Nothing does this yet; a peer paired today has `herdrPath == nil`
+  and any transport built from it would run a bare `herdr` that sshd's non-login
+  shell cannot find.
 
 - Does `agent prompt --wait` return a JSON result on completion, and what is
   the timeout behavior?

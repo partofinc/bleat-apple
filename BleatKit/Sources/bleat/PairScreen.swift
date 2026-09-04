@@ -79,11 +79,29 @@ enum PairScreen {
     /// A trailing newline on the last line scrolls the alternate screen by one
     /// when the content exactly fills it, which pushes the title off the top —
     /// so the QR appears to have moved and the first row of quiet zone is lost.
-    static func draw(matrix: QRMatrix, title: String, subtitle: String, footer: String) {
-        var out = clear + title + "\n" + subtitle + "\n"
+    ///
+    /// The chrome is truncated to the window width for the same reason. The fit
+    /// check counts one row per chrome line, but the footer is longer than the
+    /// QR is wide: on a window just wide enough for the code, an untruncated
+    /// footer wraps to two rows and scrolls the screen exactly as a trailing
+    /// newline would.
+    static func draw(
+        matrix: QRMatrix,
+        title: String,
+        subtitle: String,
+        footer: String,
+        width: Int
+    ) {
+        var out = clear + truncated(title, to: width) + "\n"
+        out += truncated(subtitle, to: width) + "\n"
         out += matrix.terminalLines().joined(separator: "\n")
-        out += "\n" + footer
+        out += "\n" + truncated(footer, to: width)
         write(out)
+    }
+
+    static func truncated(_ text: String, to width: Int) -> String {
+        guard width > 1, text.count > width else { return text }
+        return String(text.prefix(width - 1)) + "…"
     }
 }
 

@@ -16,6 +16,10 @@ import Foundation
 /// `hostKey` is the other half of the point: the phone pins the host key from
 /// the QR rather than trusting whatever answers first, which is strictly
 /// stronger than the trust-on-first-use `KnownHostsStore` does.
+/// `herdrPath` is deliberately **not** a field here. The tool refuses to pair a
+/// host without herdr, so it exists; the phone resolves the path itself with
+/// `command -v herdr` through a login shell on first connect. Baking it in cost
+/// 24 bytes of QR and would go stale the moment herdr moved.
 public struct PairingPayload: Sendable, Equatable {
     /// Bumped when the wire format changes. A phone that sees a version it does
     /// not know must say so rather than guess at the fields.
@@ -42,10 +46,6 @@ public struct PairingPayload: Sendable, Equatable {
     /// so carrying one would have made every paired connection fail its pin
     /// check. It costs about 30 bytes more in the QR.
     public let hostKey: String
-    /// `herdrPath` is deliberately **not** here. The tool refuses to pair a
-    /// host without herdr, so it exists; the phone resolves the path itself
-    /// with `command -v herdr` through a login shell on first connect. Baking
-    /// it in cost 24 bytes of QR and would go stale the moment herdr moved.
     /// Display name for the peer. Cosmetic; identity is the host key.
     public let name: String
 

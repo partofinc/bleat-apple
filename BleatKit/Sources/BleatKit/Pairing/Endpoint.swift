@@ -10,7 +10,7 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     public let host: String
     public let port: Int
 
-    public init(host: String, port: Int = 22) {
+    public init(host: String, port: Int = Endpoint.defaultPort) {
         self.host = host
         self.port = port
     }
@@ -63,6 +63,12 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
         return port == Self.defaultPort ? bracketed : "\(bracketed):\(port)"
     }
 
+    /// The port left out of `description`.
+    ///
+    /// Both initialisers default to this too. Consulting it only on the write
+    /// side would mean changing it emits endpoints with no port that parse back
+    /// as 22 — and since `description` *is* the QR wire format, that would ship
+    /// endpoints pointing at the wrong port.
     public static let defaultPort = 22
 
     /// Parses `host`, `host:port`, `[v6]` or `[v6]:port`.
@@ -75,7 +81,7 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     ///   own. A user passing `--endpoint host` alongside `--port 2222` means
     ///   that host on 2222; silently defaulting it to 22 produces an endpoint
     ///   that looks right in the list and refuses every connection.
-    public init?(string: String, defaultPort: Int = 22) {
+    public init?(string: String, defaultPort: Int = Endpoint.defaultPort) {
         let text = string.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return nil }
 

@@ -63,11 +63,6 @@ public struct SSHPublicKeyLine: Sendable, Equatable {
         self.comment = rest.isEmpty ? nil : rest
     }
 
-    /// The fingerprint `ssh-keygen -l` prints.
-    ///
-    /// Hashes the whole wire-format blob, as `SSHKeyPair.fingerprint` does.
-    /// Hashing anything else yields a plausible `SHA256:` string that matches
-    /// nothing the user can compare against, which is worse than no fingerprint.
     /// Rebuilds a key from its wire blob alone.
     ///
     /// The algorithm is not extra information: it is the blob's own first
@@ -111,6 +106,11 @@ public struct SSHPublicKeyLine: Sendable, Equatable {
         return SSHPublicKeyLine(blob: blob)
     }
 
+    /// The fingerprint `ssh-keygen -l` prints.
+    ///
+    /// Hashes the whole wire-format blob, as `SSHKeyPair.fingerprint` does.
+    /// Hashing anything else yields a plausible `SHA256:` string that matches
+    /// nothing the user can compare against, which is worse than no fingerprint.
     public var fingerprint: String {
         let digest = SHA256.hash(data: blob)
         let encoded = Data(digest).base64EncodedString()

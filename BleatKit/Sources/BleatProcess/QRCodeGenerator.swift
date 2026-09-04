@@ -42,24 +42,36 @@ public enum QRCodeGenerator {
         let context = CIContext(options: [.useSoftwareRenderer: true])
         guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
 
+        // The buffer must stay alive for the draw as well as the context's
+        // construction: an inout-to-pointer conversion is only guaranteed for
+        // the duration of the call it appears in, so writing through it
+        // afterwards is undefined even though it happens to work.
         var pixels = [UInt8](repeating: 0, count: size * size)
-        guard let bitmap = CGContext(
-            data: &pixels, width: size, height: size, bitsPerComponent: 8,
-            bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
-        bitmap.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+        let drew = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let bitmap = CGContext(
+                data: buffer.baseAddress, width: size, height: size, bitsPerComponent: 8,
+                bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return false }
+            bitmap.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+            return true
+        }
+        guard drew else { return nil }
 
-        // CGContext's origin is bottom-left and the matrix's row 0 is the top,
-        // so the rows are read back in reverse. A QR is not symmetric — the
-        // finder patterns sit in three specific corners — so getting this
-        // backwards produces a code that looks plausible and scans as garbage.
+        // Read straight through: a CGBitmapContext's *coordinate* origin is
+        // bottom-left, but its backing buffer is stored top row first, so
+        // `pixels[0..<size]` is already the top scanline.
+        //
+        // This file previously reversed the rows on the strength of that
+        // coordinate origin, which mirrored the symbol vertically — finder
+        // patterns landed top-left, bottom-left and bottom-right instead of
+        // top-left, top-right and bottom-left. It survived review because the
+        // check used was `CIDetector`, and Apple's decoder reads mirrored
+        // symbols happily; zbar, ZXing and many Android scanners do not. Assert
+        // finder positions, not decodability, when changing this.
         var modules = [Bool](repeating: false, count: size * size)
-        for y in 0..<size {
-            let sourceRow = size - 1 - y
-            for x in 0..<size {
-                modules[y * size + x] = pixels[sourceRow * size + x] < 128
-            }
+        for index in 0..<(size * size) {
+            modules[index] = pixels[index] < 128
         }
         return QRMatrix(size: size, modules: modules)?.padded(quietZone: quietZone)
     }

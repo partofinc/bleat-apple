@@ -414,26 +414,34 @@ are already portable.
 versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
 bits per character, while a `bleat://` URL is lowercase and punctuated and so
 encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
-**Everything in the payload is paid for in modules, so three redundancies were
-removed** (measured on the three-endpoint case, 411 → **350** characters, rendering
-85×43 → **73×36**):
+**The payload is a compact binary form, not JSON** (`PairingWire`). JSON keys,
+quotes and braces were about forty characters of pure structure, and base64 then
+inflated the whole thing by a third — in a medium where every byte is modules
+and modules are terminal rows the user may not have. Both ends ship together, so
+there is nothing to negotiate and no reason to pay for self-description. Layout
+and the reasoning are in `PairingWire`.
 
-- The host key travels as its **bare 32 bytes** when it is ed25519, which is
-  what the phone negotiates. The text prefix repeated the algorithm, and the
-  wire blob repeats it again in 19 bytes of framing;
-  `SSHPublicKeyLine.ed25519(rawKey:)` rebuilds the exact OpenSSH string the pin
-  compares against. Any other algorithm travels as its blob, and the two are
-  told apart on the way in by length — 32 bytes is a key, more is a blob.
-- Endpoints **omit port 22**. `Endpoint(string:)` defaults to it, so the form
-  still round-trips, and it was three characters per endpoint.
-- Correction level is **L, not M**. The higher levels buy recovery from print
-  wear, dirt and creases; this code is drawn pixel-exact on a screen, scanned
-  from a foot away, and gone in minutes. The recovery is paid for in rows the
-  user may not have.
+Alongside it, three redundancies went:
 
-Remaining candidates, not taken: `herdrPath` (25 chars — the phone could run
-`command -v herdr` itself, at the cost of a round trip) and the display `name`
-(13 chars).
+- The host key travels as its **bare 32 bytes** for ed25519, which is what the
+  phone negotiates. The text form named the algorithm and the wire blob repeats
+  it again in 19 bytes of framing; `SSHPublicKeyLine.ed25519(rawKey:)` rebuilds
+  the exact OpenSSH string the pin compares against. Other algorithms travel as
+  a blob, told apart on the way in by length.
+- Endpoints **omit port 22**, which `Endpoint(string:)` defaults to.
+- Correction level is **L**. The higher levels buy recovery from print wear,
+  dirt and creases; this code is drawn pixel-exact, scanned from a foot away and
+  gone in minutes.
+
+**`herdrPath` is deliberately not in the QR.** The phone resolves it with
+`command -v herdr` through a login shell on first connect. `bleat pair` already
+refuses to pair a host without herdr, so it exists; a baked path costs 24 bytes
+and goes stale the moment herdr moves, so discovering it is both smaller and
+more robust. `PairedPeer.herdrPath` is therefore optional — nil until first use.
+
+Measured across these changes on the three-endpoint case: the URL went
+**411 → 383 → 350 → 221** characters and the rendered code **85 → 77 → 73 → 61**
+columns, 43 → 31 rows.
 
 **Height is the binding constraint, so nothing is spent on it carelessly.**
 Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
@@ -449,11 +457,12 @@ losing the QR entirely over one row is the worse outcome. Measured on a
 falls back. The shortfall is reported against the **smallest** option tried, so
 it names the real gap rather than the gap to the margin we would have preferred.
 
-**Light modules are grey (`0xA0`), not white.** A white panel this size glares
-in a dark terminal, and the contrast a decoder needs — roughly 3:1 — leaves a
-lot of room: black on `0xA0` measures **8:1**, still above the 7:1 WCAG AAA text
-threshold, against 21:1 for white. Only the light modules moved; dimming the
-dark ones would spend the same margin while making the ink less distinct.
+**Light modules are grey (`0x8C`), not white.** A white panel this size glares
+in a dark terminal, and the contrast a decoder needs — roughly 3:1 — leaves
+room: black on `0x8C` measures **6.3:1**, against 21:1 for white. That is still
+twice the floor, but close enough to it that going darker should be measured
+rather than guessed. Only the light modules move; dimming the dark ones would
+spend the same margin while making the ink itself less distinct.
 
 Verified end to end: the glyphs written to a pty were parsed back into modules
 and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.

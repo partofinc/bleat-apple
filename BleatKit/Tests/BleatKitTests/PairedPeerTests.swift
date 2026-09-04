@@ -82,12 +82,15 @@ struct PairedPeerTests {
             name: "rawillk.air", username: "ravil",
             endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "100.101.102.103")],
             enrollmentSeed: Data(repeating: 3, count: 32),
-            hostKey: hostKey, herdrPath: "/opt/homebrew/bin/herdr"
+            hostKey: hostKey
         )
         let built = PairedPeer(payload: payload)
         #expect(built.hostKey == hostKey)
         #expect(built.endpoints.count == 2)
         #expect(built.lastGoodEndpoint == nil)
+        // herdrPath no longer travels in the QR: the phone resolves it on
+        // first connect, so a freshly paired peer has none yet.
+        #expect(built.herdrPath == nil)
     }
 }
 

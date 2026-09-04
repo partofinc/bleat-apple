@@ -83,8 +83,7 @@ enum Pair {
             username: report.username,
             endpoints: report.endpoints,
             enrollmentSeed: enrollment.rawRepresentation,
-            hostKey: report.hostKey,
-            herdrPath: report.herdrPath
+            hostKey: report.hostKey
         )
 
         let url = try payload.urlString()

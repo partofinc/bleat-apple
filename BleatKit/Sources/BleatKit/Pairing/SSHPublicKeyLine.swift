@@ -63,6 +63,49 @@ public struct SSHPublicKeyLine: Sendable, Equatable {
         self.comment = rest.isEmpty ? nil : rest
     }
 
+    /// Rebuilds a key from its wire blob alone.
+    ///
+    /// The algorithm is not extra information: it is the blob's own first
+    /// field, repeated in the text form. Reconstructing it here is what lets
+    /// the QR carry the blob only and still produce the exact OpenSSH string
+    /// the pin is compared against.
+    public init?(blob: Data) {
+        guard let algorithm = Self.firstField(of: blob) else { return nil }
+        self.algorithm = algorithm
+        self.blob = blob
+        self.comment = nil
+    }
+
+    /// The 32-byte key inside an ed25519 blob, or nil for any other algorithm.
+    ///
+    /// The blob wraps it in 19 bytes of framing that say "ssh-ed25519" all over
+    /// again — worth stripping for the QR, where every byte is modules.
+    public var ed25519RawKey: Data? {
+        guard algorithm == "ssh-ed25519" else { return nil }
+        let bytes = [UInt8](blob)
+        // 4-byte length + "ssh-ed25519" (11) + 4-byte length + 32-byte key.
+        guard bytes.count == 51 else { return nil }
+        let keyLength = (Int(bytes[15]) << 24) | (Int(bytes[16]) << 16)
+            | (Int(bytes[17]) << 8) | Int(bytes[18])
+        guard keyLength == 32 else { return nil }
+        return Data(bytes[19...])
+    }
+
+    /// Rebuilds the wire blob around a bare 32-byte ed25519 key.
+    public static func ed25519(rawKey: Data) -> SSHPublicKeyLine? {
+        guard rawKey.count == 32 else { return nil }
+        var blob = Data()
+        for field in [Data("ssh-ed25519".utf8), rawKey] {
+            let length = UInt32(field.count)
+            blob.append(contentsOf: [
+                UInt8((length >> 24) & 0xFF), UInt8((length >> 16) & 0xFF),
+                UInt8((length >> 8) & 0xFF), UInt8(length & 0xFF),
+            ])
+            blob.append(field)
+        }
+        return SSHPublicKeyLine(blob: blob)
+    }
+
     /// The fingerprint `ssh-keygen -l` prints.
     ///
     /// Hashes the whole wire-format blob, as `SSHKeyPair.fingerprint` does.

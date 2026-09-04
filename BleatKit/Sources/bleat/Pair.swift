@@ -83,23 +83,76 @@ enum Pair {
             username: report.username,
             endpoints: report.endpoints,
             enrollmentSeed: enrollment.rawRepresentation,
-            hostKey: report.hostKey,
-            herdrPath: report.herdrPath
+            hostKey: report.hostKey
         )
 
-        print("Pair with \(report.name) as \(report.username) — valid for \(describe(window))")
-        print("host key  \(report.hostKeyFingerprint ?? report.hostKey)")
-        print("")
-        print(try payload.urlString())
-        print("")
-        print("Waiting for the phone… (Ctrl-C cancels and removes the key)")
+        let url = try payload.urlString()
+        let title = "Pair with \(report.name) as \(report.username)"
+        let subtitle = "host key \(report.hostKeyFingerprint ?? report.hostKey)"
+        let footer = "Scan with the phone's camera — valid for \(describe(window)). Ctrl-C cancels."
+
+        // The spec asks for a four-module quiet zone and scanners use it to
+        // find the symbol, so it is tried first. Two still scans in practice,
+        // and two modules is the difference between showing a code and showing
+        // none on a window only a row or two short — losing the QR entirely is
+        // the worse outcome.
+        let terminal = PairScreen.isInteractive ? PairScreen.size() : nil
+        let matrix: QRMatrix? = {
+            guard let terminal else { return QRCodeGenerator.matrix(for: url) }
+            for quiet in [3, 1] {
+                if let candidate = QRCodeGenerator.matrix(for: url, quietZone: quiet),
+                   PairScreen.fits(candidate, in: terminal) {
+                    return candidate
+                }
+            }
+            // Nothing fitted: report against the *smallest* option that was
+            // tried, so "3 rows taller" is the real shortfall rather than the
+            // shortfall against the margin we would have preferred.
+            return QRCodeGenerator.matrix(for: url, quietZone: 1)
+        }()
+
+        if let matrix,
+           let terminal,
+           PairScreen.fits(matrix, in: terminal) {
+            PairScreen.enter()
+            cleanup.screenEntered()
+            PairScreen.draw(
+                matrix: matrix, title: title, subtitle: subtitle,
+                footer: footer, width: terminal.columns
+            )
+        } else {
+            // No terminal, no room, or no generator. The link carries the same
+            // payload, so pairing still works — but it also carries the
+            // single-use enrollment key, and printing it here puts it in the
+            // scrollback the alternate screen exists to keep it out of. That is
+            // a trade the user should be told about rather than have made for
+            // them silently.
+            print(title)
+            print(subtitle)
+            print("")
+            print(url)
+            if PairScreen.isInteractive {
+                print("")
+                print("Note: this link contains a single-use key and is now in your")
+                print("scrollback. It stops working in \(describe(window)), and the key is")
+                print("removed when this exits — but clear the buffer if that matters.")
+            }
+            if let matrix, let terminal, !PairScreen.fits(matrix, in: terminal) {
+                print("")
+                print(PairScreen.tooSmallMessage(matrix, terminal))
+            }
+            print("")
+            print("Waiting for the phone… (Ctrl-C cancels and removes the key)")
+        }
 
         switch waitForRedemption(
             marker: marker, knownDevices: devicesBefore, until: deadline, cleanup: cleanup
         ) {
         case .redeemed:
             // The phone deletes the enrollment line itself as its last act, so
-            // there may be nothing left to remove; `cleanup` is idempotent.
+            // there may be nothing left to remove; `cleanup` is idempotent, and
+            // it is also what takes the terminal back off the alternate screen.
+            cleanup.run()
             print("Paired. The phone installed its own key and the enrollment key is gone.")
         case .cancelled:
             // `exit` below skips every `defer`, so cleanup is run explicitly.
@@ -110,6 +163,7 @@ enum Pair {
             // 128 + SIGINT, the shell's convention for a signalled exit.
             exit(130)
         case .timedOut:
+            cleanup.run()
             print("Timed out after \(describe(window)). The enrollment key has been removed.")
         }
     }
@@ -172,7 +226,17 @@ enum Pair {
         /// dependency entirely.
         private let queue = DispatchQueue(label: "team.partof.bleat.pair.signals")
 
+        /// Set once the alternate screen is entered.
+        ///
+        /// Restoring belongs here rather than in a `defer` for the same reason
+        /// the key removal does: `exit` skips defers, and the signal path exits.
+        /// A cancelled pairing that left the terminal on the alternate screen
+        /// would hide the user's shell until they typed `reset`.
+        private var enteredAlternateScreen = false
+
         init(marker: AuthorizedKeys.Marker) { self.marker = marker }
+
+        func screenEntered() { lock.withLock { enteredAlternateScreen = true } }
 
         var wasSignalled: Bool { lock.withLock { signalled } }
 
@@ -217,6 +281,12 @@ enum Pair {
         func run() {
             lock.lock()
             defer { lock.unlock() }
+            // Terminal first, so anything printed afterwards lands on the
+            // normal screen where the user will actually see it.
+            if enteredAlternateScreen {
+                PairScreen.leave()
+                enteredAlternateScreen = false
+            }
             _ = try? shellOutput(AuthorizedKeys.removeCommand(marker: marker))
         }
     }

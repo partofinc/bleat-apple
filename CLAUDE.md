@@ -387,6 +387,100 @@ show why. Only the stable `secured` address is kept.
 `bleat inspect` prints the whole list with each endpoint's reach, which is the
 first thing to run when pairing misbehaves.
 
+### Displaying the QR
+
+`CIQRCodeGenerator` on macOS; Linux is still deliberately undecided, and only
+the generator would change — `QRMatrix` and its renderer are in `BleatKit` and
+are already portable.
+
+- **Draw on the alternate screen** (`\e[?1049h`), never the normal one. A QR on
+  the normal screen stays in scrollback, which iTerm2 persists to disk and tmux
+  keeps in history, so the enrollment key would outlive the pairing somewhere
+  nobody thinks to clear. Restoring is part of `Cleanup`, not a `defer`, because
+  `exit` skips defers and the cancel path exits — a cancelled pairing that left
+  the alternate screen up would hide the user's shell until they typed `reset`.
+- **Half-blocks, two module rows per line.** Terminal cells are about twice as
+  tall as wide, so one module per cell doubles the height and many scanners
+  refuse it.
+- **Set black-on-white explicitly.** The block glyphs carry the *foreground*
+  colour as ink, so an unstyled render is inverted on a dark theme.
+- **`CIQRCodeGenerator` gives a 1-module quiet zone** and the spec wants 4, so
+  three more are added.
+- **Read the bitmap rows straight through — do not reverse them.** A
+  `CGBitmapContext`'s *coordinate* origin is bottom-left, but its backing buffer
+  is stored top row first, so `pixels[0..<size]` is already the top scanline.
+  Reasoning from the coordinate origin and reversing mirrors the symbol
+  vertically: finder patterns land top-left, bottom-left and bottom-right
+  instead of top-left, top-right and bottom-left. **This shipped once.**
+- **Decodability is not an orientation test.** `CIDetector` reads a mirrored
+  symbol without complaint, which is why a decode round-trip missed the bug
+  above; zbar, ZXing and many Android scanners do not. Assert finder positions —
+  `QRMatrix.hasCanonicalFinderPatterns(quietZone:)`, covered in
+  `BleatProcessTests` — and treat a decode as a separate, weaker check.
+- **Not a TTY means no QR**: a pipe or a redirect gets the link only.
+
+**Size, measured with a real payload (5 Sept 2026).** An earlier note quoted
+versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
+bits per character, while a `bleat://` URL is lowercase and punctuated and so
+encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
+**The payload is a compact binary form, not JSON** (`PairingWire`). JSON keys,
+quotes and braces were about forty characters of pure structure, and base64 then
+inflated the whole thing by a third — in a medium where every byte is modules
+and modules are terminal rows the user may not have. Both ends ship together, so
+there is nothing to negotiate and no reason to pay for self-description. Layout
+and the reasoning are in `PairingWire`.
+
+Alongside it, three redundancies went:
+
+- The host key travels as its **bare 32 bytes** for ed25519, which is what the
+  phone negotiates. The text form named the algorithm and the wire blob repeats
+  it again in 19 bytes of framing; `SSHPublicKeyLine.ed25519(rawKey:)` rebuilds
+  the exact OpenSSH string the pin compares against. Other algorithms travel as
+  a blob, told apart on the way in by length.
+- Endpoints **omit port 22**, which `Endpoint(string:)` defaults to.
+- Correction level is **L**. The higher levels buy recovery from print wear,
+  dirt and creases; this code is drawn pixel-exact, scanned from a foot away and
+  gone in minutes.
+
+**`herdrPath` is deliberately not in the QR — and nothing resolves it yet.**
+The phone must run `command -v herdr` through a login shell on first connect and
+store the result on the peer; until that lands, `PairedPeer.herdrPath` is always
+nil and `SSHTransport`'s bare `"herdr"` default will fail on sshd's non-login
+shell. **This is an open item for the iOS PR, not finished behaviour.** `bleat pair` already
+refuses to pair a host without herdr, so it exists; a baked path costs 24 bytes
+and goes stale the moment herdr moves, so discovering it is both smaller and
+more robust. `PairedPeer.herdrPath` is therefore optional — nil until first use.
+
+Measured across these changes on the three-endpoint case: the URL went
+**411 → 383 → 350 → 221** characters and the rendered code **85 → 77 → 73 → 61**
+columns, 43 → 31 rows.
+
+**Height is the binding constraint, so nothing is spent on it carelessly.**
+Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
+own quiet zone already separates it from the text, and on a 141×47 window the
+two blanks that used to be there were the whole difference between a code and a
+fallback. The last line carries no trailing newline, which would scroll the
+alternate screen and push the title off when the content exactly fills it.
+
+**The quiet zone adapts rather than giving up.** Four modules is tried first,
+then two, and only then does it fall back to the link. Two still scans, and
+losing the QR entirely over one row is the worse outcome. Measured on a
+141-column window: 47 rows renders at the full margin, 41 at the reduced one, 39
+falls back. The shortfall is reported against the **smallest** option tried, so
+it names the real gap rather than the gap to the margin we would have preferred.
+
+**Light modules are grey (`0x8C`), not white.** A white panel this size glares
+in a dark terminal, and the contrast a decoder needs — roughly 3:1 — leaves
+room: black on `0x8C` measures **6.3:1**, against 21:1 for white. That is still
+twice the floor, but close enough to it that going darker should be measured
+rather than guessed. Only the light modules move; dimming the dark ones would
+spend the same margin while making the ink itself less distinct.
+
+Verified end to end: the glyphs written to a pty were parsed back into modules
+and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL. That
+proves the *payload* survives the render; it says nothing about orientation, for
+which see the finder-pattern note above.
+
 ### Endpoint selection on the phone
 
 Try last-known-good first with a short timeout, then race the remaining
@@ -501,6 +595,12 @@ behaviour when it moves across the seam.
   Bleat may show that as a badge later. Not a Phase 1 concern.
 
 ## Open questions (resolve against the live host, then delete)
+
+- **The phone must resolve `herdrPath` on first connect** (`sh -lc 'command -v
+  herdr'`, verified working when host inspection landed) and store it on the
+  `PairedPeer`. Nothing does this yet; a peer paired today has `herdrPath == nil`
+  and any transport built from it would run a bare `herdr` that sshd's non-login
+  shell cannot find.
 
 - Does `agent prompt --wait` return a JSON result on completion, and what is
   the timeout behavior?

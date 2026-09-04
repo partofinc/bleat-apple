@@ -16,7 +16,13 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     public var username: String
     /// Ordered by preference. `endpoint(for:)` decides what to try.
     public var endpoints: [Endpoint]
-    public var herdrPath: String
+    /// Absolute path to `herdr`, resolved on the host.
+    ///
+    /// Optional because it no longer travels in the QR: the phone resolves it
+    /// with `command -v herdr` through a login shell on first connect, so it is
+    /// nil on a peer that has been paired but not yet used. A path that cannot
+    /// go stale is worth the round trip, and it saved 24 bytes of QR.
+    public var herdrPath: String?
     /// Whichever endpoint last completed a handshake. Tried first next time.
     public var lastGoodEndpoint: Endpoint?
     /// Session to select by default, once the user has picked one.
@@ -32,7 +38,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         name: String,
         username: String,
         endpoints: [Endpoint],
-        herdrPath: String,
+        herdrPath: String? = nil,
         lastGoodEndpoint: Endpoint? = nil,
         session: String? = nil
     ) {
@@ -50,8 +56,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
             hostKey: payload.hostKey,
             name: payload.name,
             username: payload.username,
-            endpoints: payload.endpoints,
-            herdrPath: payload.herdrPath
+            endpoints: payload.endpoints
         )
     }
 
@@ -75,7 +80,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         var merged = self
         merged.name = other.name
         merged.username = other.username
-        merged.herdrPath = other.herdrPath
+        // Keep a path we already resolved if the newer record has none.
+        merged.herdrPath = other.herdrPath ?? herdrPath
         for endpoint in other.endpoints where !merged.endpoints.contains(endpoint) {
             merged.endpoints.append(endpoint)
         }

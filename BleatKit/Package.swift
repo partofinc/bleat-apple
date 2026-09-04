@@ -64,6 +64,13 @@ let package = Package(
             dependencies: ["BleatKit", "BleatProcess"],
             swiftSettings: sharedSwiftSettings
         ),
+        // macOS-only, like the target it covers. `BleatProcess` compiles to
+        // nothing on iOS, and so does this.
+        .testTarget(
+            name: "BleatProcessTests",
+            dependencies: ["BleatProcess", "BleatKit"],
+            swiftSettings: sharedSwiftSettings
+        ),
         .testTarget(
             name: "BleatKitTests",
             dependencies: ["BleatKit"],

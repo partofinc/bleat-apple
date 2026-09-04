@@ -22,9 +22,14 @@ struct PairingPayloadTests {
                 Endpoint(host: "2a00:f3c:5ad0:0:c29:6db5:4a49:dc53", port: 2222),
             ],
             enrollmentSeed: Data(repeating: 0xA7, count: 32),
-            hostKey: Self.hostKey,
-            herdrPath: "/opt/homebrew/bin/herdr"
+            hostKey: Self.hostKey
         )
+    }
+
+    private func mutated(_ transform: (inout Data) -> Void) throws -> String {
+        var wire = try PairingWire.encode(sample())
+        transform(&wire)
+        return "bleat://pair?d=" + PairingPayload.base64URLEncode(wire)
     }
 
     @Test("a payload survives the trip through a QR string")
@@ -39,37 +44,39 @@ struct PairingPayloadTests {
     func seedRebuildsKey() throws {
         let pair = SSHKeyPair()
         let payload = PairingPayload(
-            name: "n", username: "u",
-            endpoints: [Endpoint(host: "h")],
-            enrollmentSeed: pair.rawRepresentation,
-            hostKey: "ssh-ed25519 AAAAx", herdrPath: "/bin/herdr"
-        )
+            name: "n", username: "u", endpoints: [Endpoint(host: "h.local")],
+            enrollmentSeed: pair.rawRepresentation, hostKey: Self.hostKey)
         let decoded = try PairingPayload(urlString: try payload.urlString())
         #expect(try decoded.enrollmentKey().fingerprint == pair.fingerprint)
     }
 
-    /// Every byte in the QR is modules, and modules decide whether it scans at
-    /// arm's length. A raw seed is ~44 base64 characters where an OpenSSH PEM
-    /// would be ~600, and this asserts that budget rather than trusting it.
-    ///
-    /// The threshold is a QR version, not a round number. Measured against
-    /// `CIQRCodeGenerator` at correction level M: 403 bytes produces version
-    /// 12, 500 produces 14, 600 produces 15. The four-endpoint sample below is
-    /// about as large as a real host gets, so capping at 512 keeps a realistic
-    /// payload at version 14 or under — still comfortable to scan across a
-    /// desk. Blowing this budget means the format grew; re-measure before
-    /// raising it.
+    /// Every byte in the QR is modules, and modules are terminal rows the user
+    /// may not have. The budget is measured, not guessed: with the binary wire
+    /// format the four-endpoint sample below is well under 300 characters,
+    /// which is a version 9-10 code at correction L. Blowing this means the
+    /// format grew — re-measure before raising it.
     @Test("a realistic payload stays small enough to scan easily")
     func staysSmall() throws {
         let text = try sample().urlString()
-        #expect(text.count <= 512, "pairing URL grew to \(text.count) characters")
+        #expect(text.count <= 300, "pairing URL grew to \(text.count) characters")
+    }
+
+    /// Structure is not free here. JSON keys, quotes and braces were about
+    /// forty characters and base64 then inflated the whole thing by a third;
+    /// both ends of this format ship together, so there is nothing to negotiate
+    /// and no reason to pay for self-description.
+    @Test("the binary form carries little beyond the two keys")
+    func binaryIsCompact() throws {
+        let wire = try PairingWire.encode(sample())
+        // 3-byte header + 32-byte seed + 32-byte key is irreducible.
+        #expect(wire.count >= 67)
+        #expect(wire.count < 200, "wire grew to \(wire.count) bytes")
     }
 
     @Test("the URL uses a scheme the system camera can hand to the app")
     func urlShape() throws {
         let text = try sample().urlString()
         #expect(text.hasPrefix("bleat://pair?d="))
-        // base64url only: no +, / or = to be mangled in transit.
         let encoded = text.replacingOccurrences(of: "bleat://pair?d=", with: "")
         #expect(!encoded.contains("+") && !encoded.contains("/") && !encoded.contains("="))
     }
@@ -77,79 +84,125 @@ struct PairingPayloadTests {
     @Test("something that is not a Bleat code is distinguished from a broken one")
     func notAPairingCode() {
         for text in ["https://herdr.dev", "WIFI:S:home;T:WPA;P:x;;", "", "bleat://other?d=aaaa"] {
-            #expect(throws: PairingError.notAPairingCode) {
-                try PairingPayload(urlString: text)
-            }
+            #expect(throws: PairingError.notAPairingCode) { try PairingPayload(urlString: text) }
         }
     }
 
     @Test("a damaged code is rejected, never half-decoded")
     func malformed() {
-        for text in [
-            "bleat://pair",                       // no payload
-            "bleat://pair?d=",                    // empty payload
-            "bleat://pair?d=not-base64-@@@",
-            "bleat://pair?d=" + PairingPayload.base64URLEncode(Data("{}".utf8)),
-        ] {
-            #expect(throws: PairingError.malformedPairingCode) {
-                try PairingPayload(urlString: text)
-            }
+        for text in ["bleat://pair", "bleat://pair?d=", "bleat://pair?d=not-base64-@@@"] {
+            #expect(throws: PairingError.malformedPairingCode) { try PairingPayload(urlString: text) }
         }
     }
 
-    /// Half-understanding a newer code is worse than refusing it: a later
-    /// version may move the enrollment key or change what the fingerprint
-    /// covers, and both are load-bearing for security.
-    @Test("a newer format is refused rather than partially read")
+    /// The scenario the version guard exists for. A newer payload may move the
+    /// enrollment key or change what the host key covers, so it is named as a
+    /// version problem rather than reported as damage — which would tell the
+    /// user to scan again, forever.
+    @Test("a newer format reports its version rather than looking damaged")
     func unsupportedVersion() throws {
-        let text = try sample(version: 99).urlString()
-        #expect(throws: PairingError.unsupportedVersion(99)) {
-            try PairingPayload(urlString: text)
+        let url = try mutated { $0[0] = 99 }
+        #expect(throws: PairingError.unsupportedVersion(99)) { try PairingPayload(urlString: url) }
+    }
+
+    /// The version is the first byte, so even a payload with nothing else in it
+    /// is still identifiable as a version problem.
+    @Test("a version byte alone is enough to report the version")
+    func versionFromOneByte() {
+        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data([7]))
+        #expect(throws: PairingError.unsupportedVersion(7)) { try PairingPayload(urlString: url) }
+    }
+
+    /// The seed is a fixed 32 bytes, so a short one cannot silently yield a
+    /// weaker key.
+    @Test("a seed of the wrong length cannot be encoded")
+    func badSeedLength() {
+        let payload = PairingPayload(
+            name: "n", username: "u", endpoints: [Endpoint(host: "h.local")],
+            enrollmentSeed: Data(repeating: 1, count: 16), hostKey: Self.hostKey)
+        #expect(throws: PairingError.malformedPairingCode) { try PairingWire.encode(payload) }
+    }
+
+    /// A host key that will not parse could never be pinned, so a payload
+    /// carrying one is malformed rather than merely odd.
+    @Test("an unrecognised host key kind is rejected")
+    func badHostKeyRejected() throws {
+        let url = try mutated { $0[34] = 9 }   // byte 34 is the host key kind
+        #expect(throws: PairingError.malformedPairingCode) { try PairingPayload(urlString: url) }
+    }
+
+    @Test("a truncated payload is rejected rather than half-read")
+    func truncated() throws {
+        for keep in [1, 2, 10, 40, 60] {
+            let url = try mutated { $0 = $0.prefix(keep) }
+            #expect(throws: PairingError.self) { try PairingPayload(urlString: url) }
         }
     }
 
-    /// The scenario the version guard exists for, and the one it used to get
-    /// wrong: a v2 code that *moved* the enrollment key. Decoding first meant
-    /// dying on the missing field and reporting `malformedPairingCode`, which
-    /// tells the user to scan again — forever — instead of to update the app.
-    @Test("a newer format that moved a field still reports the version, not damage")
-    func unsupportedVersionBeatsMissingFields() {
-        let v2 = #"{"v":2,"n":"m","u":"r","e":["h.local"],"seed":"moved","h":"SHA256:a","p":"/bin/herdr"}"#
-        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data(v2.utf8))
-        #expect(throws: PairingError.unsupportedVersion(2)) {
-            try PairingPayload(urlString: url)
-        }
+    /// Extra bytes mean this is not the payload it claims to be. A partial read
+    /// that happened to line up would be worse than a refusal.
+    @Test("trailing bytes are rejected")
+    func trailingBytes() throws {
+        let url = try mutated { $0.append(contentsOf: [0, 0, 0]) }
+        #expect(throws: PairingError.malformedPairingCode) { try PairingPayload(urlString: url) }
     }
 
-    /// A v2 code that dropped every field but the version must still be
-    /// identifiable as a version problem.
-    @Test("a newer format carrying nothing else still reports the version")
-    func unsupportedVersionFromBareProbe() {
-        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data(#"{"v":7}"#.utf8))
-        #expect(throws: PairingError.unsupportedVersion(7)) {
-            try PairingPayload(urlString: url)
-        }
+    @Test("a payload with no endpoints is rejected")
+    func noEndpoints() throws {
+        let payload = PairingPayload(
+            name: "n", username: "u", endpoints: [],
+            enrollmentSeed: Data(repeating: 1, count: 32), hostKey: Self.hostKey)
+        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(try PairingWire.encode(payload))
+        #expect(throws: PairingError.malformedPairingCode) { try PairingPayload(urlString: url) }
+    }
+}
+
+@Suite("Host key on the wire")
+struct HostKeyWireTests {
+
+    private let openSSH =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBPdxsAyNEaNtfx47Futg4ERIBkkAsvtWfxnTeKq0jct"
+
+    /// The wire blob wraps the key in 19 bytes that say "ssh-ed25519" all over
+    /// again. In a QR every byte is modules, so only the 32-byte key travels.
+    @Test("an ed25519 key round-trips through its bare 32 bytes")
+    func rawKeyRoundTrip() throws {
+        let parsed = try #require(SSHPublicKeyLine(line: openSSH))
+        let raw = try #require(parsed.ed25519RawKey)
+        #expect(raw.count == 32)
+        let rebuilt = try #require(SSHPublicKeyLine.ed25519(rawKey: raw))
+        #expect(rebuilt.openSSHForm == openSSH)
+        #expect(rebuilt.fingerprint == parsed.fingerprint)
     }
 
-    @Test("a seed that is not 32 bytes is malformed")
-    func badSeedLength() throws {
-        var json = try JSONSerialization.jsonObject(
-            with: try JSONEncoder().encode(sample())) as! [String: Any]
-        json["k"] = PairingPayload.base64URLEncode(Data(repeating: 1, count: 16))
-        let data = try JSONSerialization.data(withJSONObject: json)
-        #expect(throws: PairingError.malformedPairingCode) {
-            try PairingPayload(urlString: "bleat://pair?d=" + PairingPayload.base64URLEncode(data))
-        }
+    @Test("the algorithm name is absent from the encoded payload")
+    func algorithmNotOnTheWire() throws {
+        let payload = PairingPayload(
+            name: "n", username: "u", endpoints: [Endpoint(host: "h.local")],
+            enrollmentSeed: Data(repeating: 3, count: 32), hostKey: openSSH)
+        #expect(!(try PairingWire.encode(payload)).contains(Data("ssh-ed25519".utf8)))
     }
 
-    @Test("an endpoint that will not parse fails the whole payload")
-    func badEndpoint() throws {
-        var json = try JSONSerialization.jsonObject(
-            with: try JSONEncoder().encode(sample())) as! [String: Any]
-        json["e"] = ["rawillkair.local", "herdr.dev:99999"]
-        let data = try JSONSerialization.data(withJSONObject: json)
-        #expect(throws: PairingError.malformedPairingCode) {
-            try PairingPayload(urlString: "bleat://pair?d=" + PairingPayload.base64URLEncode(data))
-        }
+    @Test("a non-ed25519 key has no bare form and travels as its blob")
+    func otherAlgorithmsKeepTheirBlob() throws {
+        var blob = Data([0, 0, 0, 19])
+        blob.append(Data("ecdsa-sha2-nistp256".utf8))
+        blob.append(Data([0, 0, 0, 4]))
+        blob.append(Data([1, 2, 3, 4]))
+        let key = try #require(SSHPublicKeyLine(blob: blob))
+        #expect(key.algorithm == "ecdsa-sha2-nistp256")
+        #expect(key.ed25519RawKey == nil)
+
+        // And it survives a payload round-trip through the blob branch.
+        let payload = PairingPayload(
+            name: "n", username: "u", endpoints: [Endpoint(host: "h.local")],
+            enrollmentSeed: Data(repeating: 4, count: 32), hostKey: key.openSSHForm)
+        #expect(try PairingPayload(urlString: try payload.urlString()).hostKey == key.openSSHForm)
+    }
+
+    @Test("a key of the wrong length cannot be rebuilt")
+    func rejectsWrongLength() {
+        #expect(SSHPublicKeyLine.ed25519(rawKey: Data(repeating: 1, count: 31)) == nil)
+        #expect(SSHPublicKeyLine.ed25519(rawKey: Data()) == nil)
     }
 }

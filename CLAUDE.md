@@ -246,6 +246,35 @@ The QR carries a **single-use enrollment key** instead:
 5. The tool confirms the swap and exits; on timeout or abort it removes the
    temporary line itself. The temporary key is never reused.
 
+**Dropping the key when nobody redeems it needs three layers**, because no
+in-process cleanup is complete (verified 4 Sept 2026, all four paths exercised
+against a scratch `HOME`):
+
+| how pairing ends | what removes the key |
+|---|---|
+| normal exit, or an error | `defer` |
+| Ctrl-C, `SIGTERM`, `SIGHUP` | `DispatchSourceSignal`, exit 130 |
+| `SIGKILL`, panic, power cut | **nothing can run** — see below |
+
+The third row is why the line carries sshd options:
+`restrict,expiry-time="<UTC>Z" <key> bleat-enroll-<id>`.
+
+- `expiry-time` makes **sshd** refuse the key once the moment passes, which
+  holds however the tool died. Verified against a real sshd: accepted before,
+  `Permission denied` after. UTC with a `Z` suffix, since a local-time deadline
+  would shift under DST.
+- `restrict` drops forwarding, X11 and PTY. Exec channels still work, which is
+  all pairing needs — also verified against a real sshd.
+- The deadline gets a 60s grace beyond the tool's own window, so a phone that
+  connects a second before the end is not expired mid-swap.
+- Every `bleat pair` **sweeps** stale `bleat-enroll-*` lines first, since a
+  previous run killed outright could not. The sweep requires the `-enroll-`
+  infix and so cannot touch a paired device's key.
+
+**Redemption means a *new* device key appeared**, not that any exists. A host
+with a phone already paired has a device key from the start, so the weaker test
+would turn any disappearance of the enrollment line into a false success.
+
 Two properties this buys that trust-on-first-use does not: the durable key is
 generated on the device and is never transmitted anywhere, and the host key is
 pinned **out-of-band** rather than trusted on first sight. Exposure of the

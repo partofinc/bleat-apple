@@ -56,6 +56,70 @@ public enum AuthorizedKeys {
     public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: "enroll", id: id) }
     public static func deviceMarker(id: String) -> Marker? { Marker(kind: "device", id: id) }
 
+    /// The `authorized_keys` line for a single-use enrollment key.
+    ///
+    /// Two option prefixes carry the safety, and both are enforced by **sshd**
+    /// rather than by Bleat:
+    ///
+    /// - `restrict` turns off port forwarding, agent forwarding, X11, PTY and
+    ///   user rc. Exec channels still work, which is all pairing needs —
+    ///   verified against a real sshd.
+    /// - `expiry-time` makes sshd refuse the key outright once the moment
+    ///   passes. This is the layer that matters: a signal handler cannot run
+    ///   after `SIGKILL`, and nothing runs after a power cut, so without a
+    ///   host-enforced deadline an abandoned enrollment key would sit in
+    ///   `authorized_keys` forever. Verified: sshd accepts the key before the
+    ///   time and answers `Permission denied` after it.
+    ///
+    /// The timestamp is UTC with a `Z` suffix, which sshd accepts, because a
+    /// local-time deadline would shift under DST.
+    public static func enrollmentLine(
+        publicKeyLine: String,
+        marker: Marker,
+        expiresAt: Date
+    ) -> String {
+        let stamp = expiryStamp(expiresAt)
+        return #"restrict,expiry-time="\#(stamp)" \#(publicKeyLine) \#(marker.value)"#
+    }
+
+    /// `YYYYMMDDHHMMSSZ` — the UTC form sshd accepts.
+    static func expiryStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMddHHmmss'Z'"
+        return formatter.string(from: date)
+    }
+
+    /// Lists the marker of every Bleat device key in the file, one per line.
+    ///
+    /// Pairing succeeds when a **new** one appears, not when any exists: a host
+    /// with a phone already paired has a device key from the start, so
+    /// "a device key is present" would be true before the new phone did
+    /// anything and would turn any disappearance of the enrollment line into a
+    /// false success.
+    public static func listDeviceMarkersCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-device-[A-Za-z0-9._-]+$")
+        return "grep -o -E -- \(pattern) \(path) 2>/dev/null | tr -d '[:blank:]' || true"
+    }
+
+    /// Removes **every** Bleat enrollment key, whoever left it.
+    ///
+    /// Run before minting a new one. In-process cleanup cannot be complete:
+    /// `SIGKILL` and power loss leave no chance to tidy up, so a previous run's
+    /// key can outlive it. `expiry-time` already makes such a key unusable, but
+    /// unusable is not the same as gone — this keeps the file honest, and means
+    /// a user reading their own `authorized_keys` sees only keys that mean
+    /// something.
+    ///
+    /// Device keys are untouched: the pattern requires the `-enroll-` infix.
+    public static func sweepEnrollmentsCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-enroll-[A-Za-z0-9._-]+$")
+        return "f=\(path); [ -f \"$f\" ] || exit 0; t=$(mktemp) && "
+            + "{ grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" "
+            + "&& cat \"$t\" > \"$f\" && rm -f \"$t\""
+    }
+
     /// Appends a key, creating `~/.ssh` with the permissions sshd insists on
     /// and guaranteeing the new entry starts on its own line.
     ///

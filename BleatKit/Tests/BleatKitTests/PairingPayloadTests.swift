@@ -52,13 +52,19 @@ struct PairingPayloadTests {
     /// arm's length. A raw seed is ~44 base64 characters where an OpenSSH PEM
     /// would be ~600, and this asserts that budget rather than trusting it.
     ///
-    /// The threshold is a QR version, not a round number. Measured against
-    /// `CIQRCodeGenerator` at correction level M: 403 bytes produces version
-    /// 12, 500 produces 14, 600 produces 15. The four-endpoint sample below is
-    /// about as large as a real host gets, so capping at 512 keeps a realistic
-    /// payload at version 14 or under — still comfortable to scan across a
-    /// desk. Blowing this budget means the format grew; re-measure before
-    /// raising it.
+    /// The threshold is a QR size, not a round number, and it is measured
+    /// against a **real payload**. An earlier version of this comment quoted
+    /// versions measured with a string of `A`s, which QR encodes in
+    /// alphanumeric mode at 5.5 bits per character; a `bleat://` URL is
+    /// lowercase and punctuated, so it encodes in byte mode at 8 bits and
+    /// comes out about 12 modules larger for the same length. Measured with
+    /// `CIQRCodeGenerator` at correction level M and a 4-module quiet zone,
+    /// the four-endpoint sample below is 442 characters and renders 89 modules
+    /// wide — 45 terminal rows in half-blocks.
+    ///
+    /// Capping at 512 keeps that from growing silently. It is already large
+    /// enough that `bleat pair` falls back to printing the link on a short
+    /// terminal, so anything that pushes it further is worth noticing.
     @Test("a realistic payload stays small enough to scan easily")
     func staysSmall() throws {
         let text = try sample().urlString()

@@ -387,6 +387,43 @@ show why. Only the stable `secured` address is kept.
 `bleat inspect` prints the whole list with each endpoint's reach, which is the
 first thing to run when pairing misbehaves.
 
+### Displaying the QR
+
+`CIQRCodeGenerator` on macOS; Linux is still deliberately undecided, and only
+the generator would change — `QRMatrix` and its renderer are in `BleatKit` and
+are already portable.
+
+- **Draw on the alternate screen** (`\e[?1049h`), never the normal one. A QR on
+  the normal screen stays in scrollback, which iTerm2 persists to disk and tmux
+  keeps in history, so the enrollment key would outlive the pairing somewhere
+  nobody thinks to clear. Restoring is part of `Cleanup`, not a `defer`, because
+  `exit` skips defers and the cancel path exits — a cancelled pairing that left
+  the alternate screen up would hide the user's shell until they typed `reset`.
+- **Half-blocks, two module rows per line.** Terminal cells are about twice as
+  tall as wide, so one module per cell doubles the height and many scanners
+  refuse it.
+- **Set black-on-white explicitly.** The block glyphs carry the *foreground*
+  colour as ink, so an unstyled render is inverted on a dark theme.
+- **`CIQRCodeGenerator` gives a 1-module quiet zone** and the spec wants 4, so
+  three more are added. Its bitmap origin is bottom-left while row 0 is the top,
+  so rows are read back reversed — a QR is not symmetric, and getting that
+  backwards yields a plausible-looking code that scans as garbage.
+- **Not a TTY means no QR**: a pipe or a redirect gets the link only.
+
+**Size, measured with a real payload (5 Sept 2026).** An earlier note quoted
+versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
+bits per character, while a `bleat://` URL is lowercase and punctuated and so
+encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
+The four-endpoint payload is ~442 characters and renders **89 modules wide, 45
+terminal rows** at correction M with a 4-module quiet zone. That does not fit an
+80×24 window, so `bleat pair` checks the size and falls back to printing the
+link, naming the size needed. Sending the host key as a raw blob rather than the
+OpenSSH string was measured and saves only 16 characters — not worth the format
+change.
+
+Verified end to end: the glyphs written to a pty were parsed back into modules
+and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.
+
 ### Endpoint selection on the phone
 
 Try last-known-good first with a short timeout, then race the remaining

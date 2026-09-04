@@ -1,3 +1,4 @@
+import BleatKit
 import Foundation
 
 /// Runs `herdr` as a child process on this machine.
@@ -47,33 +48,12 @@ public struct LocalProcessTransport: HerdrTransport {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            throw Self.error(command: args, exitCode: process.terminationStatus, stderr: stderr)
+            throw HerdrError.fromStderr(command: args, exitCode: process.terminationStatus, stderr: stderr)
         }
         return stdout
     }
 
     public func openStream(_ args: [String]) async throws -> any HerdrStream {
         try LocalProcessStream(executable: executable, args: args, environment: childEnvironment)
-    }
-
-    /// Builds a `HerdrError`, preferring the structured body.
-    ///
-    /// On failure herdr writes `{"id":…,"error":{"code","message"}}` to
-    /// **stderr**, not stdout, and exits non-zero.
-    static func error(command: [String], exitCode: Int32, stderr: Data) -> HerdrError {
-        let text = String(decoding: stderr, as: UTF8.self)
-        let body = stderr
-            .split(separator: 0x0A)
-            .lazy
-            .compactMap { try? JSONDecoder().decode(HerdrErrorEnvelope.self, from: Data($0)) }
-            .first?
-            .error
-        return HerdrError(
-            command: command,
-            exitCode: exitCode,
-            stderr: text,
-            code: body?.code,
-            message: body?.message
-        )
     }
 }

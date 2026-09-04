@@ -35,6 +35,30 @@ public struct HerdrError: Error, Sendable, Equatable {
     }
 }
 
+extension HerdrError {
+    /// Builds an error from a failed `herdr` invocation, preferring the
+    /// structured body.
+    ///
+    /// On failure herdr writes `{"id":…,"error":{"code","message"}}` to
+    /// **stderr**, not stdout, and exits non-zero.
+    public static func fromStderr(command: [String], exitCode: Int32, stderr: Data) -> HerdrError {
+        let text = String(decoding: stderr, as: UTF8.self)
+        let body = stderr
+            .split(separator: 0x0A)
+            .lazy
+            .compactMap { try? JSONDecoder().decode(HerdrErrorEnvelope.self, from: Data($0)) }
+            .first?
+            .error
+        return HerdrError(
+            command: command,
+            exitCode: exitCode,
+            stderr: text,
+            code: body?.code,
+            message: body?.message
+        )
+    }
+}
+
 extension HerdrError: CustomStringConvertible {
     public var description: String {
         let detail = message ?? stderr.trimmingCharacters(in: .whitespacesAndNewlines)

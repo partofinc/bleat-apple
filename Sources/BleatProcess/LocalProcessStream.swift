@@ -1,3 +1,4 @@
+import BleatKit
 import Foundation
 
 /// A long-lived `herdr` child process presented as a `HerdrStream`.
@@ -57,7 +58,7 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
                 continuation.finish()
             } else {
                 continuation.finish(
-                    throwing: LocalProcessTransport.error(
+                    throwing: HerdrError.fromStderr(
                         command: args,
                         exitCode: process.terminationStatus,
                         stderr: stderrBuffer.current

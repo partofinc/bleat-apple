@@ -155,7 +155,7 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
             }
         } catch let failure as SSHClient.CommandFailed {
             // herdr writes its error envelope to stderr and exits non-zero.
-            throw LocalProcessTransport.error(
+            throw HerdrError.fromStderr(
                 command: args,
                 exitCode: Int32(clamping: failure.exitCode),
                 stderr: stderr

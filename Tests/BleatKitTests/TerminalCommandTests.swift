@@ -35,6 +35,16 @@ struct TerminalCommandTests {
         #expect(json["rows"] as? Int == 40)
     }
 
+    @Test("scroll needs both direction and lines")
+    func scroll() throws {
+        // The host rejects a scroll without `lines`:
+        //   invalid json command: missing field `lines`
+        let json = try encode(.scroll(direction: .up, lines: 3))
+        #expect(json["type"] as? String == "terminal.scroll")
+        #expect(json["direction"] as? String == "up")
+        #expect(json["lines"] as? Int == 3)
+    }
+
     @Test("release carries nothing but its type")
     func release() throws {
         let json = try encode(.release)

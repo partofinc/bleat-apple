@@ -115,10 +115,20 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
     (`ESC[?2026h`). Never strip or interpret it.
   - Read-only alternative: `herdr terminal session observe <target>`, same
     `--cols`/`--rows`. Cannot disturb the current input owner.
-  - **stdin records are still unverified** (`terminal.input`, `terminal.resize`,
-    `terminal.scroll`, `terminal.release`). They are absent from
-    `api schema --json`, and confirming them requires owning input on a pane.
-    `TerminalCommand` encodes the assumed shape and is marked as such.
+  - stdin accepts **exactly four** record types (verified on a scratch pane in
+    an isolated session; the host names them itself when it rejects one):
+    - `{"type":"terminal.input","text":"…"}` or `{"…","bytes":<base64>}`
+    - `{"type":"terminal.resize","cols":N,"rows":M}` — both required
+    - `{"type":"terminal.scroll","direction":"up"|"down","lines":N}` — both
+      required; there is **no** `offset_from_bottom` field here
+    - `{"type":"terminal.release"}`
+  - **Bad input is ignored, not fatal.** An unknown variant or a missing field
+    produces `herdr: terminal session control input ignored: …` on stderr and
+    the stream stays alive. Drain stderr: it is the only explanation you get.
+  - Attaching emits more than one frame; do not assume exactly one.
+- **Errors go to stderr, not stdout, with a non-zero exit.** A failing command
+  writes `{"id":…,"error":{"code","message"}}` to **stderr** and exits 1;
+  stdout is empty. Parse `HerdrError` from stderr — never from stdout.
 - **`api schema --json` does not cover the terminal stream.** It has exactly
   five schemas — `request`, `success_response`, `event`, `subscription_event`,
   `error_response` — describing the socket API only. The NDJSON stream protocol
@@ -183,11 +193,27 @@ renderer. If it looks right there, SwiftTerm will render it in Phase 2.
 
 ## Open questions (resolve against the live host, then delete)
 
-- Whether `terminal session control` exits cleanly on `terminal.release` or
-  needs the channel closed. Blocked on verifying the stdin protocol.
-- The exact stdin record shapes (`terminal.input` / `resize` / `scroll` /
-  `release`). Needs a scratch pane we own so no live agent loses input.
 - Does `agent prompt --wait` return a JSON result on completion, and what is
   the timeout behavior?
-- Capturing a `blocked` and a `done` agent row into `Fixtures/`.
-- Whether delta frames (`full: false`) differ in shape from the initial replay.
+- Capturing a `blocked` and a `done` agent row into `Fixtures/`. Only `idle`,
+  `working` and `unknown` have been seen live so far.
+- Whether the host ever sends a non-`terminal.frame` record on stdout. Only
+  frames have been observed; `TerminalRecord.unknown` covers the rest.
+
+Resolved (4 Sept 2026): `terminal.frame` shape and the absence of a cursor
+field; `agent list` needing no join; the four stdin record types; and
+`terminal.release` — the host closes the stream and the command **exits 0**, so
+release is the clean detach and the channel need not be killed.
+
+## Testing against a live host
+
+`herdr` runs on the dev Mac, so Phase 1 does not need SSH to be exercised.
+`LocalProcessTransport` spawns the CLI directly behind the same
+`HerdrTransport` seam that `SSHTransport` will sit behind.
+
+- Never experiment against the `work` session: it holds real agents, and
+  `--takeover` seizes input from whoever owns it.
+- Start an isolated session instead — it needs a pty, so:
+  `script -q /dev/null herdr session attach bleat-test &`. A client command
+  alone will not autostart a server; it returns `server_not_running`.
+- Tear it down with `herdr session stop <name>` when finished.

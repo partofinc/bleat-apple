@@ -1,25 +1,32 @@
 import Foundation
 
+/// Which way a scroll request moves the viewport.
+public enum ScrollDirection: String, Codable, Sendable {
+    case up, down
+}
+
 /// A record written to the stdin side of a `terminal session control` stream.
 ///
-/// - Warning: The wire shape here is taken from the project notes and has
-///   **not** yet been confirmed against a live host — the stream protocol is
-///   absent from `api schema --json`, and confirming it requires owning input
-///   on a pane. Verify against a scratch pane before relying on it.
+/// Verified against herdr 0.8.2 on a scratch pane: these four are the complete
+/// set the host accepts. An unrecognized record — or one missing a required
+/// field — is *ignored* with a warning on stderr; it does not close the stream.
 public enum TerminalCommand: Sendable {
     /// Literal text to type into the pane.
     case text(String)
-    /// Raw bytes, base64-encoded on the wire, for keys text cannot express.
+    /// Raw bytes, base64-encoded on the wire, for keys text cannot express
+    /// (arrows, Ctrl-C, and the rest of the Phase 3 accessory row).
     case bytes(Data)
     case resize(cols: Int, rows: Int)
-    case scroll(offsetFromBottom: Int)
-    /// Give up input ownership. Sent by `bleat attach` on Ctrl-].
+    /// Both fields are required by the host.
+    case scroll(direction: ScrollDirection, lines: Int)
+    /// Give up input ownership. The host closes the stream and the command
+    /// exits 0, so this is the clean detach path — no need to kill the channel.
     case release
 }
 
 extension TerminalCommand: Encodable {
     enum CodingKeys: String, CodingKey {
-        case type, text, bytes, cols, rows, offset_from_bottom
+        case type, text, bytes, cols, rows, direction, lines
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -35,9 +42,10 @@ extension TerminalCommand: Encodable {
             try c.encode("terminal.resize", forKey: .type)
             try c.encode(cols, forKey: .cols)
             try c.encode(rows, forKey: .rows)
-        case .scroll(let offset):
+        case .scroll(let direction, let lines):
             try c.encode("terminal.scroll", forKey: .type)
-            try c.encode(offset, forKey: .offset_from_bottom)
+            try c.encode(direction, forKey: .direction)
+            try c.encode(lines, forKey: .lines)
         case .release:
             try c.encode("terminal.release", forKey: .type)
         }

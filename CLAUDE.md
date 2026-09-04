@@ -415,11 +415,22 @@ versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
 bits per character, while a `bleat://` URL is lowercase and punctuated and so
 encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
 The four-endpoint payload is ~442 characters and renders **89 modules wide, 45
-terminal rows** at correction M with a 4-module quiet zone. That does not fit an
-80×24 window, so `bleat pair` checks the size and falls back to printing the
-link, naming the size needed. Sending the host key as a raw blob rather than the
-OpenSSH string was measured and saves only 16 characters — not worth the format
-change.
+terminal rows** at correction M with a 4-module quiet zone; a three-endpoint one
+is 85×43. Sending the host key as a raw blob rather than the OpenSSH string was
+measured and saves only 16 characters — not worth the format change.
+
+**Height is the binding constraint, so nothing is spent on it carelessly.**
+Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
+own quiet zone already separates it from the text, and on a 141×47 window the
+two blanks that used to be there were the whole difference between a code and a
+fallback. The last line carries no trailing newline, which would scroll the
+alternate screen and push the title off when the content exactly fills it.
+
+**The quiet zone adapts rather than giving up.** Four modules is tried first,
+then two, and only then does it fall back to the link. Two still scans, and
+losing the QR entirely over one row is the worse outcome. Measured on a
+141-column window: 47 rows renders at the full margin, 45 at the reduced one, 43
+falls back and says how many rows short it is.
 
 Verified end to end: the glyphs written to a pty were parsed back into modules
 and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.

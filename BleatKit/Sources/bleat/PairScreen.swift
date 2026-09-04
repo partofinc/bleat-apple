@@ -34,18 +34,30 @@ enum PairScreen {
 
     /// Lines of chrome drawn around the QR, kept in one place so the fit check
     /// and the drawing cannot disagree.
-    static let chromeRows = 6
+    ///
+    /// Three: title, host key, footer. There are deliberately no blank spacer
+    /// rows — the QR's own white quiet zone already separates it from the text,
+    /// and on a 141×47 window the two blanks this used to spend were the entire
+    /// difference between showing the code and falling back to a link.
+    static let chromeRows = 3
 
     /// Whether a matrix will fit, given the terminal.
     static func fits(_ matrix: QRMatrix, in terminal: (columns: Int, rows: Int)) -> Bool {
         matrix.size <= terminal.columns && matrix.renderedRows + chromeRows <= terminal.rows
     }
 
+    /// Rows a matrix needs in total, including chrome.
+    static func rowsNeeded(_ matrix: QRMatrix) -> Int { matrix.renderedRows + chromeRows }
+
     /// Reason a QR was not drawn, phrased for the user.
     static func tooSmallMessage(_ matrix: QRMatrix, _ terminal: (columns: Int, rows: Int)) -> String {
-        "This window is \(terminal.columns)×\(terminal.rows); the code needs "
-            + "\(matrix.size)×\(matrix.renderedRows + chromeRows). Resize and run again, "
-            + "or send the link above to the phone and open it there."
+        let needed = rowsNeeded(matrix)
+        let short = needed > terminal.rows
+            ? "\(needed - terminal.rows) row\(needed - terminal.rows == 1 ? "" : "s") taller"
+            : "\(matrix.size - terminal.columns) column(s) wider"
+        return "This window is \(terminal.columns)×\(terminal.rows); the code needs "
+            + "\(matrix.size)×\(needed) — \(short). Resize and run again, or send the "
+            + "link above to the phone and open it there."
     }
 
     static func write(_ text: String) {
@@ -62,13 +74,15 @@ enum PairScreen {
         write(showCursor + leaveAlternate)
     }
 
+    /// Draws exactly `rowsNeeded(matrix)` lines, with no trailing newline.
+    ///
+    /// A trailing newline on the last line scrolls the alternate screen by one
+    /// when the content exactly fills it, which pushes the title off the top —
+    /// so the QR appears to have moved and the first row of quiet zone is lost.
     static func draw(matrix: QRMatrix, title: String, subtitle: String, footer: String) {
-        var out = clear + "  " + title + "\n"
-        out += "  " + subtitle + "\n\n"
-        for line in matrix.terminalLines() {
-            out += line + "\n"
-        }
-        out += "\n  " + footer + "\n"
+        var out = clear + title + "\n" + subtitle + "\n"
+        out += matrix.terminalLines().joined(separator: "\n")
+        out += "\n" + footer
         write(out)
     }
 }

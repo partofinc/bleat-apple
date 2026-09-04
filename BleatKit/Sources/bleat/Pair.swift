@@ -92,9 +92,25 @@ enum Pair {
         let subtitle = "host key \(report.hostKeyFingerprint ?? report.hostKey)"
         let footer = "Scan with the phone's camera — valid for \(describe(window)). Ctrl-C cancels."
 
-        if let matrix = QRCodeGenerator.matrix(for: url),
-           PairScreen.isInteractive,
-           let terminal = PairScreen.size(),
+        // The spec asks for a four-module quiet zone and scanners use it to
+        // find the symbol, so it is tried first. Two still scans in practice,
+        // and two modules is the difference between showing a code and showing
+        // none on a window only a row or two short — losing the QR entirely is
+        // the worse outcome.
+        let terminal = PairScreen.isInteractive ? PairScreen.size() : nil
+        let matrix: QRMatrix? = {
+            guard let terminal else { return QRCodeGenerator.matrix(for: url) }
+            for quiet in [3, 1] {
+                if let candidate = QRCodeGenerator.matrix(for: url, quietZone: quiet),
+                   PairScreen.fits(candidate, in: terminal) {
+                    return candidate
+                }
+            }
+            return QRCodeGenerator.matrix(for: url)
+        }()
+
+        if let matrix,
+           let terminal,
            PairScreen.fits(matrix, in: terminal) {
             PairScreen.enter()
             cleanup.screenEntered()
@@ -107,10 +123,7 @@ enum Pair {
             print(subtitle)
             print("")
             print(url)
-            if PairScreen.isInteractive,
-               let matrix = QRCodeGenerator.matrix(for: url),
-               let terminal = PairScreen.size(),
-               !PairScreen.fits(matrix, in: terminal) {
+            if let matrix, let terminal, !PairScreen.fits(matrix, in: terminal) {
                 print("")
                 print(PairScreen.tooSmallMessage(matrix, terminal))
             }

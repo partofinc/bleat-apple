@@ -19,6 +19,9 @@ final class PinningHostKeyValidator: NIOSSHClientServerAuthenticationDelegate, @
 
     var recordedFailure: (any Error)? { failure.current }
 
+    /// Clears the last failure so a fresh dial reports its own outcome.
+    func clearRecordedFailure() { failure.withLock { $0 = nil } }
+
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
         // "algorithm-id base64-key" — the same shape OpenSSH pins.
         let fingerprint = String(openSSHPublicKey: hostKey)

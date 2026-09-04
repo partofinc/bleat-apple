@@ -72,6 +72,10 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     }
 
     private func dial() async throws -> SSHClient {
+        // Stale state would otherwise report an old mismatch forever: after one
+        // host-key failure, every later dial — however it failed — would claim
+        // the key changed and send the user to edit known_hosts.
+        validator.clearRecordedFailure()
         do {
             return try await SSHClient.connect(
                 host: host.hostname,
@@ -90,6 +94,22 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
 
     /// Drops the connection. The next call reconnects.
     public func disconnect() async {
+        // Cancel first: a dial still in flight would otherwise install its
+        // client after this returns, leaving the transport connected when the
+        // caller asked for the opposite (iOS backgrounding does exactly this).
+        let pending = dialing.withLock { current -> Task<UnsafeTransfer<SSHClient>, any Error>? in
+            defer { current = nil }
+            return current
+        }
+        pending?.cancel()
+        if let connection = try? await pending?.value {
+            try? await connection.value.close()
+        }
+        await invalidate()
+    }
+
+    /// Closes and forgets the current connection.
+    private func invalidate() async {
         let existing = client.withLock { current -> UnsafeTransfer<SSHClient>? in
             defer { current = nil }
             return current
@@ -137,11 +157,17 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
             // herdr writes its error envelope to stderr and exits non-zero.
             throw LocalProcessTransport.error(
                 command: args,
-                exitCode: Int32(failure.exitCode),
+                exitCode: Int32(clamping: failure.exitCode),
                 stderr: stderr
             )
+        } catch is CancellationError {
+            // The caller went away; the connection is still fine.
+            throw CancellationError()
         } catch {
-            client.withLock { $0 = nil }
+            // Discarding the reference is not enough: SSHClient has no deinit
+            // that closes the channel, so an unclosed session would linger on
+            // the host and the next call would dial a second one.
+            await invalidate()
             throw TransportError.connectionFailed(String(describing: error))
         }
         return stdout

@@ -49,19 +49,28 @@ public struct HostRegistry: Sendable {
         var entries = try all().filter { $0.name != entry.name }
         entries.append(entry)
         entries.sort { $0.name < $1.name }
+        try write(entries)
+    }
 
+    /// Removes a host.
+    ///
+    /// - Returns: `false` when no host had that name, so a typo can be reported
+    ///   rather than silently confirmed.
+    @discardableResult
+    public func remove(named name: String) throws -> Bool {
+        let entries = try all()
+        let remaining = entries.filter { $0.name != name }
+        guard remaining.count != entries.count else { return false }
+        try write(remaining)
+        return true
+    }
+
+    private func write(_ entries: [HostEntry]) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(entries).write(to: url, options: .atomic)
-    }
-
-    public func remove(named name: String) throws {
-        let entries = try all().filter { $0.name != name }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(entries).write(to: url, options: .atomic)

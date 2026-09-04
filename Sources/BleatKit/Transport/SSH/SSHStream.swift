@@ -4,29 +4,34 @@ import NIOCore
 
 /// One `herdr` exec channel presented as a long-lived `HerdrStream`.
 ///
-/// Citadel exposes a bidirectional exec only as a scoped closure, so the
-/// channel is held open inside a task and torn down when the remote command
-/// exits or `close()` cancels it.
+/// Citadel exposes a bidirectional exec only as a scoped closure, and it closes
+/// the channel when that closure returns. So the closure is held open by a gate
+/// and returns as soon as either the remote finishes or `close()` is called —
+/// returning is the only way to actually tear the channel down. Cancelling the
+/// task is not enough: a read-only `observe` never ends on its own, so without
+/// this an unattended read-only attach would hang forever.
 final class SSHStream: HerdrStream, @unchecked Sendable {
-    /// Whether the stdin writer exists yet, plus anyone waiting for it.
-    private enum Readiness {
-        case waiting([CheckedContinuation<Void, Never>])
-        case ready
-        case failed
-    }
-
     let output: AsyncThrowingStream<Data, any Error>
 
     private let writer = LockedBox<TTYStdinWriter?>(nil)
-    private let readiness = LockedBox<Readiness>(.waiting([]))
+    /// Opens once the stdin writer exists, or once the attempt has failed.
+    private let ready = AsyncGate()
+    /// Opened by `close()`, or by the remote ending on its own.
+    private let done = AsyncGate()
     private var task: Task<Void, Never>?
+    /// Held so `close()` can end the stream without waiting on Citadel's
+    /// channel teardown, which does not reliably return for a command that
+    /// never exits on its own (a read-only `observe`).
+    private let sink = LockedBox<AsyncThrowingStream<Data, any Error>.Continuation?>(nil)
 
     init(client: SSHClient, command: String, args: [String]) async {
         let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
         output = stream
+        sink.withLock { $0 = continuation }
 
         let writer = self.writer
-        let readiness = self.readiness
+        let ready = self.ready
+        let done = self.done
         // The client is not Sendable; the exec channel it opens is used only
         // inside this one task, so carrying it across is safe.
         let client = UnsafeTransfer(client)
@@ -39,50 +44,73 @@ final class SSHStream: HerdrStream, @unchecked Sendable {
             // the channel is already gone, so Citadel's teardown throws
             // "Already closed" — a clean detach, not a failure.
             let drained = LockedBox(false)
+            let failure = LockedBox<(any Error)?>(nil)
+
             do {
                 try await client.value.withExec(command) { inbound, outbound in
                     writer.withLock { $0 = outbound }
-                    Self.settle(readiness, to: .ready)
+                    ready.open()
 
-                    for try await chunk in inbound {
-                        switch chunk {
-                        case .stdout(let buffer):
-                            continuation.yield(Data(buffer.readableBytesView))
-                        case .stderr(let buffer):
-                            stderrBuffer.withLock { $0.append(contentsOf: buffer.readableBytesView) }
+                    // `inbound` is not Sendable and is consumed only here.
+                    let inbound = UnsafeTransfer(inbound)
+                    let pump = Task {
+                        do {
+                            for try await chunk in inbound.value {
+                                switch chunk {
+                                case .stdout(let buffer):
+                                    continuation.yield(Data(buffer.readableBytesView))
+                                case .stderr(let buffer):
+                                    stderrBuffer.withLock { $0.append(contentsOf: buffer.readableBytesView) }
+                                }
+                            }
+                            drained.withLock { $0 = true }
+                        } catch is CancellationError {
+                            // close() asked us to stop; not a failure.
+                        } catch {
+                            failure.withLock { $0 = error }
                         }
+                        done.open()
                     }
-                    drained.withLock { $0 = true }
+
+                    // Whichever comes first: the remote ending, or a close.
+                    await done.wait()
+                    pump.cancel()
                 }
-                Self.settle(readiness, to: .failed)   // release any late waiter
-                continuation.finish()
-            } catch is CancellationError {
-                Self.settle(readiness, to: .failed)
-                continuation.finish()
-            } catch let failure as SSHClient.CommandFailed {
-                Self.settle(readiness, to: .failed)
-                continuation.finish(
-                    throwing: LocalProcessTransport.error(
-                        command: args,
-                        exitCode: Int32(failure.exitCode),
-                        stderr: stderrBuffer.current
-                    )
-                )
             } catch {
-                Self.settle(readiness, to: .failed)
-                if drained.current {
-                    // The stream ended normally; only the teardown complained.
-                    continuation.finish()
+                // Returning from `perform` closes an already-closed channel
+                // when the remote exited first; that throw is not a failure.
+                if !drained.current, failure.current == nil, !done.isOpen {
+                    failure.withLock { $0 = error }
+                }
+            }
+
+            ready.open()          // release anyone still waiting on a writer
+            done.open()
+            writer.withLock { $0 = nil }
+
+            if let error = failure.current {
+                if let failed = error as? SSHClient.CommandFailed {
+                    continuation.finish(
+                        throwing: LocalProcessTransport.error(
+                            command: args,
+                            exitCode: Int32(clamping: failed.exitCode),
+                            stderr: stderrBuffer.current
+                        )
+                    )
                 } else {
                     continuation.finish(throwing: TransportError.connectionFailed(String(describing: error)))
                 }
+            } else {
+                continuation.finish()
             }
         }
     }
 
     func send(_ data: Data) async throws {
-        await waitUntilReady()
-        guard let outbound = writer.current else { throw TransportError.channelClosed }
+        await ready.wait()
+        guard !done.isOpen, let outbound = writer.current else {
+            throw TransportError.channelClosed
+        }
         do {
             try await outbound.write(ByteBuffer(bytes: data))
         } catch {
@@ -91,36 +119,18 @@ final class SSHStream: HerdrStream, @unchecked Sendable {
     }
 
     func close() async {
-        // The host exits on its own after `terminal.release`; give it a beat
-        // before cancelling so the clean path stays the common one.
-        for _ in 0..<20 where task?.isCancelled == false {
-            if case .failed = readiness.current { break }
+        // After `terminal.release` the host exits on its own; give it a brief
+        // moment so the clean path stays the common one, then force the issue.
+        for _ in 0..<20 {
+            if done.isOpen { break }
             try? await Task.sleep(for: .milliseconds(50))
         }
+        done.open()
+        // End the stream ourselves rather than awaiting the task: tearing the
+        // channel down can outlive the detach, and callers are iterating
+        // `output` right now. finish() is idempotent, so the task's own call
+        // is harmless.
+        sink.withLock { $0?.finish(); $0 = nil }
         task?.cancel()
-        writer.withLock { $0 = nil }
-    }
-
-    // MARK: - Readiness
-
-    private static func settle(_ box: LockedBox<Readiness>, to value: Readiness) {
-        let waiters = box.withLock { state -> [CheckedContinuation<Void, Never>] in
-            guard case .waiting(let pending) = state else { return [] }
-            state = value
-            return pending
-        }
-        for waiter in waiters { waiter.resume() }
-    }
-
-    private func waitUntilReady() async {
-        await withCheckedContinuation { continuation in
-            let resumeNow = readiness.withLock { state -> Bool in
-                guard case .waiting(var pending) = state else { return true }
-                pending.append(continuation)
-                state = .waiting(pending)
-                return false
-            }
-            if resumeNow { continuation.resume() }
-        }
     }
 }

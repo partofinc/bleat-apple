@@ -23,10 +23,10 @@ struct PairedPeerTests {
     /// The whole reason identity is the host key: pairing the same machine
     /// again from a different network must add a way in, not a second peer.
     @Test("pairing again over a new network adds an endpoint, not a peer")
-    func mergeAddsEndpoints() {
+    func mergeAddsEndpoints() throws {
         let lan = peer(endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54")])
         let overTailscale = peer(endpoints: [Endpoint(host: "100.101.102.103")])
-        let merged = lan.merging(overTailscale)
+        let merged = try lan.merging(overTailscale)
 
         #expect(merged.id == lan.id)
         #expect(merged.endpoints.map(\.host) == ["rawillkair.local", "192.168.11.54", "100.101.102.103"])
@@ -35,27 +35,45 @@ struct PairedPeerTests {
     /// Pairing over Tailscale must not cost the peer its LAN addresses — those
     /// are the fast path when the phone comes home.
     @Test("merging never drops an existing endpoint")
-    func mergeKeepsOldEndpoints() {
+    func mergeKeepsOldEndpoints() throws {
         let lan = peer(endpoints: [Endpoint(host: "rawillkair.local")])
-        let merged = lan.merging(peer(endpoints: [Endpoint(host: "100.101.102.103")]))
+        let merged = try lan.merging(peer(endpoints: [Endpoint(host: "100.101.102.103")]))
         #expect(merged.endpoints.contains(Endpoint(host: "rawillkair.local")))
     }
 
     @Test("re-pairing from the same place does not duplicate endpoints")
-    func mergeIsIdempotent() {
+    func mergeIsIdempotent() throws {
         let original = peer(endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54")])
-        let merged = original.merging(original)
+        let merged = try original.merging(original)
         #expect(merged.endpoints == original.endpoints)
     }
 
     @Test("mutable details take the newer value, since the tool just read them off the host")
-    func mergeRefreshesDetails() {
+    func mergeRefreshesDetails() throws {
         let old = peer(endpoints: [Endpoint(host: "a")], name: "old", user: "olduser", herdr: "/old/herdr")
         let new = peer(endpoints: [Endpoint(host: "a")], name: "new", user: "newuser", herdr: "/new/herdr")
-        let merged = old.merging(new)
+        let merged = try old.merging(new)
         #expect(merged.name == "new")
         #expect(merged.username == "newuser")
         #expect(merged.herdrPath == "/new/herdr")
+    }
+
+    /// `merging` takes an argument built straight from a scanned QR, so a
+    /// mismatch has to reach the user as a message. A `precondition` here
+    /// would trap in release: scanning the wrong code would crash the app
+    /// rather than say the host key does not match.
+    @Test("merging across identities is a reportable error, not a trap")
+    func mergeRejectsDifferentHostKey() {
+        let mine = peer(endpoints: [Endpoint(host: "a")])
+        let other = PairedPeer(
+            hostKeyFingerprint: "SHA256:completely-different", name: "n", username: "u",
+            endpoints: [Endpoint(host: "b")], herdrPath: "/bin/herdr"
+        )
+        #expect(throws: PairingError.hostKeyMismatch(
+            expected: fingerprint, actual: "SHA256:completely-different"
+        )) {
+            try mine.merging(other)
+        }
     }
 
     @Test("a peer built from a payload carries its endpoints and identity")

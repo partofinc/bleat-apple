@@ -58,13 +58,18 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// path when the phone is home. Mutable details (name, username, herdr
     /// path) take the newer value, since the tool just read them off the host.
     ///
-    /// - Precondition: `other` describes the same host key. Merging across
-    ///   identities would silently graft one machine's addresses onto another.
-    public func merging(_ other: PairedPeer) -> PairedPeer {
-        precondition(
-            other.hostKeyFingerprint == hostKeyFingerprint,
-            "merging peers with different host keys: \(hostKeyFingerprint) vs \(other.hostKeyFingerprint)"
-        )
+    /// - Throws: `PairingError.hostKeyMismatch` when `other` describes a
+    ///   different host key. Merging across identities would graft one
+    ///   machine's addresses onto another, so it is refused — but as a
+    ///   reportable error, not a trap: `other` is built straight from a scanned
+    ///   QR, and a mismatched scan must show the user a message rather than
+    ///   crash the app.
+    public func merging(_ other: PairedPeer) throws -> PairedPeer {
+        guard other.hostKeyFingerprint == hostKeyFingerprint else {
+            throw PairingError.hostKeyMismatch(
+                expected: hostKeyFingerprint, actual: other.hostKeyFingerprint
+            )
+        }
         var merged = self
         merged.name = other.name
         merged.username = other.username

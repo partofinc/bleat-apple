@@ -88,6 +88,18 @@ struct EndpointParsingTests {
         #expect(Endpoint(host: "herdr.dev", port: 22).description == "herdr.dev:22")
     }
 
+    /// `description` *is* the wire format — `PairingPayload` encodes endpoints
+    /// as `map(\.description)`. Without the `CustomStringConvertible`
+    /// conformance, interpolation yields the synthesised reflection instead,
+    /// which will not parse back; for IPv6 that would reject a whole payload.
+    @Test("interpolation produces the wire format, not the synthesised reflection")
+    func interpolationIsTheWireFormat() throws {
+        let endpoint = Endpoint(host: "fe80::1", port: 2222)
+        #expect("\(endpoint)" == "[fe80::1]:2222")
+        #expect(String(describing: endpoint) == "[fe80::1]:2222")
+        #expect(Endpoint(string: "\(endpoint)") == endpoint)
+    }
+
     @Test("nonsense is rejected rather than guessed at")
     func rejects() {
         for text in ["", "   ", "herdr.dev:0", "herdr.dev:70000", "herdr.dev:port", "[fe80::1", "[]:22", ":22"] {

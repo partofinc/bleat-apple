@@ -5,7 +5,7 @@ import Foundation
 /// A peer is not an address (see `PairedPeer`), so endpoints are plural and
 /// ordered. The classification exists to stop the phone spending its timeout
 /// budget on addresses that provably cannot work from where it is standing.
-public struct Endpoint: Sendable, Hashable, Codable {
+public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// Hostname or literal address. IPv6 is stored bare, without brackets.
     public let host: String
     public let port: Int
@@ -48,6 +48,13 @@ public struct Endpoint: Sendable, Hashable, Codable {
     public var isUsableOffLink: Bool { reach != .lan }
 
     /// `host:port`, bracketing IPv6 so the result can be parsed back.
+    ///
+    /// This string **is** the wire format — `PairingPayload` encodes endpoints
+    /// as `map(\.description)` — so the `CustomStringConvertible` conformance
+    /// is load-bearing, not cosmetic. Without it `"\(endpoint)"` yields the
+    /// synthesised `Endpoint(host:port:)` reflection, which `Endpoint(string:)`
+    /// cannot parse back; for an IPv6 endpoint that would reject the whole
+    /// payload.
     public var description: String {
         host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
     }

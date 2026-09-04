@@ -45,16 +45,32 @@ extension PairingPayload {
             let data = Self.base64URLDecode(encoded)
         else { throw PairingError.malformedPairingCode }
 
-        let decoded: PairingPayload
+        // The version is checked here, off a minimal probe, rather than after
+        // a full decode. A v2 code may rename or move any other field — the
+        // enrollment key included — and decoding first would fail on the
+        // missing field and report `malformedPairingCode`, telling the user to
+        // scan again forever instead of to update the app.
+        guard let probe = try? JSONDecoder().decode(VersionProbe.self, from: data) else {
+            throw PairingError.malformedPairingCode
+        }
+        guard probe.version == Self.currentVersion else {
+            throw PairingError.unsupportedVersion(probe.version)
+        }
+
         do {
-            decoded = try JSONDecoder().decode(PairingPayload.self, from: data)
+            self = try JSONDecoder().decode(PairingPayload.self, from: data)
+        } catch let error as PairingError {
+            throw error
         } catch {
             throw PairingError.malformedPairingCode
         }
-        guard decoded.version == Self.currentVersion else {
-            throw PairingError.unsupportedVersion(decoded.version)
-        }
-        self = decoded
+    }
+
+    /// Reads nothing but `v`, so an otherwise unrecognisable payload can still
+    /// say which format it claims to be.
+    private struct VersionProbe: Decodable {
+        let version: Int
+        enum CodingKeys: String, CodingKey { case version = "v" }
     }
 
     // MARK: - base64url

@@ -104,6 +104,29 @@ struct PairingPayloadTests {
         }
     }
 
+    /// The scenario the version guard exists for, and the one it used to get
+    /// wrong: a v2 code that *moved* the enrollment key. Decoding first meant
+    /// dying on the missing field and reporting `malformedPairingCode`, which
+    /// tells the user to scan again — forever — instead of to update the app.
+    @Test("a newer format that moved a field still reports the version, not damage")
+    func unsupportedVersionBeatsMissingFields() {
+        let v2 = #"{"v":2,"n":"m","u":"r","e":["h.local"],"seed":"moved","h":"SHA256:a","p":"/bin/herdr"}"#
+        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data(v2.utf8))
+        #expect(throws: PairingError.unsupportedVersion(2)) {
+            try PairingPayload(urlString: url)
+        }
+    }
+
+    /// A v2 code that dropped every field but the version must still be
+    /// identifiable as a version problem.
+    @Test("a newer format carrying nothing else still reports the version")
+    func unsupportedVersionFromBareProbe() {
+        let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data(#"{"v":7}"#.utf8))
+        #expect(throws: PairingError.unsupportedVersion(7)) {
+            try PairingPayload(urlString: url)
+        }
+    }
+
     @Test("a seed that is not 32 bytes is malformed")
     func badSeedLength() throws {
         var json = try JSONSerialization.jsonObject(

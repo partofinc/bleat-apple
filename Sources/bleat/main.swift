@@ -1,27 +1,31 @@
 import BleatKit
 import Foundation
 
-// Phase 1 console tool. Transport is local-process for now; SSHTransport slots
-// in behind the same `HerdrTransport` without touching anything below.
-
 let usage = """
 bleat — native remote for Herdr (Phase 1)
 
-Usage:
-  bleat sessions                       named sessions on this host
-  bleat workspaces [--session NAME]    workspaces, by attention state
-  bleat agents     [--session NAME]    agents, blocked first
-  bleat attach <target> [--session NAME] [--takeover] [--cols N] [--rows M]
-  bleat schema     [--session NAME]    print api schema JSON
+Hosts:
+  bleat hosts add <name> <user@host[:port]> --key PATH [--herdr PATH] [--session NAME]
+  bleat hosts list
+  bleat hosts remove <name>
+
+Against a host (omit <host> to use the local herdr):
+  bleat sessions   [host]
+  bleat workspaces [host] [--session NAME]
+  bleat agents     [host] [--session NAME]
+  bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
+  bleat schema     [host]
 
 Ctrl-] detaches: sends terminal.release and exits cleanly.
 """
 
 struct Options {
     var session: String?
+    var keyPath: String?
+    var herdrPath: String?
     var takeover = false
-    var cols = 80
-    var rows = 24
+    var cols: Int?
+    var rows: Int?
     var positional: [String] = []
 }
 
@@ -29,11 +33,17 @@ func parse(_ argv: [String]) -> Options {
     var options = Options()
     var index = argv.startIndex
     while index < argv.endIndex {
+        func next() -> String? {
+            index += 1
+            return index < argv.endIndex ? argv[index] : nil
+        }
         switch argv[index] {
-        case "--session":  index += 1; options.session = index < argv.endIndex ? argv[index] : nil
+        case "--session":  options.session = next()
+        case "--key":      options.keyPath = next()
+        case "--herdr":    options.herdrPath = next()
         case "--takeover": options.takeover = true
-        case "--cols":     index += 1; options.cols = Int(index < argv.endIndex ? argv[index] : "") ?? 80
-        case "--rows":     index += 1; options.rows = Int(index < argv.endIndex ? argv[index] : "") ?? 24
+        case "--cols":     options.cols = next().flatMap(Int.init)
+        case "--rows":     options.rows = next().flatMap(Int.init)
         default:           options.positional.append(argv[index])
         }
         index += 1
@@ -46,15 +56,38 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+let registry = HostRegistry.standard()
+
+/// Resolves a leading positional into a saved host, if it names one.
+///
+/// With no host the local `herdr` is used, which is what makes the tool usable
+/// on the machine running Herdr without inventing a loopback SSH hop.
+func makeTransport(_ options: inout Options) throws -> any HerdrTransport {
+    guard let first = options.positional.first,
+          let entry = try registry.entry(named: first) else {
+        return LocalProcessTransport(session: options.session)
+    }
+    options.positional.removeFirst()
+    return SSHTransport(
+        host: try entry.host(),
+        privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath),
+        herdrPath: entry.herdrPath,
+        session: options.session ?? entry.session
+    )
+}
+
 let argv = Array(CommandLine.arguments.dropFirst())
 guard let command = argv.first else { print(usage); exit(0) }
-let options = parse(Array(argv.dropFirst()))
-
-let client = HerdrClient(
-    transport: LocalProcessTransport(session: options.session)
-)
+var options = parse(Array(argv.dropFirst()))
 
 do {
+    if command == "hosts" {
+        try Hosts.run(registry: registry, options: options)
+        exit(0)
+    }
+
+    let client = HerdrClient(transport: try makeTransport(&options))
+
     switch command {
     case "sessions":
         for session in try await client.sessions() {
@@ -80,8 +113,8 @@ do {
         try await Attach.run(
             client: client,
             target: target,
-            cols: options.cols,
-            rows: options.rows,
+            cols: options.cols ?? 80,
+            rows: options.rows ?? 24,
             takeover: options.takeover
         )
 
@@ -91,6 +124,8 @@ do {
     }
 } catch let error as HerdrError {
     fail("\(error)")
+} catch let error as TransportError {
+    fail("bleat: \(Describe.transport(error))")
 } catch {
     fail("bleat: \(error)")
 }

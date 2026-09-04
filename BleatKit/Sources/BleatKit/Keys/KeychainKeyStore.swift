@@ -11,7 +11,7 @@ public struct KeychainKeyStore: Sendable {
     private let service: String
     private let account: String
 
-    public init(service: String = "dev.herdr.bleat.ssh", account: String = "default") {
+    public init(service: String = "team.partof.bleat.ssh", account: String = "default") {
         self.service = service
         self.account = account
     }

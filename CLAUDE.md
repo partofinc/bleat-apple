@@ -36,8 +36,8 @@ local Swift package, the `.xcodeproj` holds only targets, and the app target is
 a thin shell.
 
 ```
-Bleat.xcodeproj             # (next PR)
-App/                        # @main App struct and little else (next PR)
+Bleat.xcodeproj             # one app target; sources join via a synchronized group
+App/                        # @main App struct and little else
 BleatKit/                   # the local Swift package
   Package.swift
   Sources/
@@ -46,7 +46,10 @@ BleatKit/                   # the local Swift package
       Protocol/             # NDJSON codec, frame/command types
       Model/                # Codable models for herdr JSON (from schema.json)
       Client/               # HerdrClient: typed API over a transport
-    BleatUI/                # SwiftUI shared between app targets
+      Keys/                 # device ed25519 key + Keychain storage
+    BleatUI/                # SwiftUI shared between app targets; MainActor by default
+      Context/              # AppContext, routers, stores
+      Views/                # screens
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
@@ -249,6 +252,10 @@ sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`
     history survives on `main`. Never `--squash` or `--rebase` unless asked for
     that specific PR.
   - Phase 1 landed directly on `main`; that was the exception, not the pattern.
+  - The repo keeps `deleteBranchOnMerge: false` **on purpose**. Auto-delete
+    would pull the base branch out from under a stacked PR the moment its
+    parent merged. Delete merged branches deliberately instead, once nothing
+    is stacked on them.
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

@@ -219,6 +219,16 @@ sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`
 
 ## Working style
 
+- **From Phase 2 on, work happens on branches and lands via pull requests.**
+  One branch per reviewable chunk, not one per phase. Never commit Phase 2+ work
+  directly to `main`.
+  - Branch from up-to-date `main`, e.g. `phase2/workspace-list-view`.
+  - Each PR is one coherent, reviewable change that builds and tests green on
+    its own; split anything that needs "and also" to describe it.
+  - Merge with `gh pr merge --merge` (a true merge commit) so the branch's
+    history survives on `main`. Never `--squash` or `--rebase` unless asked for
+    that specific PR.
+  - Phase 1 landed directly on `main`; that was the exception, not the pattern.
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

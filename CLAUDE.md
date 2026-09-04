@@ -271,6 +271,32 @@ The third row is why the line carries sshd options:
   previous run killed outright could not. The sweep requires the `-enroll-`
   infix and so cannot touch a paired device's key.
 
+**Both sides take a `mkdir` lock** around every mutating command, because
+removal is a read-modify-write while the phone concurrently appends — the lost
+update drops the phone's key, so it reports success and can never connect.
+Three details are load-bearing and each was found by testing, not by reading:
+
+- **Staleness is the lock's age, never how long a caller has waited.** Breaking
+  after N failed attempts looks equivalent and destroys mutual exclusion under
+  contention, because every waiter eventually reaches N and tears the lock from
+  a live holder. Measured with 200 concurrent appends against 200 removals: the
+  attempt-count version kept 16 of 200 keys and lost the user's own; by age, all
+  200 survive.
+- **A failed `mkdir` means contention only if the lock exists.** Otherwise the
+  directory is unwritable and retrying can never succeed — that spun forever on
+  an `~/.ssh` at mode 500. It now fails immediately, naming the cause.
+- **Locked commands must not call `exit`**, or the lock outlives them.
+
+**Cleanup has no "already done" latch.** A signal arriving between installing
+the handlers and installing the key finds nothing to remove, and a latch would
+mark itself done — then the key is installed a moment later and never removed.
+Observed: a cancel 0.6s in exited 130 while leaving the key behind. Removal is
+idempotent, so it always runs.
+
+**`exit()` does not run `defer`.** The cancel path therefore runs cleanup
+explicitly, and `Cleanup.run()` holds its lock across the shell call so a second
+caller waits rather than returning early into `exit`.
+
 **Redemption means a *new* device key appeared**, not that any exists. A host
 with a phone already paired has a device key from the start, so the weaker test
 would turn any disappearance of the enrollment line into a false success.

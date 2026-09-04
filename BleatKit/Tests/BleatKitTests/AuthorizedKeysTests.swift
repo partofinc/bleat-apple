@@ -191,6 +191,73 @@ struct EnrollmentKeyTests {
     /// not fail there.
     @Test("the sweep tolerates a missing authorized_keys")
     func sweepToleratesMissingFile() {
-        #expect(AuthorizedKeys.sweepEnrollmentsCommand().contains(#"[ -f "$f" ] || exit 0"#))
+        #expect(AuthorizedKeys.sweepEnrollmentsCommand().contains(#"if [ -f "$f" ]"#))
+    }
+}
+
+@Suite("authorized_keys locking")
+struct AuthorizedKeysLockTests {
+
+    /// Removal is a read-modify-write while the phone concurrently appends. If
+    /// the append lands between the read and the write-back it is lost — the
+    /// phone reports success and can never connect. That window is the one
+    /// `expiryGrace` deliberately keeps alive, so it is not hypothetical.
+    @Test("every mutating command takes the lock")
+    func mutatorsAreLocked() throws {
+        let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab12"))
+        for command in [
+            AuthorizedKeys.appendCommand(line: "ssh-ed25519 AAAA x"),
+            AuthorizedKeys.removeCommand(marker: marker),
+            AuthorizedKeys.sweepEnrollmentsCommand(),
+        ] {
+            #expect(command.contains("mkdir ~/.ssh/.bleat-lock"), "\(command.prefix(40))")
+            #expect(command.contains("rmdir ~/.ssh/.bleat-lock"))
+        }
+    }
+
+    /// Reads do not lock. A torn read can only make the enrollment marker look
+    /// absent, and redemption also requires a *new* device marker, which a torn
+    /// read cannot invent — so the worst case is one wasted poll.
+    @Test("read-only commands do not take the lock")
+    func readsAreUnlocked() throws {
+        let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab12"))
+        #expect(!AuthorizedKeys.containsCommand(marker: marker).contains(".bleat-lock"))
+        #expect(!AuthorizedKeys.listDeviceMarkersCommand().contains(".bleat-lock"))
+    }
+
+    /// The distinction that made the difference. Breaking the lock after N
+    /// failed attempts looks equivalent to breaking a stale one and is not:
+    /// under contention every waiter reaches N and tears the lock away from a
+    /// live holder. Measured with 200 concurrent appends against 200 removals,
+    /// the attempt-count version kept 16 of 200 keys and lost the user's own;
+    /// judging by age kept all 200.
+    @Test("staleness is judged by the lock's age, never by how long we waited")
+    func stalenessIsByAge() {
+        let command = AuthorizedKeys.sweepEnrollmentsCommand()
+        #expect(command.contains("-mmin +1"))
+        #expect(!command.contains("-ge 100"))
+    }
+
+    /// A failed `mkdir` means contention only if the lock is really there.
+    /// When it is not, the directory is unwritable and retrying can never
+    /// succeed — without this the tool spun forever on an `~/.ssh` at mode
+    /// 500, which is exactly the failure a user most needs told about.
+    @Test("an unwritable ~/.ssh fails fast instead of spinning")
+    func unwritableFailsFast() {
+        let command = AuthorizedKeys.appendCommand(line: "ssh-ed25519 AAAA x")
+        #expect(command.contains("if [ ! -d ~/.ssh/.bleat-lock ]"))
+        #expect(command.contains("exit 75"))
+        #expect(command.contains("is ~/.ssh writable?"))
+    }
+
+    /// The wrapper runs the command and then removes the lock, so an `exit`
+    /// inside would strand it for a minute.
+    @Test("locked commands use a conditional rather than an early exit")
+    func noEarlyExitInsideTheLock() throws {
+        let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab12"))
+        for command in [AuthorizedKeys.removeCommand(marker: marker), AuthorizedKeys.sweepEnrollmentsCommand()] {
+            #expect(command.contains(#"if [ -f "$f" ]"#))
+            #expect(!command.contains("|| exit 0"))
+        }
     }
 }

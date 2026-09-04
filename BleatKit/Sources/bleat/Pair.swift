@@ -33,10 +33,15 @@ enum Pair {
 
     static func run(options: Options) throws {
         let port = options.port ?? 22
-        let report = try HostInspector().inspect(
-            port: port,
-            extraEndpoints: options.endpoints.compactMap { Endpoint(string: $0, defaultPort: port) }
-        )
+        // `main.swift` already rejects a malformed --endpoint, so this re-parse
+        // cannot legitimately drop one. Checked rather than assumed: a silent
+        // `compactMap` would put a QR in front of the user that quietly lacks
+        // the one overlay address they asked for, and still look fine.
+        let extra = options.endpoints.compactMap { Endpoint(string: $0, defaultPort: port) }
+        guard extra.count == options.endpoints.count else {
+            throw PairingFailure("an --endpoint could not be resolved against port \(port)")
+        }
+        let report = try HostInspector().inspect(port: port, extraEndpoints: extra)
 
         guard !report.endpoints.isEmpty else {
             throw PairingFailure("no reachable address found for this host; pass one with --endpoint")
@@ -64,6 +69,13 @@ enum Pair {
         // Recorded before the phone can act, so redemption is judged on a new
         // key appearing rather than on any device key existing.
         let devicesBefore = deviceMarkers()
+        // Nothing to install if the user has already cancelled: the handler
+        // has run, and installing now would put a key in the file that only the
+        // deadline would remove.
+        guard !cleanup.wasSignalled else {
+            print("\nCancelled before the key was installed.")
+            exit(130)
+        }
         try shell(AuthorizedKeys.appendCommand(line: line), "installing the enrollment key")
 
         let payload = PairingPayload(
@@ -90,7 +102,13 @@ enum Pair {
             // there may be nothing left to remove; `cleanup` is idempotent.
             print("Paired. The phone installed its own key and the enrollment key is gone.")
         case .cancelled:
+            // `exit` below skips every `defer`, so cleanup is run explicitly.
+            // It is idempotent and blocks until whichever path started first
+            // has finished, so the key is gone before the process is.
+            cleanup.run()
             print("\nCancelled. The enrollment key has been removed.")
+            // 128 + SIGINT, the shell's convention for a signalled exit.
+            exit(130)
         case .timedOut:
             print("Timed out after \(describe(window)). The enrollment key has been removed.")
         }
@@ -124,7 +142,7 @@ enum Pair {
             let enrollmentGone = (try? shellOutput(AuthorizedKeys.containsCommand(marker: marker)))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) == "no"
             if enrollmentGone, !deviceMarkers().subtracting(knownDevices).isEmpty { return .redeemed }
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: 0.1)
         }
         return cleanup.wasSignalled ? .cancelled : .timedOut
     }
@@ -141,9 +159,18 @@ enum Pair {
     final class Cleanup: @unchecked Sendable {
         private let marker: AuthorizedKeys.Marker
         private let lock = NSLock()
-        private var done = false
         private var signalled = false
         private var sources: [DispatchSourceSignal] = []
+        /// A queue of its own, deliberately not `.main`.
+        ///
+        /// The poll loop blocks the main thread, and main-queue delivery
+        /// happens to survive that only because `Process.waitUntilExit()` spins
+        /// the run loop on each iteration. That is an accident of Foundation,
+        /// not a property of this code: drop the subprocess from the loop and
+        /// Ctrl-C would silently stop working, after the default disposition
+        /// has already been replaced by `SIG_IGN`. A private queue removes the
+        /// dependency entirely.
+        private let queue = DispatchQueue(label: "team.partof.bleat.pair.signals")
 
         init(marker: AuthorizedKeys.Marker) { self.marker = marker }
 
@@ -156,26 +183,40 @@ enum Pair {
         func installSignalHandlers() {
             for sig in [SIGINT, SIGTERM, SIGHUP] {
                 signal(sig, SIG_IGN)
-                let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+                let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
                 source.setEventHandler { [self] in
+                    // Removes the key immediately — waiting for the poll loop
+                    // to notice would leave it installed for up to a tick.
+                    // Reporting and the exit status are the caller's, because
+                    // two paths racing to print produced the message twice and
+                    // let main.swift's exit(0) beat this one's exit(130).
                     lock.withLock { signalled = true }
                     run()
-                    // The window is gone; leaving would only spin the poll loop.
-                    print("\nCancelled. The enrollment key has been removed.")
-                    exit(130)
                 }
                 source.resume()
                 sources.append(source)
             }
         }
 
+        /// Removes the key. Always — there is deliberately no "already done"
+        /// latch.
+        ///
+        /// A latch looks like an obvious optimisation and is a correctness
+        /// hole: a signal arriving between `installSignalHandlers` and the
+        /// append finds nothing to remove, marks itself done, and then the key
+        /// is installed a moment later and never removed again. Observed
+        /// directly — a cancel 0.6s in exited 130 while leaving the enrollment
+        /// key in the file. Removal is idempotent and takes milliseconds, so
+        /// running it twice costs nothing and running it once too few costs the
+        /// whole guarantee.
+        ///
+        /// The lock is held **across** the shell call, not just around a flag,
+        /// so a second caller waits for the first to finish rather than
+        /// returning early — and the caller that returns early is usually the
+        /// one about to `exit`, which skips every `defer`.
         func run() {
-            let shouldRun = lock.withLock {
-                if done { return false }
-                done = true
-                return true
-            }
-            guard shouldRun else { return }
+            lock.lock()
+            defer { lock.unlock() }
             _ = try? shellOutput(AuthorizedKeys.removeCommand(marker: marker))
         }
     }
@@ -196,19 +237,32 @@ enum Pair {
         catch { throw PairingFailure("\(what ?? "command") failed: \(error)") }
     }
 
+    /// Captures stderr and puts it in the error.
+    ///
+    /// CLAUDE.md's rule — never swallow stderr — earns its keep here: the
+    /// failures users actually hit are an unwritable `~/.ssh`, a full disk or a
+    /// failed `chmod`, and every one of them arrives as a bare non-zero status
+    /// with the explanation on stderr. Reporting "exit 1" alone leaves nothing
+    /// to act on.
     static func shellOutput(_ command: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
-        let out = Pipe()
+        let out = Pipe(), err = Pipe()
         process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
+        process.standardError = err
         process.standardInput = FileHandle.nullDevice
         try process.run()
+        // Read before waiting: a full pipe buffer would deadlock the child.
         let data = out.fileHandleForReading.readDataToEndOfFile()
+        let errorData = err.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw PairingFailure("exit \(process.terminationStatus)")
+            let detail = String(data: errorData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw PairingFailure(detail.isEmpty
+                ? "exit \(process.terminationStatus)"
+                : "exit \(process.terminationStatus): \(detail)")
         }
         return String(data: data, encoding: .utf8) ?? ""
     }

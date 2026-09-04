@@ -6,14 +6,9 @@ import SwiftUI
 /// `BleatKit` stays free of SwiftUI so the transport and domain layers can be
 /// linked by things that have no UI at all — the console tool today, an
 /// extension or widget later. Views belong here instead.
-public enum BleatUI {
-    /// Sort order for anything showing agents: attention first.
-    ///
-    /// Lives here rather than in a view so every list agrees.
-    public static func byAttention(_ agents: [Agent]) -> [Agent] {
-        agents.sorted { ($0.agentStatus, $0.paneID) < ($1.agentStatus, $1.paneID) }
-    }
-}
+///
+/// Ordering deliberately does **not** live here: `sortedByAttention()` is in
+/// `BleatKit` so the client and the views cannot disagree about it.
 
 extension AgentStatus {
     /// SF Symbol for a pane's state, used by the agent list and pane header.

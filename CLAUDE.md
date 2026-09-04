@@ -60,7 +60,10 @@ ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 against `#if` branches in `BleatKit` is what forces the split rather than a
 platform guard: anything that cannot compile for both platforms gets its own
 target, and the iOS app simply does not link it. Verify with
-`xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`.
+`cd BleatKit && xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`
+(the package is no longer at the repo root, so this fails from there). Use
+`-scheme bleat-Package` to compile every target at once, which is the check
+that actually catches a target the app would break on.
 
 **`BleatKit` stays free of SwiftUI**; shared views live in `BleatUI`. (Phase 1's
 note said "outside this package" — that predates the package having more than
@@ -79,7 +82,7 @@ separate target satisfies.)
   `HerdrStream` exposes `AsyncThrowingStream<Data, Error>` for stdout lines and
   `send(Data)` for stdin. Phase 4 adds a second transport without touching callers.
 - **Herdr JSON is the contract.** Models are generated/derived from
-  `Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
+  `BleatKit/Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
   re-capture the fixture and update the model. Unknown keys are ignored, never
   fatal.
 - **The pane stream is bytes, not text.** `terminal.frame` records carry base64
@@ -209,7 +212,7 @@ bleat sessions   [host]                   # named sessions
 bleat workspaces [host] [--session NAME]  # by attention state
 bleat agents     [host] [--session NAME]  # agents, blocked first
 bleat attach     [host] w1:p1 [--takeover] [--cols N] [--rows M]
-bleat schema     [host] > Fixtures/schema.json
+bleat schema     [host] > BleatKit/Fixtures/schema.json
 ```
 
 Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.

@@ -6,7 +6,7 @@ enum Fixture {
         URL(fileURLWithPath: #filePath)          // Tests/BleatKitTests/Fixtures.swift
             .deletingLastPathComponent()          // Tests/BleatKitTests
             .deletingLastPathComponent()          // Tests
-            .deletingLastPathComponent()          // repo root
+            .deletingLastPathComponent()          // package root (BleatKit/)
             .appendingPathComponent("Fixtures")
     }()
 

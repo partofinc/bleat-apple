@@ -65,7 +65,11 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// host and no port, while `[fe80::1]:22` is both. An unbracketed literal
     /// with more than one colon is therefore read as a whole address, matching
     /// how the console tool already parses `user@host`.
-    public init?(string: String) {
+    /// - Parameter defaultPort: Used when the string carries no port of its
+    ///   own. A user passing `--endpoint host` alongside `--port 2222` means
+    ///   that host on 2222; silently defaulting it to 22 produces an endpoint
+    ///   that looks right in the list and refuses every connection.
+    public init?(string: String, defaultPort: Int = 22) {
         let text = string.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return nil }
 
@@ -74,7 +78,7 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
             let inner = String(text[text.index(after: text.startIndex)..<close])
             guard !inner.isEmpty else { return nil }
             let rest = text[text.index(after: close)...]
-            if rest.isEmpty { self.init(host: inner); return }
+            if rest.isEmpty { self.init(host: inner, port: defaultPort); return }
             guard rest.hasPrefix(":"), let port = Int(rest.dropFirst()),
                   (1...65535).contains(port)
             else { return nil }
@@ -83,8 +87,8 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
         }
 
         let colons = text.filter { $0 == ":" }.count
-        if colons == 0 { self.init(host: text); return }
-        if colons > 1 { self.init(host: text); return }   // bare IPv6 literal
+        if colons == 0 { self.init(host: text, port: defaultPort); return }
+        if colons > 1 { self.init(host: text, port: defaultPort); return }   // bare IPv6 literal
         let parts = text.split(separator: ":", maxSplits: 1)
         guard parts.count == 2, !parts[0].isEmpty,
               let port = Int(parts[1]), (1...65535).contains(port)

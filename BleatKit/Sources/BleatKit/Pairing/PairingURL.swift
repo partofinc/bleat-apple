@@ -99,7 +99,9 @@ extension PairingPayload: Codable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let endpointStrings = try c.decode([String].self, forKey: .endpoints)
-        let endpoints = endpointStrings.compactMap(Endpoint.init(string:))
+        // The wire format always writes an explicit port (`description` emits
+        // one), so the default here is never reached for a well-formed payload.
+        let endpoints = endpointStrings.compactMap { Endpoint(string: $0) }
         guard endpoints.count == endpointStrings.count, !endpoints.isEmpty else {
             throw PairingError.malformedPairingCode
         }

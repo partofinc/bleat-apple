@@ -23,11 +23,16 @@ Against a host (omit <host> to use the local herdr):
   bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
   bleat schema     [host]
 
+Pairing:
+  bleat inspect [--port N] [--endpoint HOST[:PORT]]...
+
 Ctrl-] detaches: sends terminal.release and exits cleanly.
 """
 
 struct Options {
     var session: String?
+    var port: Int?
+    var endpoints: [String] = []
     var keyPath: String?
     var herdrPath: String?
     var takeover = false
@@ -51,6 +56,19 @@ func parse(_ argv: [String]) -> Options {
         case "--takeover": options.takeover = true
         case "--cols":     options.cols = next().flatMap(Int.init)
         case "--rows":     options.rows = next().flatMap(Int.init)
+        case "--port":     options.port = next().flatMap(Int.init)
+        // Overlays like Twingate never tell the host its own resolvable name,
+        // so those endpoints are supplied rather than detected.
+        case "--endpoint":
+            if let text = next() {
+                // Validated now for a prompt error, but kept as text: the
+                // default port is not known until --port has been seen, and it
+                // may appear after this flag.
+                guard Endpoint(string: text) != nil else {
+                    fail("not a valid endpoint: \(text)  (expected host, host:port or [v6]:port)")
+                }
+                options.endpoints.append(text)
+            }
         default:           options.positional.append(argv[index])
         }
         index += 1
@@ -102,6 +120,11 @@ var options = parse(Array(argv.dropFirst()))
 do {
     if command == "hosts" {
         try Hosts.run(registry: registry, options: options)
+        exit(0)
+    }
+
+    if command == "inspect" {
+        try Inspect.run(options: options)
         exit(0)
     }
 

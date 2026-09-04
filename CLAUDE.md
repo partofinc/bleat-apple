@@ -280,6 +280,36 @@ peer with two endpoints*, not two peers.
   - Twingate and similar overlays do not tell the host its own resolvable name.
     Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
 
+### Which host key the QR names (verified 4 Sept 2026)
+
+NIOSSH offers exactly `ssh-ed25519`, `ecdsa-sha2-nistp384`,
+`ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, in that order, and **the
+client's order wins** — `SSHKeyExchangeStateMachine` walks its own list and
+takes the first the server also offers. So on any host with an ed25519 host
+key, which is every modern OpenSSH, that is the key the phone sees, and its
+fingerprint is what belongs in the QR.
+
+Two consequences:
+
+- **NIOSSH does not speak `ssh-rsa` at all.** An RSA-only host cannot be
+  paired, and `bleat pair` should say so at the keyboard rather than hand out
+  a QR that fails on the phone.
+- A host commonly has four host keys (this Mac has dsa, ecdsa, ed25519, rsa).
+  Reading the wrong one yields a fingerprint that matches nothing, which
+  surfaces as a host key mismatch on every attempt.
+
+### Which local addresses are offered
+
+Only two of this Mac's ~30 addresses are usable endpoints. The filter drops
+loopback and AWDL (`lo0`, `awdl0`, `llw0`), link-local (`fe80::`, `169.254.`),
+`deprecated` addresses, and — the one that would otherwise bite — **`temporary`
+addresses**. Those are RFC 4941 privacy addresses and rotate by design, so
+pinning one gives a peer that works today and fails tomorrow with nothing to
+show why. Only the stable `secured` address is kept.
+
+`bleat inspect` prints the whole list with each endpoint's reach, which is the
+first thing to run when pairing misbehaves.
+
 ### Endpoint selection on the phone
 
 Try last-known-good first with a short timeout, then race the remaining

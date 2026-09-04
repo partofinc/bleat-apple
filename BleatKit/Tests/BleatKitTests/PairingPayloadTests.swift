@@ -42,7 +42,7 @@ struct PairingPayloadTests {
             name: "n", username: "u",
             endpoints: [Endpoint(host: "h")],
             enrollmentSeed: pair.rawRepresentation,
-            hostKey: "ssh-ed25519 AAAAx", herdrPath: "/bin/herdr"
+            hostKey: Self.hostKey, herdrPath: "/bin/herdr"
         )
         let decoded = try PairingPayload(urlString: try payload.urlString())
         #expect(try decoded.enrollmentKey().fingerprint == pair.fingerprint)
@@ -134,6 +134,33 @@ struct PairingPayloadTests {
         let url = "bleat://pair?d=" + PairingPayload.base64URLEncode(Data(#"{"v":7}"#.utf8))
         #expect(throws: PairingError.unsupportedVersion(7)) {
             try PairingPayload(urlString: url)
+        }
+    }
+
+    /// The QR carries the key's wire blob and nothing else — the algorithm is
+    /// the blob's own first field, so the text prefix would be 12 characters of
+    /// repetition. What comes back out is the exact OpenSSH string the pin is
+    /// compared against.
+    @Test("the host key travels as a blob and rebuilds its OpenSSH form")
+    func hostKeyRebuilds() throws {
+        let decoded = try PairingPayload(urlString: try sample().urlString())
+        #expect(decoded.hostKey == Self.hostKey)
+        #expect(decoded.hostKey.hasPrefix("ssh-ed25519 "))
+        // And the prefix really is absent from the wire.
+        let encoded = try String(data: JSONEncoder().encode(sample()), encoding: .utf8)
+        #expect(try #require(encoded).contains("ssh-ed25519") == false)
+    }
+
+    /// A host key that will not parse could never be pinned, so a payload
+    /// carrying one is malformed rather than merely odd.
+    @Test("an unparseable host key is rejected")
+    func badHostKeyRejected() throws {
+        var json = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(sample())) as! [String: Any]
+        json["h"] = "not-a-key"
+        let data = try JSONSerialization.data(withJSONObject: json)
+        #expect(throws: PairingError.malformedPairingCode) {
+            try PairingPayload(urlString: "bleat://pair?d=" + PairingPayload.base64URLEncode(data))
         }
     }
 

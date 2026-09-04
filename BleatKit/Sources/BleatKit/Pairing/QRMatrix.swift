@@ -49,12 +49,24 @@ public struct QRMatrix: Sendable, Equatable {
     /// Colours are set explicitly rather than left to the theme. The block
     /// glyphs carry the *foreground* colour as ink, so on a dark theme an
     /// unstyled render comes out inverted — readable by some scanners and not
-    /// others. Stating black-on-white removes the question.
+    /// others. Stating the colours removes the question.
+    ///
+    /// The light modules are a soft grey rather than pure white. A full-white
+    /// panel of this size is genuinely glaring in a dark terminal, and the
+    /// contrast that scanners need is already far exceeded: black on `0xC8`
+    /// still measures about 10:1, where a decoder wants roughly 3:1. Dimming
+    /// the *dark* modules instead would eat into that margin, so only the light
+    /// ones move.
     ///
     /// - Parameter colour: Set false for a plain-text grid, which is what tests
     ///   read and what a terminal without colour support gets.
+    public static let lightModule = 0xC8
+    public static let darkModule = 0x00
+
     public func terminalLines(colour: Bool = true) -> [String] {
-        let start = colour ? "\u{1B}[38;2;0;0;0m\u{1B}[48;2;255;255;255m" : ""
+        let dark = "\u{1B}[38;2;\(Self.darkModule);\(Self.darkModule);\(Self.darkModule)m"
+        let light = "\u{1B}[48;2;\(Self.lightModule);\(Self.lightModule);\(Self.lightModule)m"
+        let start = colour ? dark + light : ""
         let end = colour ? "\u{1B}[0m" : ""
         var lines: [String] = []
         lines.reserveCapacity(renderedRows)

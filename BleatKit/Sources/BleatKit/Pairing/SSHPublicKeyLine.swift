@@ -68,6 +68,19 @@ public struct SSHPublicKeyLine: Sendable, Equatable {
     /// Hashes the whole wire-format blob, as `SSHKeyPair.fingerprint` does.
     /// Hashing anything else yields a plausible `SHA256:` string that matches
     /// nothing the user can compare against, which is worse than no fingerprint.
+    /// Rebuilds a key from its wire blob alone.
+    ///
+    /// The algorithm is not extra information: it is the blob's own first
+    /// field, repeated in the text form. Reconstructing it here is what lets
+    /// the QR carry the blob only and still produce the exact OpenSSH string
+    /// the pin is compared against.
+    public init?(blob: Data) {
+        guard let algorithm = Self.firstField(of: blob) else { return nil }
+        self.algorithm = algorithm
+        self.blob = blob
+        self.comment = nil
+    }
+
     public var fingerprint: String {
         let digest = SHA256.hash(data: blob)
         let encoded = Data(digest).base64EncodedString()

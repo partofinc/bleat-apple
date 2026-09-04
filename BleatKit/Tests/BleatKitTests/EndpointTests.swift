@@ -85,7 +85,23 @@ struct EndpointParsingTests {
     @Test("IPv6 is bracketed in the description so a port stays unambiguous")
     func bracketsIPv6() {
         #expect(Endpoint(host: "fe80::1", port: 2222).description == "[fe80::1]:2222")
-        #expect(Endpoint(host: "herdr.dev", port: 22).description == "herdr.dev:22")
+        // Bracketed even without a port, or a bare literal would be ambiguous
+        // to anything reading it back.
+        #expect(Endpoint(host: "fe80::1").description == "[fe80::1]")
+    }
+
+    /// `:22` on every endpoint is three characters each, and the QR pays for
+    /// all of them. Omitting it is safe because `Endpoint(string:)` defaults to
+    /// 22, so the form still round-trips.
+    @Test("the default port is left out, and a non-default one is kept")
+    func omitsDefaultPort() {
+        #expect(Endpoint(host: "herdr.dev").description == "herdr.dev")
+        #expect(Endpoint(host: "herdr.dev", port: 2222).description == "herdr.dev:2222")
+        for endpoint in [Endpoint(host: "herdr.dev"), Endpoint(host: "fe80::1"),
+                         Endpoint(host: "herdr.dev", port: 2222),
+                         Endpoint(host: "fe80::1", port: 2222)] {
+            #expect(Endpoint(string: endpoint.description) == endpoint, "\(endpoint)")
+        }
     }
 
     /// `description` *is* the wire format — `PairingPayload` encodes endpoints

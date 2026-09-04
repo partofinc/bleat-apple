@@ -10,8 +10,14 @@ import Foundation
 /// matrix — padding, half-block rendering — lives in `BleatKit` and is shared.
 public enum QRCodeGenerator {
 
-    /// Error correction level. `.medium` recovers ~15% and is what the size
-    /// budget in `PairingPayloadTests` was measured against.
+    /// Error correction level.
+    ///
+    /// `.low` is the default, and for this medium it is the right one. The
+    /// higher levels buy recovery from damage — print wear, dirt, a crease, a
+    /// bad camera angle on a curled sticker. None of that exists here: the code
+    /// is drawn pixel-exact on a screen, scanned from a foot away, and gone
+    /// within minutes. The recovery is paid for in modules, and modules are
+    /// rows of terminal the user may not have.
     public enum Correction: String, Sendable {
         case low = "L", medium = "M", quartile = "Q", high = "H"
     }
@@ -20,7 +26,7 @@ public enum QRCodeGenerator {
     ///   emits one and the spec asks for four, so the default adds three.
     public static func matrix(
         for text: String,
-        correction: Correction = .medium,
+        correction: Correction = .low,
         quietZone: Int = 3
     ) -> QRMatrix? {
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }

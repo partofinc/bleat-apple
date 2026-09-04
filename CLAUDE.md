@@ -414,10 +414,24 @@ are already portable.
 versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
 bits per character, while a `bleat://` URL is lowercase and punctuated and so
 encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
-The four-endpoint payload is ~442 characters and renders **89 modules wide, 45
-terminal rows** at correction M with a 4-module quiet zone; a three-endpoint one
-is 85×43. Sending the host key as a raw blob rather than the OpenSSH string was
-measured and saves only 16 characters — not worth the format change.
+**Everything in the payload is paid for in modules, so three redundancies were
+removed** (measured on the three-endpoint case, 411 → 383 characters, rendering
+85×43 → **77×39**):
+
+- The host key travels as its **wire blob only**. The algorithm is the blob's
+  own first field, so the `ssh-ed25519 ` prefix was 12 characters of
+  repetition; `SSHPublicKeyLine(blob:)` rebuilds the exact OpenSSH string the
+  pin compares against.
+- Endpoints **omit port 22**. `Endpoint(string:)` defaults to it, so the form
+  still round-trips, and it was three characters per endpoint.
+- Correction level is **L, not M**. The higher levels buy recovery from print
+  wear, dirt and creases; this code is drawn pixel-exact on a screen, scanned
+  from a foot away, and gone in minutes. The recovery is paid for in rows the
+  user may not have.
+
+Remaining candidates, not taken: `herdrPath` (25 chars — the phone could run
+`command -v herdr` itself, at the cost of a round trip) and the display `name`
+(13 chars).
 
 **Height is the binding constraint, so nothing is spent on it carelessly.**
 Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
@@ -429,8 +443,14 @@ alternate screen and push the title off when the content exactly fills it.
 **The quiet zone adapts rather than giving up.** Four modules is tried first,
 then two, and only then does it fall back to the link. Two still scans, and
 losing the QR entirely over one row is the worse outcome. Measured on a
-141-column window: 47 rows renders at the full margin, 45 at the reduced one, 43
-falls back and says how many rows short it is.
+141-column window: 47 rows renders at the full margin, 41 at the reduced one, 39
+falls back. The shortfall is reported against the **smallest** option tried, so
+it names the real gap rather than the gap to the margin we would have preferred.
+
+**Light modules are grey (`0xC8`), not white.** A full-white panel this size
+glares in a dark terminal. Black on `0xC8` is still about 10:1 where a decoder
+wants roughly 3:1; dimming the *dark* modules instead would eat that margin, so
+only the light ones moved.
 
 Verified end to end: the glyphs written to a pty were parsed back into modules
 and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.

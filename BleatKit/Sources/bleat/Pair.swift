@@ -106,7 +106,10 @@ enum Pair {
                     return candidate
                 }
             }
-            return QRCodeGenerator.matrix(for: url)
+            // Nothing fitted: report against the *smallest* option that was
+            // tried, so "3 rows taller" is the real shortfall rather than the
+            // shortfall against the margin we would have preferred.
+            return QRCodeGenerator.matrix(for: url, quietZone: 1)
         }()
 
         if let matrix,

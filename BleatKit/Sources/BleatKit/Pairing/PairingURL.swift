@@ -66,6 +66,18 @@ extension PairingPayload {
         }
     }
 
+    static func decodeHostKey(from container: KeyedDecodingContainer<CodingKeys>) throws -> String {
+        let text = try container.decode(String.self, forKey: .hostKey)
+        // A blob on its own, which is what this format writes.
+        if let blob = base64URLDecode(text), let key = SSHPublicKeyLine(blob: blob) {
+            return key.openSSHForm
+        }
+        // A full `<algorithm> <base64>` string still decodes, so a payload
+        // written by hand or by an older build is not rejected.
+        if let key = SSHPublicKeyLine(line: text) { return key.openSSHForm }
+        throw PairingError.malformedPairingCode
+    }
+
     /// Reads nothing but `v`, so an otherwise unrecognisable payload can still
     /// say which format it claims to be.
     private struct VersionProbe: Decodable {
@@ -99,8 +111,8 @@ extension PairingPayload: Codable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let endpointStrings = try c.decode([String].self, forKey: .endpoints)
-        // The wire format always writes an explicit port (`description` emits
-        // one), so the default here is never reached for a well-formed payload.
+        // Endpoints are written without a port when it is the default, so the
+        // default here is load-bearing rather than a fallback.
         let endpoints = endpointStrings.compactMap { Endpoint(string: $0) }
         guard endpoints.count == endpointStrings.count, !endpoints.isEmpty else {
             throw PairingError.malformedPairingCode
@@ -115,7 +127,7 @@ extension PairingPayload: Codable {
             username: try c.decode(String.self, forKey: .username),
             endpoints: endpoints,
             enrollmentSeed: seed,
-            hostKey: try c.decode(String.self, forKey: .hostKey),
+            hostKey: try Self.decodeHostKey(from: c),
             herdrPath: try c.decode(String.self, forKey: .herdrPath)
         )
     }
@@ -127,7 +139,13 @@ extension PairingPayload: Codable {
         try c.encode(username, forKey: .username)
         try c.encode(endpoints.map(\.description), forKey: .endpoints)
         try c.encode(Self.base64URLEncode(enrollmentSeed), forKey: .enrollmentSeed)
-        try c.encode(hostKey, forKey: .hostKey)
+        // Only the blob: `SSHPublicKeyLine(blob:)` reads the algorithm back out
+        // of it, so the text prefix would be 12 characters of repetition.
+        if let parsed = SSHPublicKeyLine(line: hostKey) {
+            try c.encode(Self.base64URLEncode(parsed.blob), forKey: .hostKey)
+        } else {
+            try c.encode(hostKey, forKey: .hostKey)
+        }
         try c.encode(herdrPath, forKey: .herdrPath)
     }
 }

@@ -56,8 +56,14 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// cannot parse back; for an IPv6 endpoint that would reject the whole
     /// payload.
     public var description: String {
-        host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
+        let bracketed = host.contains(":") ? "[\(host)]" : host
+        // `:22` on every endpoint is three characters each of pure redundancy,
+        // and the QR pays for all of them. `Endpoint(string:)` defaults to 22,
+        // so this still round-trips.
+        return port == Self.defaultPort ? bracketed : "\(bracketed):\(port)"
     }
+
+    public static let defaultPort = 22
 
     /// Parses `host`, `host:port`, `[v6]` or `[v6]:port`.
     ///

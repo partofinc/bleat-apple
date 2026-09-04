@@ -34,11 +34,12 @@ push notifications, watchOS, Live Activities, multi-account badges.
 ```
 Package.swift
 Sources/
-  BleatKit/                 # library, no platform-specific imports
+  BleatKit/                 # library, no platform-specific imports; builds for iOS
     Transport/              # HerdrTransport protocol + SSHTransport (Citadel)
     Protocol/               # NDJSON codec, frame/command types
     Model/                  # Codable models for herdr JSON (from schema.json)
     Client/                 # HerdrClient: typed API over a transport
+  BleatProcess/             # macOS-only: LocalProcessTransport, spawns `herdr`
   bleat/                    # executable target, macOS console tool
 Tests/
   BleatKitTests/            # unit tests: codec, models, fake transport
@@ -46,6 +47,12 @@ Fixtures/
   schema.json               # output of `herdr api schema --json` (source of truth)
   *.json                    # captured CLI outputs for decoding tests
 ```
+
+**`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule
+against `#if` branches in `BleatKit` is what forces the split rather than a
+platform guard: anything that cannot compile for both platforms gets its own
+target, and the iOS app simply does not link it. Verify with
+`xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`.
 
 `BleatKit` must compile for macOS and iOS with no `#if` platform branches.
 Anything that needs UIKit/SwiftUI/SwiftTerm lives outside this package (Phase 2).

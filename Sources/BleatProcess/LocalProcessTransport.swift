@@ -1,3 +1,10 @@
+// `Foundation.Process` does not exist on iOS, and a whole-package iOS build
+// compiles every target whether or not it is vended as a product. The `#if` ban
+// in CLAUDE.md applies to BleatKit, whose whole point is being platform-free;
+// this target is macOS-only by definition, so guarding it is the honest way to
+// say so rather than a workaround.
+#if os(macOS)
+import BleatKit
 import Foundation
 
 /// Runs `herdr` as a child process on this machine.
@@ -47,7 +54,7 @@ public struct LocalProcessTransport: HerdrTransport {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            throw Self.error(command: args, exitCode: process.terminationStatus, stderr: stderr)
+            throw HerdrError.fromStderr(command: args, exitCode: process.terminationStatus, stderr: stderr)
         }
         return stdout
     }
@@ -55,25 +62,6 @@ public struct LocalProcessTransport: HerdrTransport {
     public func openStream(_ args: [String]) async throws -> any HerdrStream {
         try LocalProcessStream(executable: executable, args: args, environment: childEnvironment)
     }
-
-    /// Builds a `HerdrError`, preferring the structured body.
-    ///
-    /// On failure herdr writes `{"id":…,"error":{"code","message"}}` to
-    /// **stderr**, not stdout, and exits non-zero.
-    static func error(command: [String], exitCode: Int32, stderr: Data) -> HerdrError {
-        let text = String(decoding: stderr, as: UTF8.self)
-        let body = stderr
-            .split(separator: 0x0A)
-            .lazy
-            .compactMap { try? JSONDecoder().decode(HerdrErrorEnvelope.self, from: Data($0)) }
-            .first?
-            .error
-        return HerdrError(
-            command: command,
-            exitCode: exitCode,
-            stderr: text,
-            code: body?.code,
-            message: body?.message
-        )
-    }
 }
+
+#endif

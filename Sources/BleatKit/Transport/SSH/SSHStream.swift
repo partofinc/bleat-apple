@@ -91,7 +91,7 @@ final class SSHStream: HerdrStream, @unchecked Sendable {
             if let error = failure.current {
                 if let failed = error as? SSHClient.CommandFailed {
                     continuation.finish(
-                        throwing: LocalProcessTransport.error(
+                        throwing: HerdrError.fromStderr(
                             command: args,
                             exitCode: Int32(clamping: failed.exitCode),
                             stderr: stderrBuffer.current

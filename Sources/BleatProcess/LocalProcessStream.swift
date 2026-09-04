@@ -1,3 +1,10 @@
+// `Foundation.Process` does not exist on iOS, and a whole-package iOS build
+// compiles every target whether or not it is vended as a product. The `#if` ban
+// in CLAUDE.md applies to BleatKit, whose whole point is being platform-free;
+// this target is macOS-only by definition, so guarding it is the honest way to
+// say so rather than a workaround.
+#if os(macOS)
+import BleatKit
 import Foundation
 
 /// A long-lived `herdr` child process presented as a `HerdrStream`.
@@ -57,7 +64,7 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
                 continuation.finish()
             } else {
                 continuation.finish(
-                    throwing: LocalProcessTransport.error(
+                    throwing: HerdrError.fromStderr(
                         command: args,
                         exitCode: process.terminationStatus,
                         stderr: stderrBuffer.current
@@ -93,3 +100,5 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
         if process.isRunning { process.terminate() }
     }
 }
+
+#endif

@@ -16,7 +16,13 @@ let package = Package(
             name: "BleatKit",
             dependencies: [.product(name: "Citadel", package: "Citadel")]
         ),
-        .executableTarget(name: "bleat", dependencies: ["BleatKit"]),
+        // macOS-only: spawns `herdr` as a child process. Deliberately NOT a
+        // product — a library product carries no platform filter, so exporting
+        // it would put "BleatProcess" in Xcode's picker for the iOS app and
+        // reintroduce the very build failure this target exists to prevent.
+        // Only `bleat`, which is macOS-only itself, depends on it.
+        .target(name: "BleatProcess", dependencies: ["BleatKit"]),
+        .executableTarget(name: "bleat", dependencies: ["BleatKit", "BleatProcess"]),
         .testTarget(name: "BleatKitTests", dependencies: ["BleatKit"]),
     ]
 )

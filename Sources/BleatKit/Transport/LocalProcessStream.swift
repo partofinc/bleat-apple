@@ -6,7 +6,8 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
     private let inPipe = Pipe()
     private let outPipe = Pipe()
     private let errPipe = Pipe()
-    private let closed = LockedBox(false)
+    /// Set before we terminate the child, so its exit is not read as a crash.
+    private let closing = LockedBox(false)
 
     let output: AsyncThrowingStream<Data, any Error>
 
@@ -39,6 +40,7 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
 
         let outHandle = outPipe.fileHandleForReading
         let errHandle = errPipe.fileHandleForReading
+        let closing = self.closing
         process.terminationHandler = { process in
             outHandle.readabilityHandler = nil
             errHandle.readabilityHandler = nil
@@ -47,8 +49,11 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
             if !tail.isEmpty { continuation.yield(tail) }
 
             // `terminal.release` makes the host close the stream and exit 0,
-            // so a zero status is a clean detach, not a failure.
-            if process.terminationStatus == 0 {
+            // so a zero status is a clean detach. A non-zero status is also
+            // clean when we are the ones who terminated it: a read-only
+            // `observe` never exits on its own, so detaching means signalling
+            // it, and SIGTERM must not be reported as a failure.
+            if process.terminationStatus == 0 || closing.current {
                 continuation.finish()
             } else {
                 continuation.finish(
@@ -74,11 +79,11 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
     }
 
     func close() async {
-        let alreadyClosed = closed.withLock { was -> Bool in
+        let alreadyClosing = closing.withLock { was -> Bool in
             defer { was = true }
             return was
         }
-        guard !alreadyClosed else { return }
+        guard !alreadyClosing else { return }
 
         try? inPipe.fileHandleForWriting.close()
         // Give the host a moment to exit on its own after a release.

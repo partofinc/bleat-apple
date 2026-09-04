@@ -58,22 +58,34 @@ func fail(_ message: String) -> Never {
 
 let registry = HostRegistry.standard()
 
-/// Resolves a leading positional into a saved host, if it names one.
+/// Builds the transport for a resolved host.
 ///
 /// With no host the local `herdr` is used, which is what makes the tool usable
 /// on the machine running Herdr without inventing a loopback SSH hop.
-func makeTransport(_ options: inout Options) throws -> any HerdrTransport {
-    guard let first = options.positional.first,
-          let entry = try registry.entry(named: first) else {
-        return LocalProcessTransport(session: options.session)
+func makeTransport(_ selection: HostSelection, session: String?) throws -> any HerdrTransport {
+    switch selection {
+    case .local:
+        return LocalProcessTransport(session: session)
+    case .saved(let entry):
+        return SSHTransport(
+            host: try entry.host(),
+            privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath),
+            herdrPath: entry.herdrPath,
+            session: session ?? entry.session
+        )
     }
-    options.positional.removeFirst()
-    return SSHTransport(
-        host: try entry.host(),
-        privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath),
-        herdrPath: entry.herdrPath,
-        session: options.session ?? entry.session
-    )
+}
+
+func describe(_ error: HostArgumentError) -> String {
+    switch error {
+    case .unknownHost(let name, let known):
+        let list = known.isEmpty ? "none saved yet" : known.joined(separator: ", ")
+        return "unknown host '\(name)'. Saved hosts: \(list).\nAdd one with: bleat hosts add \(name) user@host --key PATH"
+    case .missingTarget:
+        return "attach needs a target, e.g. w1:p1"
+    case .unexpectedArguments(let extra):
+        return "unexpected argument(s): \(extra.joined(separator: " "))"
+    }
 }
 
 let argv = Array(CommandLine.arguments.dropFirst())
@@ -86,7 +98,12 @@ do {
         exit(0)
     }
 
-    let client = HerdrClient(transport: try makeTransport(&options))
+    let (selection, rest) = try HostArguments.resolve(
+        positional: options.positional,
+        expectsTarget: command == "attach",
+        hosts: try registry.all()
+    )
+    let client = HerdrClient(transport: try makeTransport(selection, session: options.session))
 
     switch command {
     case "sessions":
@@ -109,7 +126,7 @@ do {
         FileHandle.standardOutput.write(try await client.schema())
 
     case "attach":
-        guard let target = options.positional.first else { fail("attach needs a target, e.g. w1:p1") }
+        let target = rest[0]
         try await Attach.run(
             client: client,
             target: target,
@@ -122,6 +139,8 @@ do {
         print(usage)
         exit(2)
     }
+} catch let error as HostArgumentError {
+    fail("bleat: \(describe(error))")
 } catch let error as HerdrError {
     fail("\(error)")
 } catch let error as TransportError {

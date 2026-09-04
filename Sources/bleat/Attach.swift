@@ -29,8 +29,11 @@ enum Attach {
             "\u{1B}[2m-- attached to \(target) (\(size.cols)x\(size.rows))\(takeover ? " [takeover]" : " [read-only]"); Ctrl-] to detach --\u{1B}[0m\r\n".utf8
         ))
 
-        // Forward keystrokes only when we actually own input.
-        let input = takeover ? forwardInput(to: stream) : nil
+        // Always read stdin, even read-only: raw mode clears ISIG so Ctrl-C
+        // raises no signal, and without a reader there would be no way out of
+        // the default attach short of killing the process from another shell.
+        // Keystrokes are only forwarded when we own input.
+        let input = forwardInput(to: stream, forwardKeys: takeover)
         let resize = watchForResize(stream: stream)
 
         do {
@@ -40,21 +43,27 @@ enum Attach {
                 FileHandle.standardOutput.write(bytes)
             }
         } catch {
-            input?.cancel()
+            input.cancel()
             resize.cancel()
             await stream.close()
             throw error
         }
 
-        input?.cancel()
+        input.cancel()
         resize.cancel()
         await stream.close()
     }
 
-    /// Reads stdin on a background thread and relays it as `terminal.input`.
+    /// Reads stdin on a background thread, watching for the detach key.
     ///
-    /// Bytes, not text: arrows and control keys have no text spelling.
-    private static func forwardInput(to stream: any HerdrStream) -> Task<Void, Never> {
+    /// - Parameter forwardKeys: Relay keystrokes as `terminal.input`. False for
+    ///   a read-only attach, where Ctrl-] must still work but nothing else may
+    ///   reach the pane. Bytes, not text: arrows and control keys have no text
+    ///   spelling.
+    private static func forwardInput(
+        to stream: any HerdrStream,
+        forwardKeys: Bool
+    ) -> Task<Void, Never> {
         Task.detached {
             let handle = FileHandle.standardInput
             while !Task.isCancelled {
@@ -62,11 +71,17 @@ enum Attach {
                 if chunk.isEmpty { break }
                 if let index = chunk.firstIndex(of: detachByte) {
                     let head = chunk[chunk.startIndex..<index]
-                    if !head.isEmpty { try? await stream.send(.bytes(Data(head))) }
-                    try? await stream.send(.release)
+                    if forwardKeys, !head.isEmpty {
+                        try? await stream.send(.bytes(Data(head)))
+                    }
+                    // Only an input owner can release. Either way, closing the
+                    // stream ends the frame loop — otherwise a read-only attach
+                    // would sit here forever, since the host streams happily on.
+                    if forwardKeys { try? await stream.send(.release) }
+                    await stream.close()
                     return
                 }
-                try? await stream.send(.bytes(chunk))
+                if forwardKeys { try? await stream.send(.bytes(chunk)) }
             }
         }
     }

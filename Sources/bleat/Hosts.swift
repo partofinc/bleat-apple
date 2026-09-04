@@ -46,7 +46,9 @@ enum Hosts {
 
         case "remove":
             guard let name = rest.first else { throw Failure("hosts remove <name>") }
-            try registry.remove(named: name)
+            guard try registry.remove(named: name) else {
+                throw Failure("no host named \(name)")
+            }
             print("removed \(name)")
 
         default:

@@ -104,6 +104,28 @@ struct HostRegistryTests {
         #expect(try registry.all().map(\.name) == ["box"])
     }
 
+    @Test("removing a name that was never saved reports the miss")
+    func removeMissing() throws {
+        let (registry, directory) = makeRegistry()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try registry.save(HostEntry(name: "dev", spec: "a@one", keyPath: "~/k"))
+
+        #expect(try registry.remove(named: "devv") == false)   // typo
+        #expect(try registry.remove(named: "dev") == true)
+        #expect(try registry.all().isEmpty)
+    }
+
+    @Test("removing from a store whose directory does not exist is a no-op")
+    func removeWithoutDirectory() throws {
+        // `bleat hosts remove` used to throw a raw Cocoa write error here.
+        let registry = HostRegistry(
+            url: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("bleat-missing-\(UUID().uuidString)")
+                .appendingPathComponent("hosts.json")
+        )
+        #expect(try registry.remove(named: "anything") == false)
+    }
+
     @Test("saving the same name replaces rather than duplicates")
     func replaces() throws {
         let (registry, directory) = makeRegistry()

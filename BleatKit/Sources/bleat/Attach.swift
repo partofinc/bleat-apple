@@ -126,4 +126,11 @@ enum Attach {
     }
 }
 
+#elseif os(Linux)
+
+// Linux port pending. `Attach` needs `Glibc` rather than `Darwin` for termios
+// and SIGWINCH; the rest of the file is portable. Deliberately empty rather
+// than stubbed — a stub that compiles but does nothing would let a Linux build
+// appear to succeed while `attach` silently did nothing.
+
 #endif

@@ -29,33 +29,46 @@ Read the phase gates before proposing work outside them.
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
 push notifications, watchOS, Live Activities, multi-account badges.
 
-## Repository layout (Phase 1)
+## Repository layout
+
+House layout, matching the other projects in `~/Developer`: code lives in a
+local Swift package, the `.xcodeproj` holds only targets, and the app target is
+a thin shell.
 
 ```
-Package.swift
-Sources/
-  BleatKit/                 # library, no platform-specific imports; builds for iOS
-    Transport/              # HerdrTransport protocol + SSHTransport (Citadel)
-    Protocol/               # NDJSON codec, frame/command types
-    Model/                  # Codable models for herdr JSON (from schema.json)
-    Client/                 # HerdrClient: typed API over a transport
-  BleatProcess/             # macOS-only: LocalProcessTransport, spawns `herdr`
-  bleat/                    # executable target, macOS console tool
-Tests/
-  BleatKitTests/            # unit tests: codec, models, fake transport
-Fixtures/
-  schema.json               # output of `herdr api schema --json` (source of truth)
-  *.json                    # captured CLI outputs for decoding tests
+Bleat.xcodeproj             # (next PR)
+App/                        # @main App struct and little else (next PR)
+BleatKit/                   # the local Swift package
+  Package.swift
+  Sources/
+    BleatKit/               # domain + transport. No SwiftUI. Builds for iOS.
+      Transport/            # HerdrTransport protocol + SSHTransport (Citadel)
+      Protocol/             # NDJSON codec, frame/command types
+      Model/                # Codable models for herdr JSON (from schema.json)
+      Client/               # HerdrClient: typed API over a transport
+    BleatUI/                # SwiftUI shared between app targets
+    BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
+    bleat/                  # executable target, macOS console tool
+  Tests/BleatKitTests/      # unit tests: codec, models, fake transport
+  Fixtures/
+    schema.json             # output of `herdr api schema --json` (source of truth)
+    *.json                  # captured CLI outputs for decoding tests
+ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 ```
 
 **`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule
 against `#if` branches in `BleatKit` is what forces the split rather than a
 platform guard: anything that cannot compile for both platforms gets its own
 target, and the iOS app simply does not link it. Verify with
-`xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`.
+`cd BleatKit && xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`
+(the package is no longer at the repo root, so this fails from there). Use
+`-scheme bleat-Package` to compile every target at once, which is the check
+that actually catches a target the app would break on.
 
-`BleatKit` must compile for macOS and iOS with no `#if` platform branches.
-Anything that needs UIKit/SwiftUI/SwiftTerm lives outside this package (Phase 2).
+**`BleatKit` stays free of SwiftUI**; shared views live in `BleatUI`. (Phase 1's
+note said "outside this package" — that predates the package having more than
+one target. The intent was never to contaminate the transport layer, which a
+separate target satisfies.)
 
 ## Architecture rules
 
@@ -69,7 +82,7 @@ Anything that needs UIKit/SwiftUI/SwiftTerm lives outside this package (Phase 2)
   `HerdrStream` exposes `AsyncThrowingStream<Data, Error>` for stdout lines and
   `send(Data)` for stdin. Phase 4 adds a second transport without touching callers.
 - **Herdr JSON is the contract.** Models are generated/derived from
-  `Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
+  `BleatKit/Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
   re-capture the fixture and update the model. Unknown keys are ignored, never
   fatal.
 - **The pane stream is bytes, not text.** `terminal.frame` records carry base64
@@ -199,7 +212,7 @@ bleat sessions   [host]                   # named sessions
 bleat workspaces [host] [--session NAME]  # by attention state
 bleat agents     [host] [--session NAME]  # agents, blocked first
 bleat attach     [host] w1:p1 [--takeover] [--cols N] [--rows M]
-bleat schema     [host] > Fixtures/schema.json
+bleat schema     [host] > BleatKit/Fixtures/schema.json
 ```
 
 Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.

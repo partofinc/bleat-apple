@@ -29,9 +29,7 @@ public struct HerdrClient: Sendable {
     /// join against `workspace list` is needed.
     public func agents() async throws -> [Agent] {
         let list: AgentList = try await enveloped(["agent", "list"])
-        return list.agents.sorted {
-            ($0.agentStatus, $0.paneID) < ($1.agentStatus, $1.paneID)
-        }
+        return list.agents.sortedByAttention()
     }
 
     public func panes() async throws -> [Pane] {

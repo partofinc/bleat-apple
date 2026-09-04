@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "BleatKit", targets: ["BleatKit"]),
+        .library(name: "BleatUI", targets: ["BleatUI"]),
         .executable(name: "bleat", targets: ["bleat"]),
     ],
     dependencies: [
@@ -22,6 +23,7 @@ let package = Package(
         // reintroduce the very build failure this target exists to prevent.
         // Only `bleat`, which is macOS-only itself, depends on it.
         .target(name: "BleatProcess", dependencies: ["BleatKit"]),
+        .target(name: "BleatUI", dependencies: ["BleatKit"]),
         .executableTarget(name: "bleat", dependencies: ["BleatKit", "BleatProcess"]),
         .testTarget(name: "BleatKitTests", dependencies: ["BleatKit"]),
     ]

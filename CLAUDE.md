@@ -29,23 +29,31 @@ Read the phase gates before proposing work outside them.
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
 push notifications, watchOS, Live Activities, multi-account badges.
 
-## Repository layout (Phase 1)
+## Repository layout
+
+House layout, matching the other projects in `~/Developer`: code lives in a
+local Swift package, the `.xcodeproj` holds only targets, and the app target is
+a thin shell.
 
 ```
-Package.swift
-Sources/
-  BleatKit/                 # library, no platform-specific imports; builds for iOS
-    Transport/              # HerdrTransport protocol + SSHTransport (Citadel)
-    Protocol/               # NDJSON codec, frame/command types
-    Model/                  # Codable models for herdr JSON (from schema.json)
-    Client/                 # HerdrClient: typed API over a transport
-  BleatProcess/             # macOS-only: LocalProcessTransport, spawns `herdr`
-  bleat/                    # executable target, macOS console tool
-Tests/
-  BleatKitTests/            # unit tests: codec, models, fake transport
-Fixtures/
-  schema.json               # output of `herdr api schema --json` (source of truth)
-  *.json                    # captured CLI outputs for decoding tests
+Bleat.xcodeproj             # (next PR)
+App/                        # @main App struct and little else (next PR)
+BleatKit/                   # the local Swift package
+  Package.swift
+  Sources/
+    BleatKit/               # domain + transport. No SwiftUI. Builds for iOS.
+      Transport/            # HerdrTransport protocol + SSHTransport (Citadel)
+      Protocol/             # NDJSON codec, frame/command types
+      Model/                # Codable models for herdr JSON (from schema.json)
+      Client/               # HerdrClient: typed API over a transport
+    BleatUI/                # SwiftUI shared between app targets
+    BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
+    bleat/                  # executable target, macOS console tool
+  Tests/BleatKitTests/      # unit tests: codec, models, fake transport
+  Fixtures/
+    schema.json             # output of `herdr api schema --json` (source of truth)
+    *.json                  # captured CLI outputs for decoding tests
+ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 ```
 
 **`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule
@@ -54,8 +62,10 @@ platform guard: anything that cannot compile for both platforms gets its own
 target, and the iOS app simply does not link it. Verify with
 `xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`.
 
-`BleatKit` must compile for macOS and iOS with no `#if` platform branches.
-Anything that needs UIKit/SwiftUI/SwiftTerm lives outside this package (Phase 2).
+**`BleatKit` stays free of SwiftUI**; shared views live in `BleatUI`. (Phase 1's
+note said "outside this package" — that predates the package having more than
+one target. The intent was never to contaminate the transport layer, which a
+separate target satisfies.)
 
 ## Architecture rules
 

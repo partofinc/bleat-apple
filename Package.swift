@@ -6,9 +6,6 @@ let package = Package(
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "BleatKit", targets: ["BleatKit"]),
-        // macOS-only: spawns `herdr` as a child process. Kept out of BleatKit
-        // so the library still builds for iOS, where Foundation has no Process.
-        .library(name: "BleatProcess", targets: ["BleatProcess"]),
         .executable(name: "bleat", targets: ["bleat"]),
     ],
     dependencies: [
@@ -19,6 +16,11 @@ let package = Package(
             name: "BleatKit",
             dependencies: [.product(name: "Citadel", package: "Citadel")]
         ),
+        // macOS-only: spawns `herdr` as a child process. Deliberately NOT a
+        // product — a library product carries no platform filter, so exporting
+        // it would put "BleatProcess" in Xcode's picker for the iOS app and
+        // reintroduce the very build failure this target exists to prevent.
+        // Only `bleat`, which is macOS-only itself, depends on it.
         .target(name: "BleatProcess", dependencies: ["BleatKit"]),
         .executableTarget(name: "bleat", dependencies: ["BleatKit", "BleatProcess"]),
         .testTarget(name: "BleatKitTests", dependencies: ["BleatKit"]),

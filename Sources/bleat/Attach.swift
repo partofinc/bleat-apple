@@ -1,3 +1,4 @@
+#if os(macOS)   // see main.swift: the console tool is macOS-only
 import BleatKit
 import Darwin
 import Foundation
@@ -124,3 +125,5 @@ enum Attach {
         }
     }
 }
+
+#endif

@@ -68,9 +68,12 @@ extension PairingPayload {
 
     static func decodeHostKey(from container: KeyedDecodingContainer<CodingKeys>) throws -> String {
         let text = try container.decode(String.self, forKey: .hostKey)
-        // A blob on its own, which is what this format writes.
-        if let blob = base64URLDecode(text), let key = SSHPublicKeyLine(blob: blob) {
-            return key.openSSHForm
+        if let decoded = base64URLDecode(text) {
+            // 32 bytes is a bare ed25519 key; more is a full wire blob.
+            if decoded.count == 32, let key = SSHPublicKeyLine.ed25519(rawKey: decoded) {
+                return key.openSSHForm
+            }
+            if let key = SSHPublicKeyLine(blob: decoded) { return key.openSSHForm }
         }
         // A full `<algorithm> <base64>` string still decodes, so a payload
         // written by hand or by an older build is not rejected.
@@ -139,10 +142,14 @@ extension PairingPayload: Codable {
         try c.encode(username, forKey: .username)
         try c.encode(endpoints.map(\.description), forKey: .endpoints)
         try c.encode(Self.base64URLEncode(enrollmentSeed), forKey: .enrollmentSeed)
-        // Only the blob: `SSHPublicKeyLine(blob:)` reads the algorithm back out
-        // of it, so the text prefix would be 12 characters of repetition.
+        // Smallest faithful form. For ed25519 — which is what the phone
+        // negotiates — the bare 32-byte key is enough, because the 19 bytes of
+        // wire framing around it only repeat the algorithm name. Anything else
+        // travels as its blob, and the two are told apart on the way back in by
+        // length: 32 bytes is a raw key, more is a blob.
         if let parsed = SSHPublicKeyLine(line: hostKey) {
-            try c.encode(Self.base64URLEncode(parsed.blob), forKey: .hostKey)
+            let payload = parsed.ed25519RawKey ?? parsed.blob
+            try c.encode(Self.base64URLEncode(payload), forKey: .hostKey)
         } else {
             try c.encode(hostKey, forKey: .hostKey)
         }

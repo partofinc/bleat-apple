@@ -91,9 +91,9 @@ struct QRMatrixTests {
     /// question — but the plain form has to stay clean for tests and for
     /// terminals without colour.
     ///
-    /// The light modules are grey, not white: a full-white panel this size
-    /// glares in a dark terminal, and black on `0xC8` is still about 10:1 where
-    /// a decoder wants roughly 3:1.
+    /// The light modules are grey, not white: a white panel this size glares in
+    /// a dark terminal, and black on `0xA0` is still 8:1 where a decoder wants
+    /// roughly 3:1.
     @Test("colour is opt-out, and the plain form carries no escapes")
     func colourIsOptOut() throws {
         let plain = try checker().terminalLines(colour: false)
@@ -101,7 +101,7 @@ struct QRMatrixTests {
 
         let coloured = try checker().terminalLines()
         #expect(coloured.allSatisfy { $0.contains("\u{1B}[38;2;0;0;0m") })
-        #expect(coloured.allSatisfy { $0.contains("\u{1B}[48;2;200;200;200m") })
+        #expect(coloured.allSatisfy { $0.contains("\u{1B}[48;2;160;160;160m") })
         #expect(coloured.allSatisfy { $0.hasSuffix("\u{1B}[0m") })
     }
 }

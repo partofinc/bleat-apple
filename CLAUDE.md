@@ -415,13 +415,15 @@ versions measured with a string of `A`s — that is *alphanumeric* mode at 5.5
 bits per character, while a `bleat://` URL is lowercase and punctuated and so
 encodes in *byte* mode at 8 bits, about 12 modules larger for the same length.
 **Everything in the payload is paid for in modules, so three redundancies were
-removed** (measured on the three-endpoint case, 411 → 383 characters, rendering
-85×43 → **77×39**):
+removed** (measured on the three-endpoint case, 411 → **350** characters, rendering
+85×43 → **73×36**):
 
-- The host key travels as its **wire blob only**. The algorithm is the blob's
-  own first field, so the `ssh-ed25519 ` prefix was 12 characters of
-  repetition; `SSHPublicKeyLine(blob:)` rebuilds the exact OpenSSH string the
-  pin compares against.
+- The host key travels as its **bare 32 bytes** when it is ed25519, which is
+  what the phone negotiates. The text prefix repeated the algorithm, and the
+  wire blob repeats it again in 19 bytes of framing;
+  `SSHPublicKeyLine.ed25519(rawKey:)` rebuilds the exact OpenSSH string the pin
+  compares against. Any other algorithm travels as its blob, and the two are
+  told apart on the way in by length — 32 bytes is a key, more is a blob.
 - Endpoints **omit port 22**. `Endpoint(string:)` defaults to it, so the form
   still round-trips, and it was three characters per endpoint.
 - Correction level is **L, not M**. The higher levels buy recovery from print
@@ -447,10 +449,11 @@ losing the QR entirely over one row is the worse outcome. Measured on a
 falls back. The shortfall is reported against the **smallest** option tried, so
 it names the real gap rather than the gap to the margin we would have preferred.
 
-**Light modules are grey (`0xC8`), not white.** A full-white panel this size
-glares in a dark terminal. Black on `0xC8` is still about 10:1 where a decoder
-wants roughly 3:1; dimming the *dark* modules instead would eat that margin, so
-only the light ones moved.
+**Light modules are grey (`0xA0`), not white.** A white panel this size glares
+in a dark terminal, and the contrast a decoder needs — roughly 3:1 — leaves a
+lot of room: black on `0xA0` measures **8:1**, still above the 7:1 WCAG AAA text
+threshold, against 21:1 for white. Only the light modules moved; dimming the
+dark ones would spend the same margin while making the ink less distinct.
 
 Verified end to end: the glyphs written to a pty were parsed back into modules
 and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL.

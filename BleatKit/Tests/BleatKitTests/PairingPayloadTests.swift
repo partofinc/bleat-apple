@@ -186,3 +186,55 @@ struct PairingPayloadTests {
         }
     }
 }
+
+@Suite("Host key on the wire")
+struct HostKeyWireTests {
+
+    private let openSSH =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBPdxsAyNEaNtfx47Futg4ERIBkkAsvtWfxnTeKq0jct"
+
+    /// The wire blob wraps the key in 19 bytes that say "ssh-ed25519" all over
+    /// again. In a QR every byte is modules, so only the 32-byte key travels.
+    @Test("an ed25519 key round-trips through its bare 32 bytes")
+    func rawKeyRoundTrip() throws {
+        let parsed = try #require(SSHPublicKeyLine(line: openSSH))
+        let raw = try #require(parsed.ed25519RawKey)
+        #expect(raw.count == 32)
+        let rebuilt = try #require(SSHPublicKeyLine.ed25519(rawKey: raw))
+        #expect(rebuilt.openSSHForm == openSSH)
+        #expect(rebuilt.fingerprint == parsed.fingerprint)
+    }
+
+    @Test("a non-ed25519 key has no bare form and travels as its blob")
+    func otherAlgorithmsKeepTheirBlob() throws {
+        // A well-formed blob whose first field is not ssh-ed25519.
+        var blob = Data([0, 0, 0, 19])
+        blob.append(Data("ecdsa-sha2-nistp256".utf8))
+        blob.append(Data([0, 0, 0, 4]))
+        blob.append(Data([1, 2, 3, 4]))
+        let key = try #require(SSHPublicKeyLine(blob: blob))
+        #expect(key.algorithm == "ecdsa-sha2-nistp256")
+        #expect(key.ed25519RawKey == nil)
+    }
+
+    @Test("a key of the wrong length cannot be rebuilt")
+    func rejectsWrongLength() {
+        #expect(SSHPublicKeyLine.ed25519(rawKey: Data(repeating: 1, count: 31)) == nil)
+        #expect(SSHPublicKeyLine.ed25519(rawKey: Data()) == nil)
+    }
+
+    /// The two forms are told apart by length on the way back in, so both have
+    /// to survive a full payload round-trip.
+    @Test("both encodings survive a payload round-trip")
+    func payloadCarriesEither() throws {
+        for key in [openSSH, "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAEAQIDBA=="] {
+            guard SSHPublicKeyLine(line: key) != nil else { continue }
+            let payload = PairingPayload(
+                name: "n", username: "u", endpoints: [Endpoint(host: "h.local")],
+                enrollmentSeed: Data(repeating: 9, count: 32),
+                hostKey: key, herdrPath: "/bin/herdr")
+            let back = try PairingPayload(urlString: try payload.urlString())
+            #expect(back.hostKey == key, "\(key.prefix(20))")
+        }
+    }
+}

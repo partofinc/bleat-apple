@@ -51,16 +51,16 @@ public struct QRMatrix: Sendable, Equatable {
     /// unstyled render comes out inverted — readable by some scanners and not
     /// others. Stating the colours removes the question.
     ///
-    /// The light modules are a soft grey rather than pure white. A full-white
-    /// panel of this size is genuinely glaring in a dark terminal, and the
-    /// contrast that scanners need is already far exceeded: black on `0xC8`
-    /// still measures about 10:1, where a decoder wants roughly 3:1. Dimming
-    /// the *dark* modules instead would eat into that margin, so only the light
-    /// ones move.
+    /// The light modules are grey, not white. A white panel this size glares in
+    /// a dark terminal, and the contrast a decoder needs — roughly 3:1 — leaves
+    /// a lot of room: black on `0xA0` measures **8:1**, still above the 7:1
+    /// WCAG AAA text threshold, against 21:1 for pure white. Only the light
+    /// modules move; dimming the dark ones would spend the same margin while
+    /// making the ink itself less distinct.
     ///
     /// - Parameter colour: Set false for a plain-text grid, which is what tests
     ///   read and what a terminal without colour support gets.
-    public static let lightModule = 0xC8
+    public static let lightModule = 0xA0
     public static let darkModule = 0x00
 
     public func terminalLines(colour: Bool = true) -> [String] {

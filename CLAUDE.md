@@ -51,6 +51,52 @@ push notifications, watchOS, Live Activities, multi-account badges.
   a command surface and a screen that tells the user unpairing is only half the
   job. **This is a release blocker, not a nice-to-have.**
 
+## Creating panes and sessions from the phone (Phase 3 note, herdr 0.8.2, 5 Sept 2026)
+
+Read off the live CLI, so this does not have to be rediscovered when Phase 3
+starts. **None of it is built**; it is what is available if we decide to.
+
+**Panes, workspaces and tabs can be created, and a plain shell is the default.**
+
+```
+herdr workspace create --cwd PATH --label TEXT [--env K=V] [--focus]
+herdr pane split [PANE] --direction right|down --cwd PATH [--env K=V]
+herdr tab create
+```
+
+None of them takes a `--command`, so what launches is the user's shell. Herdr
+calls a pane an *agent* only when its detection manifests recognise one, and
+`herdr agent start` ("start a supported interactive agent in an existing pane")
+is a separate, explicit step. So "new pane, plain terminal, no agent" is not a
+mode — it is the default, and an agent is opt-in afterwards. Mechanically this
+costs nothing new: they are ordinary `herdr` commands over the exec channel the
+transport already opens.
+
+**There is no `session create`.** `herdr session` offers only `list`, `attach`,
+`stop`, `delete`. A named session comes from `herdr --session <name>`, which is
+the TUI launcher and wants a pty — Citadel has `withPTY`/`withTTY` on the
+platforms Bleat targets, but a session started that way would have to survive
+the channel closing, and that is unverified. A probe from this Mac was
+inconclusive for an unrelated reason worth knowing: `herdr --session x` refuses
+with **"nested herdr is disabled by default"** when run from inside a herdr
+pane. Over SSH from a phone that guard would not apply — the login shell has no
+herdr environment — but the pty question stays open.
+
+**The gap that matters: the phone cannot start a session from cold.** Every
+creation command above goes over the socket API, and a client command will not
+autostart a server — it returns `server_not_running`. So Bleat can add to a
+session that is already running and cannot revive one that is not. If the Mac
+reboots with nothing up, the phone is locked out until someone touches the
+keyboard. Closing that needs either a detached launch that outlives the channel
+or a login item on the host, and it is a different problem from creating panes.
+
+**It is not a new privilege, but it is a new affordance.** The device key
+already grants a full shell, so nothing here widens what a paired phone *could*
+do. It does change what Bleat *is* — from a remote for what is running to
+something that creates state on someone's Mac — so it belongs behind a
+deliberate gesture that shows the workspace label and cwd before it acts, not
+behind a `+` in a toolbar.
+
 ## Repository layout
 
 House layout, matching the other projects in `~/Developer`: code lives in a

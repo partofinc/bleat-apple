@@ -205,4 +205,23 @@ struct HostKeyWireTests {
         #expect(SSHPublicKeyLine.ed25519(rawKey: Data(repeating: 1, count: 31)) == nil)
         #expect(SSHPublicKeyLine.ed25519(rawKey: Data()) == nil)
     }
+
+    /// A camera sees whatever is in front of it. Reporting a Wi-Fi QR as a
+    /// failed pairing would bury the real errors and take the viewfinder away
+    /// while the user is still aiming.
+    @Test("a code that is not addressed to Bleat is recognised as such")
+    func recognisesForeignCodes() {
+        #expect(!PairingPayload.looksLikeAPairingCode("WIFI:S:MyNetwork;T:WPA;P:hunter2;;"))
+        #expect(!PairingPayload.looksLikeAPairingCode("https://example.com"))
+        #expect(!PairingPayload.looksLikeAPairingCode("bleat://something-else?d=AAA"))
+        #expect(!PairingPayload.looksLikeAPairingCode(""))
+    }
+
+    /// But anything that *claims* to be one and will not decode is worth
+    /// reporting: that is a damaged scan or a newer format, not a foreign code.
+    @Test("a Bleat code is recognised even when its payload is unusable")
+    func recognisesOurOwnDamagedCodes() {
+        #expect(PairingPayload.looksLikeAPairingCode("bleat://pair?d=zzzz"))
+        #expect(PairingPayload.looksLikeAPairingCode("BLEAT://PAIR?d=zzzz"))
+    }
 }

@@ -24,12 +24,19 @@ struct RouteView: View {
                     description: Text("This host was removed.")
                 )
             }
-        case .workspaces(let peer, _):
-            PlaceholderView(title: "Workspaces", detail: peer)
-        case .agents(_, _, let workspace):
-            PlaceholderView(title: "Agents", detail: workspace ?? "")
+        // `peer` is a host key — a 70-character blob, not something to show.
+        // The placeholders name the peer instead, which is what these screens
+        // will do for real.
+        case .workspaces(let hostKey, _):
+            PlaceholderView(title: "Workspaces", detail: name(of: hostKey))
+        case .agents(let hostKey, _, let workspace):
+            PlaceholderView(title: "Agents", detail: workspace ?? name(of: hostKey))
         case .pane(_, _, let target, let title):
             PlaceholderView(title: title, detail: target)
         }
+    }
+
+    private func name(of hostKey: String) -> String {
+        context.peers.peers.first { $0.hostKey == hostKey }?.name ?? "unknown host"
     }
 }

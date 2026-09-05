@@ -615,6 +615,37 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
   this?" and marking it must happen in one non-suspending step. An `await`
   between them is a place the second frame runs — and the enrollment key is
   single-use, so two redemptions would race to install and then delete it.
+- **A code that is not addressed to Bleat is ignored, not failed.** A camera
+  sees whatever is in front of it, and turning a Wi-Fi QR into "pairing failed"
+  buries the real errors and takes the viewfinder away while the user is still
+  aiming. `PairingPayload.looksLikeAPairingCode` checks only scheme and host —
+  anything that *claims* to be a pairing code and will not decode is a damaged
+  or newer code, and that is worth reporting.
+- **"Try again" clears the codes already tried.** Otherwise the button does
+  nothing at all: the failure being retried is nearly always transient, so the
+  user points the camera at the *same* QR, and every frame of it is filtered.
+  For the same reason the paste path must not mark a code as attempted — a
+  failed paste would block the camera from ever reading that QR.
+- **The sheet cannot be dismissed mid-swap**, by the button or by swiping. A
+  pairing left running with nobody watching loses the two outcomes that matter
+  most: a host key that does not match the code — the whole point of the
+  out-of-band pin — and a peer the host accepted but the phone could not record.
+- **The capture session is owned by one `nonisolated ... @unchecked Sendable`
+  type and never handed out.** AVFoundation's classes are not `Sendable` and
+  cannot be, so every `DispatchQueue.async` that captured one was a
+  strict-concurrency diagnostic. `@preconcurrency import` silences the question
+  rather than answering it; owning the objects and capturing only `self` answers
+  it, and the invariant `@unchecked` stands for — everything touching the
+  session happens on its queue — is the serialisation AVFoundation asks for
+  anyway.
+- **The scanner starts in `viewWillAppear`, not `viewDidLoad`.** SwiftUI
+  recycles the rows a representable lives in; started once, a detached and
+  re-attached preview comes back permanently black, and the view above has no
+  state for "camera stopped" — it would show a viewfinder that can never fire.
+- **`PeerStore.deviceKey()` throws instead of writing the shared `failure`.**
+  Sharing one error property meant opening the key sheet cleared an
+  unreadable-peer-file banner, after which the list said "No hosts yet" —
+  confidently wrong, and an invitation to pair again into the same broken file.
 - **The result screen shows the host key fingerprint**, because `bleat pair`
   prints the same string above the QR. Matching them by eye is the one check no
   software in this flow can do for the user.

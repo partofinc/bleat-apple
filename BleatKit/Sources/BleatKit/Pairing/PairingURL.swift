@@ -16,6 +16,19 @@ extension PairingPayload {
         "\(Self.urlScheme)://\(Self.urlHost)?d=\(Self.base64URLEncode(try PairingWire.encode(self)))"
     }
 
+    /// Whether a scanned string is even addressed to Bleat.
+    ///
+    /// A camera sees whatever is in front of it — a Wi-Fi code, a website, a
+    /// boarding pass — and reporting each one as a failed pairing would bury
+    /// the real errors. Only the scheme and host are checked: anything that
+    /// claims to be a pairing code and then will not decode *is* worth
+    /// reporting, because it means a damaged or newer code rather than an
+    /// unrelated one.
+    public static func looksLikeAPairingCode(_ string: String) -> Bool {
+        guard let url = URL(string: string) else { return false }
+        return url.scheme?.lowercased() == urlScheme && url.host?.lowercased() == urlHost
+    }
+
     /// Reads a scanned string back.
     ///
     /// The version is checked before anything else is interpreted. A newer

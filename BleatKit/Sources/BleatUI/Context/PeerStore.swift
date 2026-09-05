@@ -57,12 +57,7 @@ public final class PeerStore {
     /// - Throws: `PairingError`, which every case of describes itself well
     ///   enough to show the user directly.
     public func pair(withCode code: String) async throws -> PairedPeer {
-        guard let deviceKey = deviceKey() else {
-            throw PairingError.enrollmentIncomplete(
-                failure ?? "this device has no key to offer"
-            )
-        }
-        let client = PairingClient(peers: registry, deviceKey: deviceKey)
+        let client = PairingClient(peers: registry, deviceKey: try deviceKey())
         let peer = try await client.pair(withCode: code)
         reload()
         return peer
@@ -72,16 +67,12 @@ public final class PeerStore {
 
     /// The device's key, created on first read.
     ///
-    /// Returns nil only if the Keychain itself failed, which is worth showing
-    /// rather than retrying silently — without a key nothing can pair.
-    public func deviceKey() -> SSHKeyPair? {
-        do {
-            let pair = try keys.loadOrCreate()
-            failure = nil
-            return pair
-        } catch {
-            failure = String(describing: error)
-            return nil
-        }
+    /// Throws rather than writing to `failure`, which belongs to the peer list.
+    /// Sharing one error property meant opening the key sheet *cleared* an
+    /// unreadable-peer-file banner, and `PeersView` then said "No hosts yet" —
+    /// confidently wrong, and it invites a pairing that will fail at the last
+    /// step on the same unreadable file.
+    public func deviceKey() throws -> SSHKeyPair {
+        try keys.loadOrCreate()
     }
 }

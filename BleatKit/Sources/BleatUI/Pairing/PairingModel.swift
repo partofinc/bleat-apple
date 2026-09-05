@@ -37,11 +37,19 @@ final class PairingModel {
 
     /// Whether a scanned code should be acted on at all.
     ///
-    /// Nothing is attempted while a pairing is in flight: the enrollment key is
-    /// single-use, and two overlapping redemptions would race to install and
-    /// then delete it.
+    /// Three reasons not to, and they are different:
+    ///
+    /// - It is not a Bleat code. A camera sees whatever is in front of it, and
+    ///   turning a Wi-Fi QR into "pairing failed" would bury the real errors
+    ///   and take the viewfinder away while the user is still aiming.
+    /// - It has been tried already, so the same QR held in frame for a second
+    ///   produces one attempt rather than sixty.
+    /// - A pairing is in flight. The enrollment key is single-use, and two
+    ///   overlapping redemptions would race to install and then delete it.
     func shouldAttempt(_ code: String) -> Bool {
-        phase == .waiting && !attempted.contains(code)
+        phase == .waiting
+            && PairingPayload.looksLikeAPairingCode(code)
+            && !attempted.contains(code)
     }
 
     func scanned(_ code: String) async {
@@ -59,7 +67,15 @@ final class PairingModel {
         await pair(with: code)
     }
 
+    /// Back to the viewfinder, and willing to read the same code again.
+    ///
+    /// Clearing `attempted` is the whole point: the failure the user is
+    /// retrying is nearly always transient — the phone was on the wrong
+    /// network, the host had not finished starting — and they will point the
+    /// camera at the *same* QR. Without this, every frame of it is filtered out
+    /// and the button does nothing at all.
     func retry() {
+        attempted.removeAll()
         phase = .waiting
     }
 
@@ -79,7 +95,9 @@ final class PairingModel {
     }
 
     private func pair(with code: String) async {
-        attempted.insert(code)
+        // Deliberately does not mark the code as attempted: `claim` already did
+        // that for the scan path, and doing it here too would let a failed
+        // *paste* block the camera from ever reading the same QR.
         do {
             phase = .paired(try await store.pair(withCode: code))
         } catch {

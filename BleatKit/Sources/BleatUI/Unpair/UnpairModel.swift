@@ -100,8 +100,16 @@ public final class UnpairModel {
     /// `PairedPeer` — its endpoints, its host key, its device marker — which is
     /// everything needed both to reach the host and to tell the user which line
     /// to delete. There would be nothing left to retry with and nothing to name.
-    public func unpair() async {
-        guard let peer = peerBeingUnpaired, !isWorking else { return }
+    ///
+    /// - Parameter peer: Passed in rather than read back out of `phase`, and
+    ///   that is not stylistic. The button lives in a confirmation dialog, and
+    ///   dismissing one writes `isConfirming = false`, which returns `phase` to
+    ///   `.idle`. If SwiftUI's write-back lands before this task body runs — it
+    ///   does whenever the dismissal happens in the same main-actor turn as the
+    ///   action — reading the peer from `phase` finds nothing and the tap
+    ///   silently does nothing at all: no sheet, no error, no unpairing.
+    public func unpair(_ peer: PairedPeer) async {
+        guard !isWorking else { return }
         phase = .working(peer)
         do {
             let key = try peers.deviceKey()

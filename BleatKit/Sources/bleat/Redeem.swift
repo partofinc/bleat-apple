@@ -49,7 +49,14 @@ enum Redeem {
                 + (known.isEmpty ? " Nothing is paired." : " Paired: \(known)."))
         }
 
-        let deviceKey = try FileKeyStore.standard().loadOrCreate()
+        let store = FileKeyStore.standard()
+        guard let deviceKey = try store.load() else {
+            throw ToolFailure("""
+                no device key at \(store.url.path), so there is nothing to revoke with.
+                Minting one would authenticate as a different device and be refused,                 which reads as if the host had already removed the key.
+                On \(peer.name), run: bleat keys list — and revoke this machine's line by hand.
+                """)
+        }
         print("Removing this device's key from \(peer.name)…")
         fflush(stdout)
 
@@ -147,10 +154,22 @@ struct FileKeyStore {
         FileKeyStore(url: directory.appendingPathComponent("device_key"))
     }
 
+    /// The stored key, or nil when there is none.
+    ///
+    /// Separate from `loadOrCreate` because minting one is right exactly once —
+    /// when redeeming a pairing — and wrong everywhere else. `bleat unpair`
+    /// with a missing key file would otherwise create a *different* key,
+    /// authenticate with it, be refused, and report that the host "no longer
+    /// accepts this device's key … it has probably already been removed
+    /// there" — the opposite of the truth, since the real key is still
+    /// authorised. It would have overwritten that key's identity on the way.
+    func load() throws -> SSHKeyPair? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try SSHKeyPair(rawRepresentation: data)
+    }
+
     func loadOrCreate() throws -> SSHKeyPair {
-        if let data = try? Data(contentsOf: url) {
-            return try SSHKeyPair(rawRepresentation: data)
-        }
+        if let existing = try load() { return existing }
         let created = SSHKeyPair()
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),

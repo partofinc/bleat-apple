@@ -101,14 +101,19 @@ enum Keys {
     /// pair` sweeps it. Saying so is the difference between a user ignoring a
     /// stale line and a user thinking their machine is open.
     static func note(for entry: AuthorizedKeys.Entry) -> String {
-        switch (entry.kind, entry.hasExpired()) {
-        case (.device, _):
-            return "a paired phone — full shell access"
-        case (.enrollment, true?):
+        guard entry.kind == .enrollment else { return "a paired phone — full shell access" }
+        switch (entry.expiryStamp, entry.hasExpired()) {
+        case (_, true?):
             return "expired \(relative(entry.expiresAt)) — sshd already refuses it"
-        case (.enrollment, false?):
+        case (_, false?):
             return "a pairing in progress — expires \(relative(entry.expiresAt))"
-        case (.enrollment, nil):
+        case (.some(let stamp), nil):
+            // A deadline sshd *is* enforcing, in a form this build cannot read.
+            // Collapsing it into the case below is precisely what
+            // `Entry.expiryStamp` was added to prevent: it would say the key
+            // works forever when it may already be dead.
+            return "expires at \(stamp), which this build cannot read"
+        case (nil, nil):
             // No `expiry-time` at all. Every enrollment line this tool writes
             // carries one, so a line without it was hand-edited or written by
             // something else, and it will never stop working on its own.
@@ -161,6 +166,7 @@ enum Keys {
         // changed. `Marker` is `Hashable`, and order is kept so the report
         // follows the command line.
         var seen: Set<AuthorizedKeys.Marker> = []
+        var revoked: [String] = []
         for entry in doomed where seen.insert(entry.marker).inserted {
             let marker = entry.marker
             do { _ = try Shell.output(AuthorizedKeys.removeCommand(marker: marker)) }
@@ -173,9 +179,16 @@ enum Keys {
             // instant sees an empty file and answers "gone" — which here would
             // print a confident "Revoked" over a file that still holds the key.
             guard try !read().contains(where: { $0.marker == marker }) else {
-                throw ToolFailure("\(marker.value) is still in \(AuthorizedKeys.path). Nothing was revoked.")
+                // Not "nothing was revoked": by here an earlier marker on the
+                // same command line may already be gone, and that sentence
+                // would be the last thing the user reads. The up-front pass
+                // rules out a *missing* marker, not a removal that failed.
+                throw ToolFailure("\(marker.value) is still in \(AuthorizedKeys.path); it was not revoked."
+                    + (revoked.isEmpty ? "" : "\nAlready revoked: \(revoked.joined(separator: ", ")).")
+                    + "\nRun `bleat keys list` to see what is there.")
             }
 
+            revoked.append(marker.value)
             print("Revoked \(marker.value)  \(entry.fingerprint ?? "")")
             if entry.kind == .device {
                 print("That phone can no longer connect. Pair it again to restore access.")

@@ -19,8 +19,14 @@ struct UnpairFlow: ViewModifier {
                 isPresented: $model.isConfirming,
                 titleVisibility: .visible
             ) {
-                Button("Unpair", role: .destructive) {
-                    Task { await model.unpair() }
+                // The peer is captured here rather than read back out of the
+                // model when the task runs: dismissing the dialog resets
+                // `phase`, and if that write-back lands first the tap would do
+                // nothing at all — silently.
+                if let peer = model.peerBeingUnpaired {
+                    Button("Unpair", role: .destructive) {
+                        Task { await model.unpair(peer) }
+                    }
                 }
                 Button("Cancel", role: .cancel) { model.cancel() }
             } message: {

@@ -59,7 +59,8 @@ struct UnpairSheet: View {
             } footer: {
                 Text("Most likely the key has already been removed there, in which case there is "
                      + "nothing left to do. It could also still be in that Mac's authorized_keys "
-                     + "with sshd ignoring the file — that happens when its permissions change.")
+                     + "with sshd refusing it for another reason — a permissions change on ~/.ssh, "
+                     + "or an SSH configuration that no longer allows this login.")
             }
 
             Section("Check on \(peer.name)") {
@@ -79,13 +80,19 @@ struct UnpairSheet: View {
             }
 
             Section {
-                // Not "forget without removing the key": this phone cannot use
-                // that key any more either way, so removing the record is the
-                // right outcome rather than a compromise.
+                // Keeping it comes first. Forgetting is the right outcome when
+                // the key really is gone, but "sshd refused us" has transient
+                // readings too, and the destructive choice should not be the
+                // one under the thumb.
+                Button("Keep it listed") { model.cancel() }
+                // Not "forget without removing the key": if the key has gone,
+                // there is nothing being left behind to name.
                 Button("Forget \(peer.name)", role: .destructive) {
                     model.forgetWithoutRevoking()
                 }
-                Button("Keep it listed") { model.cancel() }
+            } footer: {
+                Text("Check first if you can. Forgetting is right once the key is gone, "
+                     + "and premature if it is not.")
             }
         }
     }
@@ -128,7 +135,7 @@ struct UnpairSheet: View {
 
             Section {
                 Button {
-                    Task { await model.unpair() }
+                    Task { await model.unpair(peer) }
                 } label: {
                     Label("Try again", systemImage: "arrow.clockwise")
                 }

@@ -40,17 +40,25 @@ struct RevocationTests {
         #expect(host.lines.contains(blob(of: device)), "the key really is still there")
     }
 
-    /// A host the phone was never paired to, or one where the key was already
-    /// removed from the Mac. There is nothing to do and nothing has gone
-    /// wrong — refusing to unpair here would strand a record the user cannot
-    /// get rid of.
-    @Test("a host that no longer holds the key revokes successfully")
-    func alreadyGoneIsSuccess() async throws {
+    /// **The finding this test used to hide.** It asserted that a host with no
+    /// such key revokes "successfully", which locked in exactly the wrong
+    /// behaviour — the same shape as the `Agent.target` test that passed while
+    /// the property was wrong.
+    ///
+    /// The connection was authenticated *with this key*, so sshd accepts it
+    /// from somewhere. Not finding it in `authorized_keys` means sshd is
+    /// reading a different file, and nothing done to this one revokes
+    /// anything. Reporting success there deletes the peer record and leaves the
+    /// phone a full shell with nothing naming the line.
+    @Test("a key sshd accepts but that is not in the file is a failure")
+    func absentFromTheFileIsAFailure() async {
         let device = SSHKeyPair()
         let host = FakeHost()
         host.known = [blob(of: device)]
 
-        try await Revocation.revokeDeviceKey(device, on: host)
+        await #expect(throws: PairingError.self) {
+            try await Revocation.revokeDeviceKey(device, on: host)
+        }
     }
 
     /// The phone holds one key for every host it has paired with, so the

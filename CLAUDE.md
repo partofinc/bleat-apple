@@ -859,11 +859,18 @@ part that decides whether a phone can still open a shell on someone's Mac.
   if the file was edited. `PairedPeer.deviceMarker` exists for *telling the
   user* which line to remove — `Enrollment` always minted it and
   `PairingClient` used to throw it away.
-- **A removal that matched nothing is a failure.** `removeKeyCommand` ends in
-  `|| true`, so it exits 0 whether or not it deleted anything. `Revocation`
-  reads back and refuses to report success otherwise; a phone that says
-  "unpaired" over a key that still works is the lie the whole feature exists to
-  stop.
+- **The file is read on both sides of the removal, and *absent before* is a
+  failure too.** `removeKeyCommand` ends in `|| true`, so it exits 0 whether or
+  not it deleted anything — hence the read after. The read *before* is the
+  subtler one, and it is the same failure `Enrollment` was built around: the
+  handshake that opened this connection proves sshd accepts the key, so if it
+  is not in `~/.ssh/authorized_keys` then sshd is reading a different
+  `AuthorizedKeysFile` and nothing done to this file can revoke anything.
+  Without that check the app removed nothing, reported success, deleted the
+  `PairedPeer`, and left the phone a full shell on that Mac with no record
+  naming the line. **A first version shipped without it and a test asserted the
+  permissive behaviour** — the same shape as the `Agent.target` test that
+  passed while the property was wrong.
 - **The connection is released afterwards.** It authenticated with a key that
   is no longer in `authorized_keys` — sshd does not re-check a live session, so
   it keeps working, which is exactly why it must not stay cached.
@@ -896,8 +903,12 @@ no longer paired.
 Citadel throws `SSHClientError.allAuthenticationOptionsFailed` for exactly this,
 and an address that is not listening throws `NIOConnectionError` (verified live,
 5 Sept 2026, by probing a stopped sshd and a revoked key). `dial` now raises
-`TransportError.authenticationFailed`, and `PeerConnector` promotes it when
-nothing wins — after `hostKeyMismatch`, since identity outranks credential, and
+`TransportError.authenticationFailed` — worded to name the possibilities rather
+than assert revocation, since sshd also refuses every method under
+`MaxAuthTries`/`MaxStartups` throttling, a changed `AllowUsers`, a locked
+account or a `StrictModes` permissions drift, several of which are transient
+and all of which reach every screen through this one string. `PeerConnector`
+promotes it when nothing wins — after `hostKeyMismatch`, since identity outranks credential, and
 before "none of N addresses could be reached", since a host that refused us was
 reached.
 
@@ -1001,8 +1012,8 @@ in, and until this existed there was nothing that showed it or removed it.
   deletes. Refusing a typo beats repairing it into someone else's key.
 - **A revocation is checked before and after.** `removeCommand` exits 0 when it
   matches nothing, so the exit status cannot say whether anything happened.
-  Revoking an absent marker is refused outright, and `containsCommand` is asked
-  again afterwards — a confident "Revoked" over an unchanged file is the exact
+  Revoking an absent marker is refused outright, and the file is read again
+  afterwards — a confident "Revoked" over an unchanged file is the exact
   class of lie the rest of this design is built against.
 - **An expired enrollment key is reported as harmless**, because it is: sshd
   already refuses it and the next `bleat pair` sweeps it. A listing that showed
@@ -1025,7 +1036,10 @@ in, and until this existed there was nothing that showed it or removed it.
 - **Both checks happen before anything is removed.** Validating only the
   *format* up front is not enough: `revoke <good> <typo>` then removed the
   first key before finding the second was not there. Markers are also
-  de-duplicated, or the same one is revoked once and reported twice.
+  de-duplicated, or the same one is revoked once and reported twice. That pass
+  rules out a *missing* marker; a removal that fails partway can still leave an
+  earlier one revoked, so the message says which rather than claiming nothing
+  happened.
 - **A concrete `bleat keys revoke <marker>` is only suggested when exactly one
   device is paired.** With two, naming either is naming an arbitrary one, and
   the user pastes it and revokes the phone they meant to keep. Which key is

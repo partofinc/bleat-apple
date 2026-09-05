@@ -115,8 +115,16 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
             // or a rebuilt host — and reporting it as "no address could be
             // reached" sends the user to check their Wi-Fi forever.
             if case SSHClientError.allAuthenticationOptionsFailed = error {
+                // Names the possibilities rather than asserting one. Revocation
+                // is the likeliest, but sshd refuses every method for several
+                // other reasons — `MaxAuthTries` or `MaxStartups` throttling, a
+                // changed `AllowUsers`, a locked account, `StrictModes`
+                // rejecting a permissions drift on `~/.ssh`. Several are
+                // transient, and this string is what *every* screen shows, so
+                // asserting "revoked; pair again" would send a user to re-pair
+                // over a host that is briefly busy.
                 throw TransportError.authenticationFailed(
-                    "it may have been revoked on that machine; pair again to restore access"
+                    "it may have been revoked there, or that host's SSH configuration may have changed"
                 )
             }
             throw TransportError.connectionFailed(String(describing: error))

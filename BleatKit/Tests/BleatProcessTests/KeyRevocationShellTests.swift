@@ -225,6 +225,23 @@ struct KeyRevocationShellTests {
         ).map(\.kind) == [.enrollment])
     }
 
+    /// The `AuthorizedKeysFile`-points-elsewhere shape, against a real file:
+    /// the phone is connected (so sshd accepts the key from somewhere) but the
+    /// file it can edit does not hold it. Removing from here can revoke
+    /// nothing, and reporting success would delete the record and strand a
+    /// working key.
+    @Test("a key that is not in the file at all is refused, and nothing is touched")
+    func keyMissingFromTheFileIsRefused() async throws {
+        let scratch = try await scratch()
+        let strangerKey = SSHKeyPair()
+        let before = try lines(in: scratch.home)
+
+        await #expect(throws: PairingError.self) {
+            try await Revocation.revokeDeviceKey(strangerKey, on: scratch.shell)
+        }
+        #expect(try lines(in: scratch.home) == before)
+    }
+
     /// The failure the phone must never round up to success: the key is still
     /// there, so the user has to be told to remove it at the Mac.
     @Test("a host that will not let go of the key says so")

@@ -10,7 +10,16 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 1 complete — ready for Phase 2
+## Current phase: 2 in progress — pairing works on a real phone
+
+**Verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned with an
+iPhone: the host key pinned out of band matched
+(`SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78`, the same one this file
+records), `herdr` resolved to `/opt/homebrew/bin/herdr` through a login shell on
+first connect, three endpoints were classified and raced, and the swap completed
+— device key installed, proved by a second handshake, enrollment key deleted.
+The host printed `Paired.` What remains of Phase 2 is the screens: sessions,
+workspaces, agents, and the pane.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
@@ -30,6 +39,17 @@ Read the phase gates before proposing work outside them.
 
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
 push notifications, watchOS, Live Activities, multi-account badges.
+
+### Must ship before any release
+
+- **`bleat keys list` / `bleat keys revoke <marker>`.** Unpairing on the phone
+  drops the local record and leaves the `bleat-device-…` line in the host's
+  `~/.ssh/authorized_keys` — permanently, with no way to see it or remove it
+  short of hand-editing the file. A phone that is lost, sold or wiped keeps
+  shell access to the Mac until somebody notices. `AuthorizedKeys` already has
+  `listDeviceMarkersCommand()` and `removeCommand(marker:)`; what is missing is
+  a command surface and a screen that tells the user unpairing is only half the
+  job. **This is a release blocker, not a nice-to-have.**
 
 ## Repository layout
 

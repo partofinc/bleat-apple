@@ -27,6 +27,14 @@ enum Shell {
         process.standardInput = FileHandle.nullDevice
         try process.run()
         // Read before waiting: a full pipe buffer would deadlock the child.
+        //
+        // Stdout is drained first and stderr only afterwards, which is not
+        // deadlock-free in general — a child that fills the ~64 KB stderr pipe
+        // while stdout is still open would block, and this thread would never
+        // get to the read that unblocks it. It holds here because every command
+        // that reaches this function is a `grep`, `chmod` or redirection built
+        // by `AuthorizedKeys`, whose stderr is one line or nothing. Anything
+        // that could be chatty on stderr needs the two read concurrently first.
         let data = out.fileHandleForReading.readDataToEndOfFile()
         let errorData = err.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()

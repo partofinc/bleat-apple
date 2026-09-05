@@ -112,6 +112,56 @@ struct AuthorizedKeyEntryTests {
         #expect(AuthorizedKeys.Entry.parse(line: "\(key) ravil") == nil)
     }
 
+    /// Options may contain a **quoted space**, which splits into two fields and
+    /// pushes the key past any fixed window. Such a line listed as "the key
+    /// could not be read" while the key sat perfectly readable one field on.
+    @Test("options containing a quoted space do not hide the key")
+    func quotedSpaceInOptions() throws {
+        let key = SSHKeyPair()
+        let marker = AuthorizedKeys.deviceMarker()
+        let line = #"command="echo hi",restrict,expiry-time="20991231235959Z" "#
+            + "\(key.authorizedKeyLine(comment: "")) \(marker.value)"
+        let entry = try #require(AuthorizedKeys.Entry.parse(line: line))
+
+        #expect(entry.fingerprint == key.fingerprint)
+        #expect(entry.hasExpired() == false, "the deadline is in 2099")
+    }
+
+    /// sshd accepts `YYYYMMDD` and `YYYYMMDDHHMM` as well as the full form this
+    /// tool writes, with or without a `Z`. Reading only the written form
+    /// reported a deadline sshd is enforcing as no deadline at all — wrong in
+    /// the alarming direction.
+    @Test("the shorter expiry forms sshd accepts are read, not ignored")
+    func shortExpiryForms() throws {
+        let key = SSHKeyPair().authorizedKeyLine(comment: "")
+        let marker = AuthorizedKeys.deviceMarker()
+        for stamp in ["20991231", "209912312359", "20991231235959", "20991231235959Z"] {
+            let entry = try #require(
+                AuthorizedKeys.Entry.parse(line: #"expiry-time="\#(stamp)" \#(key) \#(marker.value)"#),
+                "\(stamp)"
+            )
+            #expect(entry.expiryStamp == stamp)
+            #expect(entry.hasExpired() == false, "\(stamp)")
+        }
+    }
+
+    /// "No deadline" and "a deadline this build cannot read" must stay
+    /// different answers: sshd is enforcing the second one, and reporting it as
+    /// the first tells the user a key will work forever when it will not.
+    @Test("an unreadable stamp is not the same as no stamp")
+    func unreadableStampIsNotAbsent() throws {
+        let key = SSHKeyPair().authorizedKeyLine(comment: "")
+        let marker = AuthorizedKeys.enrollmentMarker()
+        let entry = try #require(
+            AuthorizedKeys.Entry.parse(line: #"expiry-time="next tuesday" \#(key) \#(marker.value)"#)
+        )
+        #expect(entry.expiryStamp == "next tuesday")
+        #expect(entry.expiresAt == nil)
+
+        let none = try #require(AuthorizedKeys.Entry.parse(line: "\(key) \(marker.value)"))
+        #expect(none.expiryStamp == nil)
+    }
+
     @Test("every Bleat line in a file comes back, in order")
     func parsesWholeFile() throws {
         let first = AuthorizedKeys.deviceMarker()

@@ -954,7 +954,46 @@ in, and until this existed there was nothing that showed it or removed it.
 - Reads take the `mkdir` lock, for the reason `containsKeyCommand` does: every
   write-back truncates before it writes, and an unlocked read landing in that
   instant reports an empty file — which here reads as "no keys on this
-  machine".
+  machine". **The post-revocation proof reads through the locked listing too**,
+  not through `containsCommand`, which is deliberately unlocked for the host's
+  ten-times-a-second poll and would answer "gone" from that same empty read.
+- **Both checks happen before anything is removed.** Validating only the
+  *format* up front is not enough: `revoke <good> <typo>` then removed the
+  first key before finding the second was not there. Markers are also
+  de-duplicated, or the same one is revoked once and reported twice.
+- **A concrete `bleat keys revoke <marker>` is only suggested when exactly one
+  device is paired.** With two, naming either is naming an arbitrary one, and
+  the user pastes it and revokes the phone they meant to keep. Which key is
+  which phone is a question only the fingerprints answer.
+
+### `$` is the wrong anchor for an `authorized_keys` line (found in review)
+
+A `$`-anchored pattern does **not** match a line ending in a space — and sshd
+still accepts the key on that line. Every marker pattern shared the anchor, so
+such a key was invisible to `listCommand`, `containsCommand` **and**
+`removeCommand` at once: it could be neither seen nor revoked, which is the
+exact failure `bleat keys` exists to prevent. The same shape reaches a
+`bleat-enroll-` line, where it survives `bleat pair`'s own sweep and cleanup.
+
+`AuthorizedKeys.lineEnd` (`[[:space:]]*$`) is now the single definition, used
+by every one of them so the listing and the deletion cannot disagree. A `\r`
+from a Windows-edited file is covered by the same class. `Entry.parse` splits
+on whitespace, which tolerates it already — the two ends have to agree or the
+tool lists a key it cannot then remove.
+
+Related, from the same review:
+
+- **sshd accepts `YYYYMMDD` and `YYYYMMDDHHMM` as well as the full stamp**,
+  with or without `Z` (without one it is *local* time, which is why nothing
+  here writes that form). Reading only the written form reported a deadline
+  sshd is enforcing as no deadline at all. `Entry` keeps the raw `expiryStamp`
+  beside the parsed `expiresAt`, so "no deadline" and "a deadline this build
+  cannot read" stay different answers.
+- **Options can contain a quoted space** (`command="echo hi",restrict`), which
+  splits into two fields and pushes the key past a fixed two-field window.
+  `Entry` scans for the field pair that parses instead.
+- `locked()` creates `~/.ssh` with `mkdir -m 700`, since the lock wraps reads
+  now and a listing left a new directory behind at the umask default.
 
 **Piped output is block-buffered, and both commands print before a long wait.**
 `bleat pair`'s fallback link and `bleat redeem`'s progress line are flushed

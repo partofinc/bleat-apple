@@ -148,7 +148,7 @@ struct AuthorizedKeysTests {
     @Test("the match is anchored, so one marker cannot strip another's key")
     func removeIsAnchored() throws {
         let command = AuthorizedKeys.removeCommand(marker: try #require(AuthorizedKeys.deviceMarker(id: "01")))
-        #expect(command.contains("bleat-device-01$"))
+        #expect(command.contains("bleat-device-01[[:space:]]*$"))
         #expect(command.contains("[[:space:]]"))
         #expect(command.contains("grep -v -E"))
     }
@@ -164,7 +164,7 @@ struct AuthorizedKeysTests {
     @Test("presence uses the same anchored pattern as removal, so the two agree")
     func containsMatchesRemoval() throws {
         let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab12"))
-        #expect(AuthorizedKeys.containsCommand(marker: marker).contains("bleat-device-ab12$"))
+        #expect(AuthorizedKeys.containsCommand(marker: marker).contains("bleat-device-ab12[[:space:]]*$"))
         #expect(AuthorizedKeys.containsCommand(marker: marker).contains("echo yes"))
         #expect(AuthorizedKeys.containsCommand(marker: marker).contains("echo no"))
     }
@@ -216,7 +216,7 @@ struct EnrollmentKeyTests {
     @Test("the sweep matches any enrollment marker, not one particular key")
     func sweepMatchesAny() {
         let command = AuthorizedKeys.sweepEnrollmentsCommand()
-        #expect(command.contains("bleat-enroll-[A-Za-z0-9._-]+$"))
+        #expect(command.contains("bleat-enroll-[A-Za-z0-9._-]+[[:space:]]*$"))
         #expect(command.contains("|| true"))
         #expect(command.contains(#"cat "$t" > "$f""#))
     }
@@ -236,7 +236,7 @@ struct EnrollmentKeyTests {
     @Test("device markers can be listed, so redemption compares before and after")
     func listsDeviceMarkers() {
         let command = AuthorizedKeys.listDeviceMarkersCommand()
-        #expect(command.contains("bleat-device-[A-Za-z0-9._-]+$"))
+        #expect(command.contains("bleat-device-[A-Za-z0-9._-]+[[:space:]]*$"))
         #expect(command.contains("grep -o -E"))
         #expect(!command.contains("-enroll-"))
         #expect(command.contains("|| true"))   // no matches is normal, not failure

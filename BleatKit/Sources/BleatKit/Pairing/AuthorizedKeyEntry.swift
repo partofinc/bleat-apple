@@ -19,13 +19,21 @@ extension AuthorizedKeys {
         /// not appear in the list is the exact failure this screen exists to
         /// prevent. What cannot be shown is the fingerprint, not the key.
         public let fingerprint: String?
-        /// The `expiry-time` sshd will enforce, when the line carries one.
+        /// The `expiry-time` sshd will enforce, when the line carries one and
+        /// the stamp can be read.
         ///
         /// Only enrollment keys are written with it, and a past deadline means
         /// sshd already refuses the key — the line is untidy rather than
         /// dangerous, and saying so is the difference between a user ignoring
         /// it and a user panicking about it.
         public let expiresAt: Date?
+        /// The raw `expiry-time` value, whether or not it parsed.
+        ///
+        /// Kept separately so "there is no deadline" and "there is a deadline
+        /// this build cannot read" stay different answers. Collapsing them
+        /// reports a key sshd is actively expiring as one that will work
+        /// forever — wrong in the alarming direction.
+        public let expiryStamp: String?
         /// The line as it appears in the file, so a caller can show it verbatim
         /// rather than a reconstruction that might differ.
         public let line: String
@@ -52,13 +60,23 @@ extension AuthorizedKeys {
         public static func parse(line rawLine: String) -> Entry? {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("#") else { return nil }
+            // Splitting on whitespace is also what tolerates a trailing space
+            // or a `\r` from a Windows-edited file — both of which hide a line
+            // from a `$`-anchored grep, which is why `AuthorizedKeys.lineEnd`
+            // exists. The two have to agree, or this lists a key that cannot
+            // then be revoked.
             let fields = line.split(whereSeparator: \.isWhitespace)
             guard let last = fields.last, let marker = Marker(text: String(last)) else { return nil }
 
+            // Options come before the key, so the key has to be found before
+            // either can be read.
+            let keyIndex = indexOfKey(in: fields)
+            let stamp = keyIndex.flatMap { expiryStamp(inOptions: fields[..<$0]) }
             return Entry(
                 marker: marker,
-                fingerprint: fingerprint(ofFields: fields),
-                expiresAt: expiry(inFields: fields),
+                fingerprint: keyIndex.flatMap { fingerprint(ofFields: fields, at: $0) },
+                expiresAt: stamp.flatMap(AuthorizedKeys.expiryDate(stamp:)),
+                expiryStamp: stamp,
                 line: line
             )
         }
@@ -68,33 +86,46 @@ extension AuthorizedKeys {
             output.split(separator: "\n").compactMap { parse(line: String($0)) }
         }
 
-        /// The key's fingerprint, whether or not the line begins with options.
+        /// Where the `<algorithm> <base64>` pair starts.
         ///
         /// An `authorized_keys` line is `[options] <algorithm> <base64>
         /// [comment]`, and options are optional — the enrollment line has
-        /// `restrict,expiry-time="…"` in front while a device line has nothing.
-        /// Both shapes are tried rather than guessed at from the field count,
-        /// since a comment makes the two the same length.
-        private static func fingerprint(ofFields fields: [Substring]) -> String? {
-            for start in 0..<min(2, fields.count) {
-                let candidate = fields[start...].joined(separator: " ")
-                if let key = SSHPublicKeyLine(line: candidate) { return key.fingerprint }
+        /// `restrict,expiry-time="…"` in front while a device line has
+        /// nothing. Scanned for rather than guessed at from the field count,
+        /// which a comment makes ambiguous, and scanned to the end rather than
+        /// only across the first two fields: options may contain a **quoted
+        /// space** (`command="echo hi",restrict`), which splits into two
+        /// fields and pushes the key past any fixed window. Such a line listed
+        /// as "the key could not be read" while the key sat perfectly readable
+        /// one field further along.
+        ///
+        /// Lines are a handful of fields, so scanning them all costs nothing.
+        private static func indexOfKey(in fields: [Substring]) -> Int? {
+            guard fields.count >= 2 else { return nil }
+            for start in 0...(fields.count - 2) where SSHPublicKeyLine(
+                line: "\(fields[start]) \(fields[start + 1])"
+            ) != nil {
+                return start
             }
             return nil
         }
 
-        /// Pulls the timestamp out of `expiry-time="20260905T…Z"`.
+        private static func fingerprint(ofFields fields: [Substring], at index: Int) -> String? {
+            SSHPublicKeyLine(line: "\(fields[index]) \(fields[index + 1])")?.fingerprint
+        }
+
+        /// Pulls the timestamp out of `expiry-time="20260905123456Z"`.
         ///
-        /// Read from the options field only — the first one, before the
-        /// algorithm — so a comment that happens to contain the text cannot
-        /// invent a deadline that sshd is not enforcing.
-        private static func expiry(inFields fields: [Substring]) -> Date? {
-            guard let options = fields.first,
-                  let range = options.range(of: #"expiry-time=""#)
-            else { return nil }
-            let rest = options[range.upperBound...]
+        /// Read from the options only — everything before the algorithm — so a
+        /// comment that happens to contain the text cannot invent a deadline
+        /// sshd is not enforcing. The fields are rejoined because a quoted
+        /// value may have been split across them.
+        private static func expiryStamp(inOptions options: ArraySlice<Substring>) -> String? {
+            let text = options.joined(separator: " ")
+            guard let range = text.range(of: #"expiry-time=""#) else { return nil }
+            let rest = text[range.upperBound...]
             guard let end = rest.firstIndex(of: "\"") else { return nil }
-            return AuthorizedKeys.expiryDate(stamp: String(rest[..<end]))
+            return String(rest[..<end])
         }
     }
 }

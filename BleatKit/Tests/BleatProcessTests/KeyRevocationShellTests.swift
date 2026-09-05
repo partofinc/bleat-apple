@@ -136,6 +136,57 @@ struct KeyRevocationShellTests {
         #expect(entries.map(\.kind) == [.enrollment])
     }
 
+    /// The finding that mattered most in review, and it defeated the whole
+    /// feature: a `$`-anchored pattern does not match a line ending in a space,
+    /// **while sshd still accepts the key on it**. Such a key could be neither
+    /// listed nor revoked. A `\r` from a file that has been through a Windows
+    /// editor is the same shape.
+    ///
+    /// Run against real `grep` rather than against the pattern's text, because
+    /// what a `$` does at the end of a line is exactly the thing that was
+    /// assumed and wrong.
+    @Test("a line ending in a space, or a CR, is still found and still revocable")
+    func toleratesTrailingWhitespace() async throws {
+        for trailer in [" ", "\t", "\r", "  \t "] {
+            let home = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("bleat-keys-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(
+                at: home.appendingPathComponent(".ssh"), withIntermediateDirectories: true
+            )
+            let shell = LocalShell(home: home)
+            let marker = AuthorizedKeys.deviceMarker()
+            let keep = SSHKeyPair().authorizedKeyLine(comment: "ravil@rawillk.air")
+            try "\(keep)\n\(SSHKeyPair().authorizedKeyLine(comment: marker.value))\(trailer)\n"
+                .write(to: home.appendingPathComponent(".ssh/authorized_keys"),
+                       atomically: true, encoding: .utf8)
+
+            let entries = AuthorizedKeys.Entry.parse(
+                output: try await shell.run(shell: AuthorizedKeys.listCommand())
+            )
+            #expect(entries.map(\.marker) == [marker], "listing, trailer \(trailer.debugDescription)")
+
+            _ = try await shell.run(shell: AuthorizedKeys.removeCommand(marker: marker))
+            let remaining = try lines(in: home)
+            #expect(remaining == [keep], "after revoking, trailer \(trailer.debugDescription)")
+        }
+    }
+
+    /// The lock wrapper runs for reads too, and its `mkdir -p` used to leave a
+    /// new `~/.ssh` at the umask default. A listing has no business creating
+    /// the directory at all, and 0755 is not the mode OpenSSH creates.
+    @Test("listing does not leave a world-readable ~/.ssh behind")
+    func listingDoesNotCreateALooseDirectory() async throws {
+        let home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bleat-keys-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        _ = try await LocalShell(home: home).run(shell: AuthorizedKeys.listCommand())
+
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: home.appendingPathComponent(".ssh").path
+        )
+        #expect(attributes[.posixPermissions] as? NSNumber == 0o700)
+    }
+
     /// `removeCommand` exits 0 when it matches nothing, so the tool cannot use
     /// the status to decide whether anything happened. `bleat keys revoke`
     /// checks the marker is present first and asks again afterwards; this is

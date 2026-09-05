@@ -80,7 +80,18 @@ enum Keys {
         print("Unpairing on the phone does not remove that key, and a phone that is")
         print("lost, sold or wiped keeps it. Only this removes it:")
         print("")
-        print("  bleat keys revoke \(devices[0].marker.value)")
+        // A concrete marker only when there is exactly one — with two phones
+        // paired, naming either one is naming an arbitrary one, and the user
+        // pastes it and revokes a device they meant to keep. Which key belongs
+        // to which phone is a question only the fingerprints above can answer.
+        if devices.count == 1 {
+            print("  bleat keys revoke \(devices[0].marker.value)")
+        } else {
+            print("  bleat keys revoke <marker>")
+            print("")
+            print("Match a phone to its key by the fingerprint: it is the one Bleat shows")
+            print("on that phone, and the one `ssh-keygen -lf` prints.")
+        }
     }
 
     /// What is worth saying about one line, beyond its fingerprint.
@@ -115,9 +126,12 @@ enum Keys {
     // MARK: - revoke
 
     static func revoke(_ markers: [String]) throws {
-        // Every marker is validated before anything is removed, so a typo in
-        // the second argument does not leave the first key already gone and the
-        // user unsure what happened.
+        // Both checks happen before anything is removed. Validating only the
+        // *format* up front is not enough, and the first version of this did
+        // exactly that: a marker that parses but is not on the machine was
+        // caught inside the loop, so `revoke <good> <typo>` removed the first
+        // key and then exited 1 — the partial application the up-front pass
+        // exists to prevent.
         let parsed = try markers.map { text -> AuthorizedKeys.Marker in
             guard let marker = AuthorizedKeys.Marker(text: text) else {
                 throw ToolFailure("not a Bleat marker: '\(text)'\n"
@@ -130,8 +144,7 @@ enum Keys {
             try read().map { ($0.marker, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-
-        for marker in parsed {
+        let doomed = try parsed.map { marker -> AuthorizedKeys.Entry in
             // Refused rather than run: `removeCommand` exits 0 when it matches
             // nothing, so revoking a marker that was never there would print a
             // confident "revoked" and change nothing. A user acting on a lost
@@ -140,17 +153,26 @@ enum Keys {
                 throw ToolFailure("no Bleat key with marker '\(marker.value)' in \(AuthorizedKeys.path).\n"
                     + "Run `bleat keys list` to see what is there.")
             }
+            return entry
+        }
 
+        // The same marker twice would otherwise be revoked once and reported
+        // twice, the second time over a file the command could not have
+        // changed. `Marker` is `Hashable`, and order is kept so the report
+        // follows the command line.
+        var seen: Set<AuthorizedKeys.Marker> = []
+        for entry in doomed where seen.insert(entry.marker).inserted {
+            let marker = entry.marker
             do { _ = try Shell.output(AuthorizedKeys.removeCommand(marker: marker)) }
             catch { throw ToolFailure("could not edit \(AuthorizedKeys.path): \(error)") }
 
-            // Asked again rather than assumed. The removal is a
-            // read-modify-write behind a lock, and the ways it fails quietly —
-            // a full disk, a read-only home — all exit 0 through the `|| true`
-            // that makes "matched nothing" a normal outcome.
-            let stillThere = try Shell.output(AuthorizedKeys.containsCommand(marker: marker))
-                .trimmingCharacters(in: .whitespacesAndNewlines) == "yes"
-            guard !stillThere else {
+            // Asked again rather than assumed, and asked through the *locked*
+            // listing rather than `containsCommand`, which is deliberately
+            // unlocked for the host's ten-times-a-second poll. Every write-back
+            // truncates before it writes, so an unlocked read landing in that
+            // instant sees an empty file and answers "gone" — which here would
+            // print a confident "Revoked" over a file that still holds the key.
+            guard try !read().contains(where: { $0.marker == marker }) else {
                 throw ToolFailure("\(marker.value) is still in \(AuthorizedKeys.path). Nothing was revoked.")
             }
 
@@ -158,6 +180,11 @@ enum Keys {
             if entry.kind == .device {
                 print("That phone can no longer connect. Pair it again to restore access.")
             }
+            // Stdout is block-buffered when redirected while stderr is not, so
+            // without this a failure on the *next* marker prints before the
+            // success of this one — the same hazard `bleat pair` and
+            // `bleat redeem` flush for.
+            fflush(stdout)
         }
     }
 

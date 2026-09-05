@@ -617,6 +617,61 @@ second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
 
+### Connecting to a paired peer (Phase 2)
+
+`PeerConnection.connect` is where the pairing record pays off: everything the
+connection needs was learned once, out of band — which machine this is (the host
+key), where it answers, who to log in as, and where `herdr` lives. Nothing
+prompts, guesses, or trusts anything on first sight.
+
+- **One live connection at a time**, held by `ConnectionStore`. A phone drills
+  into a single host, and every screen in that drill-down wants the same SSH
+  session rather than a handshake each. Returning to the peer list releases it —
+  re-entering costs a handshake, an idle SSH session left open on someone's Mac
+  costs their trust.
+- **Keeping that promise takes more than a stored reference, because a dial
+  cannot be called off.** `PeerConnector` races in a detached task precisely so
+  a slow address cannot hold up a fast one, so a handshake started for a screen
+  the user has already left will still finish. Two guards follow: concurrent
+  callers **join** the dial in flight rather than starting a second (otherwise
+  a pull-to-refresh during the first load races every endpoint twice and leaks
+  whichever transport loses the assignment), and a dial that completes after
+  `release()` **closes itself** instead of installing. `SSHTransport.disconnect`
+  documents the same hazard for its own dial; the store reproduced it one level
+  up before this.
+- **A cached connection is keyed by link state as well as host key.** It is
+  raced once and then pinned to the address that won, so one made on Wi-Fi
+  against a `.local` name can only fail after the phone moves to cellular —
+  and the overlay address that would have worked never gets a turn, because the
+  cache answers first. `ConnectionPolicy` holds this and the "is this error
+  fatal to the connection?" rule, in `BleatKit` where both are tested.
+- **A `HerdrError` does not discard the connection.** The host was reached and
+  said no. Reconnecting on it would cost a handshake per retry and hide the
+  real problem behind a reconnection that always succeeds. `TransportError`
+  does discard it, which is what lets a retry re-race after a network change.
+- **Every list load carries a generation.** Pull-to-refresh and the initial
+  `task` overlap, and without one a slow first load finishing late overwrites a
+  successful refresh with its own failure — an error banner over rows that
+  arrived perfectly well. Refreshing also keeps the rows on screen: `refreshable`
+  draws its own spinner, and replacing the list underneath it is a downgrade.
+- **Reachability is one question**: is this Wi-Fi or Ethernet? On cellular a
+  `.local` name and an RFC1918 address cannot resolve or route, so
+  `endpointsToTry` drops them rather than ordering them last. `Reachability`
+  lives in `BleatUI` rather than `BleatKit` — `Network` is Apple-only, and where
+  the phone is standing is a question the UI layer is entitled to ask.
+- **"No address to try here" is not "nothing answered."** A LAN-only peer on
+  cellular was not dialled and failed; it was ruled out, and the remedy is a
+  different network or an overlay endpoint rather than a host that needs
+  starting. The two get different messages.
+- **`herdrPath` can still be discovered**, for a record made before pairing
+  stored it, and the transport learns it in place rather than being rebuilt —
+  a second handshake to carry one string would be absurd.
+- **Write-backs after a successful connection are targeted mutations, never a
+  `save` of an edited copy.** `save` merges, and a merge takes the newer
+  record's `lastGoodEndpoint`; a copy loaded a moment earlier carries the
+  *previous* winner, so saving it undoes the one just recorded. Both
+  `recordSuccess` and `recordHerdrPath` edit the stored record in place.
+
 ### The pairing UI (Phase 2)
 
 `PeersView` is the app's first screen and there is no manual host list any more.

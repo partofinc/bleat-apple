@@ -101,7 +101,7 @@ final class PairingModel {
         do {
             phase = .paired(try await store.pair(withCode: code))
         } catch {
-            phase = .failed(String(describing: error))
+            phase = .failed(ErrorMessage.of(error))
         }
     }
 }

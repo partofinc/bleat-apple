@@ -67,6 +67,25 @@ public final class PeerStore {
         return peer
     }
 
+    /// Notes the address that just worked, so the next connection tries it
+    /// first rather than racing every address again.
+    ///
+    /// Silently does nothing on failure. This is called on the success path of
+    /// a connection, and throwing there would turn a working connection into an
+    /// error over bookkeeping.
+    public func recordSuccess(endpoint: Endpoint, for peer: PairedPeer) {
+        try? registry.recordSuccess(endpoint: endpoint, forHostKey: peer.hostKey)
+        reload()
+    }
+
+    /// Stores a `herdr` path that had to be discovered, so the next connection
+    /// does not have to ask again. Only happens for a peer paired before the
+    /// path was recorded.
+    public func recordHerdrPath(_ path: String, for peer: PairedPeer) {
+        try? registry.recordHerdrPath(path, forHostKey: peer.hostKey)
+        reload()
+    }
+
     // MARK: - Device key
 
     /// The device's key, created on first read.

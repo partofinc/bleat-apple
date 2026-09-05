@@ -14,7 +14,7 @@ struct RouteView: View {
         switch route {
         case .peer(let hostKey):
             if let peer = context.peers.peers.first(where: { $0.hostKey == hostKey }) {
-                PeerDetailView(peer: peer)
+                PeerDetailView(peer: peer, connections: context.connections)
             } else {
                 // Reachable: unpairing a host while its screen is pushed. Saying
                 // so beats an empty screen that looks like a loading failure.

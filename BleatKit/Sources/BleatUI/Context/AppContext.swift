@@ -9,9 +9,14 @@ import Observation
 public final class AppContext {
     public let navigation: NavigationRouter
     public let peers: PeerStore
+    public let reachability: Reachability
+    public let connections: ConnectionStore
 
     public init(peers: PeerStore) {
+        let reachability = Reachability()
         self.navigation = NavigationRouter()
         self.peers = peers
+        self.reachability = reachability
+        self.connections = ConnectionStore(peers: peers, reachability: reachability)
     }
 }

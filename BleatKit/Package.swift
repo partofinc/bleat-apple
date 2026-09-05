@@ -33,6 +33,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.8.0"),
+        // A real VT100/xterm emulator, and the reason there is no hand-rolled
+        // one: `terminal.frame` payloads carry cursor positioning and
+        // synchronized-output markers *inside* the bytes, so anything that
+        // approximated ANSI would render a Claude Code pane as nonsense.
+        // Linked by BleatUI only — BleatKit stays free of rendering, and the
+        // console tool writes the same bytes straight to a terminal that
+        // already knows how to read them.
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.20.0"),
     ],
     targets: [
         .target(
@@ -56,7 +64,10 @@ let package = Package(
         // sight. Isolation there is expressed per type, not inherited.
         .target(
             name: "BleatUI",
-            dependencies: ["BleatKit"],
+            dependencies: [
+                "BleatKit",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
             swiftSettings: sharedSwiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         .executableTarget(

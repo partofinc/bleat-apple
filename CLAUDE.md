@@ -865,6 +865,31 @@ explicitly. Without that, `bleat pair > file` shows the link only once the tool
 exits — by which point the key it carries has been removed, which makes the
 entire non-TTY path useless exactly where it is needed.
 
+## The pane view (Phase 2, verified 5 Sept 2026)
+
+- **Read-only, by `terminal session observe`.** It cannot disturb whoever holds
+  input on the pane, which is the whole of the Phase 2 gate and the right
+  default besides: Herdr allows one input owner, and taking it from a running
+  agent because someone glanced at their phone would be indefensible. `control`
+  and `--takeover` are Phase 3, behind a deliberate gesture.
+- **The host is asked to render at the phone's size.** `observe --cols --rows`
+  is honoured — verified live: asking for 60×20 returns a frame reporting
+  `60 x 20` — so an 80-column pane arrives already reflowed instead of needing
+  to be scrolled sideways. The size is only knowable after a layout pass, which
+  is why the terminal lives in a view *controller*; rotation reopens the stream,
+  and the first frame of a new one is `full: true`, so the screen simply
+  redraws.
+- **Frames that arrive before the renderer exists are held, not dropped.** The
+  first frame is the full-screen replay, and on an idle pane nothing follows it
+  — losing it leaves a blank screen until something changes on the host, which
+  may be never.
+- **Every `TerminalViewDelegate` method is a no-op, deliberately.** The protocol
+  has no default implementations so each must be written out, and three are
+  refusals rather than omissions: `send` has nowhere to go until Phase 3,
+  `clipboardCopy` would let a remote pane write to the phone's pasteboard, and
+  `requestOpenLink` would let anything a pane prints send the phone to a URL of
+  its choosing.
+
 ## Concurrency settings (verified 4 Sept 2026)
 
 The package and the Xcode targets must state the same thing, or a file changes
@@ -898,7 +923,14 @@ behaviour when it moves across the seam.
 - Errors are typed: `HerdrError` (host said no), `TransportError` (network),
   `DecodingError` (contract drift). Never swallow stderr.
 - Tests use `FakeTransport` fed from `Fixtures/`. No test touches the network.
-- No third-party dependencies beyond Citadel without asking.
+- Third-party dependencies: **Citadel** and **SwiftTerm**, both approved. Ask
+  before adding a third. SwiftTerm is a real VT100/xterm emulator and there is
+  no honest alternative: `terminal.frame` payloads carry cursor positioning and
+  synchronized-output markers *inside* the bytes, so anything that approximated
+  ANSI would render an agent's pane as nonsense. It is linked by `BleatUI`
+  only — `BleatKit` stays free of rendering, and the console tool writes the
+  same bytes to a terminal that already knows how to read them. It ships a
+  build tool plugin; see `ci_scripts/ci_post_clone.sh`.
 - Keep this file current: phase, verified facts, decisions. It is the onboarding
   doc for every session.
 

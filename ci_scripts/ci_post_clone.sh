@@ -6,8 +6,13 @@
 #
 # Scope: these keys affect Xcode's own resolution, i.e. the workflow's build
 # action. They do NOT cover the `swift test` below, which uses SwiftPM's
-# resolution and would fail on its own if such a dependency ever entered the
-# graph. Citadel brings none today; revisit if that changes.
+# resolution.
+#
+# SwiftTerm ships a build tool plugin (SwiftTermBuildInfoPlugin), so the graph
+# now contains exactly the kind of dependency this guards against. Verified
+# 5 Sept 2026: SwiftPM's command line runs build tool plugins without any trust
+# prompt — that is an Xcode concept — so `swift test` passes with it in the
+# graph. The keys above remain what carries the *build action*.
 set -e
 defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
 defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES

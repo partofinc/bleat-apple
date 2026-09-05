@@ -50,7 +50,13 @@ public struct PeersView: View {
         }
         .sheet(isPresented: $isPairing) { PairingView(store: context.peers) }
         .sheet(isPresented: $isShowingKey) { DeviceKeyView() }
-        .onAppear(perform: context.peers.reload)
+        .task {
+            context.peers.reload()
+            // Being back at the root means no host is being browsed, so the SSH
+            // session opened for one should not stay open on someone's Mac.
+            // Re-entering costs a handshake; an idle session costs their trust.
+            await context.connections.release()
+        }
     }
 
     /// Snapshotted first: `remove` reloads the array, so indices after the

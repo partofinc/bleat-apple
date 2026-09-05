@@ -170,4 +170,26 @@ struct PeerRegistryTests {
         try store.save(peer())
         #expect(try store.all().count == 1)
     }
+
+    /// Both write-backs happen on the same successful connection, one after the
+    /// other. Recording the herdr path by saving an edited copy of a peer
+    /// loaded earlier would merge a stale `lastGoodEndpoint` over the winner
+    /// just written — so it is a targeted mutation instead.
+    @Test("recording a herdr path does not undo the endpoint just recorded")
+    func herdrPathDoesNotClobberTheEndpoint() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var stale = peer(endpoints: ["mac.local", "10.0.0.5"])
+        stale.lastGoodEndpoint = Endpoint(string: "mac.local")
+        try store.save(stale)
+
+        let winner = try #require(Endpoint(string: "10.0.0.5"))
+        try store.recordSuccess(endpoint: winner, forHostKey: stale.hostKey)
+        try store.recordHerdrPath("/opt/homebrew/bin/herdr", forHostKey: stale.hostKey)
+
+        let loaded = try #require(try store.peer(hostKey: stale.hostKey))
+        #expect(loaded.lastGoodEndpoint == winner)
+        #expect(loaded.herdrPath == "/opt/homebrew/bin/herdr")
+    }
 }

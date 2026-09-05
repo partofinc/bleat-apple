@@ -103,6 +103,22 @@ public struct PeerRegistry: Sendable {
         try write(peers)
     }
 
+    /// Notes where `herdr` lives, for a record that predates pairing storing it.
+    ///
+    /// A targeted mutation rather than `save` of an edited copy, and the
+    /// difference matters: `save` merges, and merging takes the *newer*
+    /// record's `lastGoodEndpoint` when it has one. An edited copy made from a
+    /// peer loaded a moment earlier carries the endpoint from before this
+    /// connection, so saving it would quietly undo the winner recorded on the
+    /// line above.
+    public func recordHerdrPath(_ path: String, forHostKey hostKey: String) throws {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return }
+        guard peers[index].herdrPath != path else { return }
+        peers[index].herdrPath = path
+        try write(peers)
+    }
+
     /// Forgets a peer.
     ///
     /// This does **not** remove the device key from the host — nothing here can

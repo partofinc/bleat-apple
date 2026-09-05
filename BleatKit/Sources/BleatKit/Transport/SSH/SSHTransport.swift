@@ -11,7 +11,14 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     private let host: SSHHost
     private let privateKey: Curve25519.Signing.PrivateKey
     private let validator: PinningHostKeyValidator
-    private let herdrPath: String
+    /// Boxed because it can be learned after construction.
+    ///
+    /// A peer records where `herdr` lives when it is paired, but a record that
+    /// predates that carries nil, and the answer only exists once there is a
+    /// connection to ask over. Rebuilding the transport to store one string
+    /// would mean a second handshake for nothing.
+    private let herdrPathBox: LockedBox<String>
+    private var herdrPath: String { herdrPathBox.current }
     private let session: String?
 
     /// Guarded by `lock`; see `UnsafeTransfer` for why it is boxed.
@@ -36,7 +43,7 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
         self.host = host
         self.privateKey = privateKey
         self.validator = PinningHostKeyValidator(host: host.pinKey, policy: hostKeys)
-        self.herdrPath = herdrPath
+        self.herdrPathBox = LockedBox(herdrPath)
         self.session = session
     }
 
@@ -104,6 +111,14 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     /// make a healthy endpoint look broken.
     public func connect() async throws {
         _ = try await connected()
+    }
+
+    /// Records where `herdr` actually lives, once something has asked the host.
+    ///
+    /// Only ever narrows the default `"herdr"` to an absolute path, which is
+    /// what a non-login shell needs — see `HerdrLookup`.
+    public func useHerdrPath(_ path: String) {
+        herdrPathBox.withLock { $0 = path }
     }
 
     /// Drops the connection. The next call reconnects.

@@ -1,17 +1,28 @@
 import BleatKit
 import SwiftUI
 
-/// What is known about one paired host.
+/// One paired host: what is running on it, and what is known about it.
 ///
-/// The sessions and workspaces that belong here land with the screens that read
-/// them; until then this shows what pairing actually produced, which is what
-/// makes a pairing problem diagnosable from the phone.
+/// The sessions come first because they are what the user came for. The pairing
+/// details stay below them rather than moving to a separate screen — they are
+/// what makes a connection problem diagnosable from the phone, and the moment
+/// they are worth reading is the moment the list above has failed.
 struct PeerDetailView: View {
     let peer: PairedPeer
+    @State private var sessions: SessionsModel
+
+    /// Takes the store rather than reading `AppContext`, so the model exists
+    /// from the first body onwards and a refresh cannot rebuild it mid-load.
+    init(peer: PairedPeer, connections: ConnectionStore) {
+        self.peer = peer
+        _sessions = State(wrappedValue: SessionsModel(connections: connections))
+    }
 
     var body: some View {
         Form {
-            Section {
+            SessionsSection(peer: peer, model: sessions)
+
+            Section("Host") {
                 LabeledContent("User", value: peer.username)
                 LabeledContent("herdr", value: peer.herdrPath ?? "not resolved")
                     .font(.footnote.monospaced())
@@ -29,22 +40,14 @@ struct PeerDetailView: View {
                 }
             }
 
-            Section {
-                ContentUnavailableView {
-                    Label("Sessions", systemImage: "rectangle.dashed")
-                } description: {
-                    Text("Workspaces and panes land in the next step.")
-                }
-            }
         }
         .navigationTitle(peer.name)
+        .refreshable { await sessions.load(for: peer) }
+        .task { await sessions.load(for: peer) }
     }
 }
 
-#if DEBUG
-#Preview {
-    NavigationStack {
-        PeerDetailView(peer: .preview)
-    }
-}
-#endif
+// No `#Preview` here any more: the screen now loads sessions in `task`, which
+// means a Keychain read and an SSH connection attempt. A preview that reaches
+// for the real device key is not a preview. The rows it is built from —
+// `SessionRow`, `EndpointRow` — are pure and preview on their own.

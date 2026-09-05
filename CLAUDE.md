@@ -617,6 +617,36 @@ second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
 
+### Connecting to a paired peer (Phase 2)
+
+`PeerConnection.connect` is where the pairing record pays off: everything the
+connection needs was learned once, out of band — which machine this is (the host
+key), where it answers, who to log in as, and where `herdr` lives. Nothing
+prompts, guesses, or trusts anything on first sight.
+
+- **One live connection at a time**, held by `ConnectionStore`. A phone drills
+  into a single host, and every screen in that drill-down wants the same SSH
+  session rather than a handshake each. Returning to the peer list releases it —
+  re-entering costs a handshake, an idle SSH session left open on someone's Mac
+  costs their trust.
+- **Reachability is one question**: is this Wi-Fi or Ethernet? On cellular a
+  `.local` name and an RFC1918 address cannot resolve or route, so
+  `endpointsToTry` drops them rather than ordering them last. `Reachability`
+  lives in `BleatUI` rather than `BleatKit` — `Network` is Apple-only, and where
+  the phone is standing is a question the UI layer is entitled to ask.
+- **"No address to try here" is not "nothing answered."** A LAN-only peer on
+  cellular was not dialled and failed; it was ruled out, and the remedy is a
+  different network or an overlay endpoint rather than a host that needs
+  starting. The two get different messages.
+- **`herdrPath` can still be discovered**, for a record made before pairing
+  stored it, and the transport learns it in place rather than being rebuilt —
+  a second handshake to carry one string would be absurd.
+- **Write-backs after a successful connection are targeted mutations, never a
+  `save` of an edited copy.** `save` merges, and a merge takes the newer
+  record's `lastGoodEndpoint`; a copy loaded a moment earlier carries the
+  *previous* winner, so saving it undoes the one just recorded. Both
+  `recordSuccess` and `recordHerdrPath` edit the stored record in place.
+
 ### The pairing UI (Phase 2)
 
 `PeersView` is the app's first screen and there is no manual host list any more.

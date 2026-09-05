@@ -883,6 +883,26 @@ entire non-TTY path useless exactly where it is needed.
   first frame is the full-screen replay, and on an idle pane nothing follows it
   — losing it leaves a blank screen until something changes on the host, which
   may be never.
+- **The terminal refuses first-responder status; it does not disable
+  interaction.** `isUserInteractionEnabled = false` looks like the way to keep
+  the keyboard away and also kills scrolling, which is most of the point of a
+  read-only pane. `TerminalView` raises the keyboard from its own tap and
+  long-press recognisers, so overriding `canBecomeFirstResponder` is what stops
+  it while leaving the scroll view alone.
+- **Read the terminal's size after forcing its layout, and take `sizeChanged`
+  as authoritative.** `TerminalView` recomputes cols and rows in its own
+  `layoutSubviews`, which runs *after* the hosting controller's
+  `viewDidLayoutSubviews`, so reading it there without `layoutIfNeeded()`
+  reports `TerminalOptions`' default 80×25 — a size the view cannot show, asked
+  of the host for the life of the screen. `sizeChanged` is fired from
+  `processSizeChange` when the *view's* geometry changes what fits, whatever the
+  protocol's own documentation says about remote requests for 132 columns; it is
+  the correctly-timed answer and ignoring it is how a wrong size goes
+  uncorrected.
+- **Closing the previous stream happens alongside the new dial, not before it.**
+  `SSHStream.close()` waits up to a second for output to drain and an `observe`
+  stream never ends on its own, so that second is always spent — serially, it
+  would delay every rotation by a full second behind a stale screen.
 - **Every `TerminalViewDelegate` method is a no-op, deliberately.** The protocol
   has no default implementations so each must be written out, and three are
   refusals rather than omissions: `send` has nowhere to go until Phase 3,

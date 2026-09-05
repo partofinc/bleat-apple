@@ -19,17 +19,25 @@ struct PaneSurface: View {
                 case .live:
                     EmptyView()
                 case .ended:
-                    ContentUnavailableView(
-                        "The pane closed",
-                        systemImage: "rectangle.slash",
-                        description: Text("Herdr stopped sending frames for it.")
-                    )
+                    ContentUnavailableView {
+                        Label("The pane closed", systemImage: "rectangle.slash")
+                    } description: {
+                        Text("Herdr stopped sending frames for it.")
+                    } actions: {
+                        Button("Try again", action: model.retry)
+                    }
                 case .failed(let message):
-                    ContentUnavailableView(
-                        "Lost the pane",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(message)
-                    )
+                    // A dropped socket is normal on a phone — CLAUDE.md says so
+                    // — and every other screen offers a way back from one. A
+                    // pane that could only be revived by popping and pushing
+                    // the screen again was the odd one out.
+                    ContentUnavailableView {
+                        Label("Lost the pane", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        Button("Try again", action: model.retry)
+                    }
                 }
             }
         #else

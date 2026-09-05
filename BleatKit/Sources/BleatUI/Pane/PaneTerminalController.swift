@@ -16,33 +16,43 @@ final class PaneTerminalController: UIViewController {
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
 
-    private lazy var terminalView = TerminalView(frame: .zero)
+    /// Read-only: it renders and scrolls, and it will not take the keyboard.
+    private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
     private var reported: (cols: Int, rows: Int)?
     private var announced = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         terminalView.terminalDelegate = self
-        // Nothing is sent to the host in Phase 2, so the keyboard must not
-        // appear: an observer with a cursor and a keyboard invites input that
-        // would silently go nowhere.
-        terminalView.isUserInteractionEnabled = true
         view.addSubview(terminalView)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         terminalView.frame = view.bounds
+        // Laid out **now**, not next pass. `TerminalView` recomputes its cols
+        // and rows in its own `layoutSubviews`, which runs after this method
+        // returns — so reading the terminal here without forcing it reports
+        // `TerminalOptions`' default 80×25 and opens the stream at a size the
+        // view cannot show. Recovery would then depend on a second layout pass
+        // happening at all.
+        terminalView.layoutIfNeeded()
 
         if !announced {
             announced = true
             onReady?(terminalView)
         }
         let terminal = terminalView.getTerminal()
-        let size = (cols: terminal.cols, rows: terminal.rows)
+        report(cols: terminal.cols, rows: terminal.rows)
+    }
+
+    /// Deduplicated, because both the layout pass and the delegate report the
+    /// same change and either may come first.
+    private func report(cols: Int, rows: Int) {
+        let size = (cols: cols, rows: rows)
         guard reported == nil || reported! != size else { return }
         reported = size
-        onSize?(size.cols, size.rows)
+        onSize?(cols, rows)
     }
 }
 
@@ -54,8 +64,12 @@ final class PaneTerminalController: UIViewController {
 /// nil means the remote cannot reach into this device's pasteboard.
 extension PaneTerminalController: TerminalViewDelegate {
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        // The *remote* asking for 80 or 132 columns. Herdr renders at the size
-        // it was asked for, so this is ignored rather than obeyed.
+        // Not the remote asking for 132 columns, whatever the protocol's own
+        // documentation suggests: SwiftTerm fires this from `processSizeChange`
+        // when the *view's* geometry changes what fits. It is the authoritative,
+        // correctly-timed answer to "how big is this terminal", and ignoring it
+        // was how a wrong size could go uncorrected.
+        report(cols: newCols, rows: newRows)
     }
 
     func setTerminalTitle(source: TerminalView, title: String) {

@@ -42,9 +42,10 @@ final class PaneModel {
 
     private var stream: (any HerdrStream)?
     private var reader: Task<Void, Never>?
-    /// The size currently asked for, so a layout pass that changes nothing does
-    /// not tear the stream down and rebuild it.
-    private var size: (cols: Int, rows: Int)?
+    /// The size last asked for, so a layout pass that changes nothing does not
+    /// tear the stream down and rebuild it — and so `retry` knows what to
+    /// reopen at.
+    private var requested: (cols: Int, rows: Int)?
 
     init(connections: ConnectionStore, peer: PairedPeer, session: String?, target: String) {
         self.connections = connections
@@ -69,16 +70,36 @@ final class PaneModel {
     /// new stream is `full: true`, so the screen simply redraws.
     func open(cols: Int, rows: Int) {
         guard cols > 0, rows > 0 else { return }
-        guard size == nil || size! != (cols, rows) else { return }
-        size = (cols, rows)
+        guard requested == nil || requested! != (cols, rows) else { return }
+        start(cols: cols, rows: rows)
+    }
+
+    /// Opens again at the size already known.
+    ///
+    /// Needed because `open` deduplicates: without a way past that, a pane that
+    /// failed — or whose socket dropped, which CLAUDE.md calls normal — stays
+    /// dead until the user pops the screen and pushes it again.
+    func retry() {
+        guard let requested else { return }
+        start(cols: requested.cols, rows: requested.rows)
+    }
+
+    private func start(cols: Int, rows: Int) {
+        requested = (cols, rows)
+        // Set here rather than inside `run`, which is a task away: closing the
+        // old stream takes up to a second (see below), and leaving `.live` on
+        // screen through it shows a stale pane with nothing to say it is stale.
+        phase = .opening
 
         reader?.cancel()
         let previous = stream
         stream = nil
-        reader = Task { [weak self] in
-            await previous?.close()
-            await self?.run(cols: cols, rows: rows)
-        }
+        // Closed *alongside* the new dial, not before it. `SSHStream.close()`
+        // waits up to a second for output to drain, and an `observe` stream
+        // never ends on its own, so that second is always spent — spending it
+        // serially would delay every rotation by a full second.
+        if let previous { Task { await previous.close() } }
+        reader = Task { [weak self] in await self?.run(cols: cols, rows: rows) }
     }
 
     /// Closes the stream. There is no `terminal.release` to send: release is
@@ -86,6 +107,9 @@ final class PaneModel {
     func close() async {
         reader?.cancel()
         reader = nil
+        // Forgotten, so a screen that comes back reopens rather than
+        // deduplicating itself into a permanently blank pane.
+        requested = nil
         let open = stream
         stream = nil
         await open?.close()
@@ -96,6 +120,15 @@ final class PaneModel {
         do {
             let client = try await connections.client(for: peer, session: session)
             let opened = try await client.observe(target, cols: cols, rows: rows)
+            // A resize cancelled this reader while the channel was opening. It
+            // is a live `herdr terminal session observe` on the host and
+            // nothing else holds it, so installing it now would orphan it — or
+            // worse, overwrite the stream the replacement reader just installed,
+            // leaving the live one running and closing the dead one on exit.
+            guard !Task.isCancelled else {
+                await opened.close()
+                return
+            }
             stream = opened
             phase = .live
 
@@ -113,8 +146,12 @@ final class PaneModel {
         } catch is CancellationError {
             // The screen went away, or a resize replaced this reader.
         } catch {
-            await connections.handle(error)
+            // Guarded *before* `handle`: a reader cancelled by a resize can
+            // still surface a `TransportError` from the teardown, and handling
+            // that would release the shared SSH connection out from under the
+            // replacement reader already dialling on it.
             guard !Task.isCancelled else { return }
+            await connections.handle(error)
             phase = .failed(ErrorMessage.of(error))
         }
     }

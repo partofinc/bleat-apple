@@ -4,7 +4,7 @@ import SwiftUI
 /// The sessions on a host, wherever they are being shown.
 struct SessionsSection: View {
     let peer: PairedPeer
-    let model: SessionsModel
+    let model: RemoteList<SessionInfo>
     @Environment(AppContext.self) private var context
 
     var body: some View {

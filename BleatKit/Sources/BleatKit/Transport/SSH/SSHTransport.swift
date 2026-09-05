@@ -19,7 +19,12 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     /// would mean a second handshake for nothing.
     private let herdrPathBox: LockedBox<String>
     private var herdrPath: String { herdrPathBox.current }
-    private let session: String?
+    /// Boxed for the same reason the path is: it is chosen after the connection
+    /// exists. The user picks a session from a list the connection fetched, and
+    /// `HERDR_SESSION` is a command prefix rather than something negotiated at
+    /// the handshake — so switching sessions need not cost a reconnect.
+    private let sessionBox: LockedBox<String?>
+    private var session: String? { sessionBox.current }
 
     /// Guarded by `lock`; see `UnsafeTransfer` for why it is boxed.
     private let client = LockedBox<UnsafeTransfer<SSHClient>?>(nil)
@@ -44,7 +49,7 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
         self.privateKey = privateKey
         self.validator = PinningHostKeyValidator(host: host.pinKey, policy: hostKeys)
         self.herdrPathBox = LockedBox(herdrPath)
-        self.session = session
+        self.sessionBox = LockedBox(session)
     }
 
     /// Loads an OpenSSH ed25519 private key from disk.
@@ -119,6 +124,16 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     /// what a non-login shell needs — see `HerdrLookup`.
     public func useHerdrPath(_ path: String) {
         herdrPathBox.withLock { $0 = path }
+    }
+
+    /// Selects the named session for every later command.
+    ///
+    /// Safe on a live connection: session selection is an environment prefix on
+    /// each exec channel, not connection state, so nothing already running is
+    /// disturbed. It assumes one drill-down at a time, which is what the app
+    /// does — the user is inside a single session's workspaces or nowhere.
+    public func useSession(_ session: String?) {
+        sessionBox.withLock { $0 = session }
     }
 
     /// Drops the connection. The next call reconnects.

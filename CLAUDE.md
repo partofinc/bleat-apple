@@ -72,6 +72,9 @@ BleatKit/                   # the local Swift package
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
       Context/              # AppContext, routers, stores
       Pairing/              # the pairing sheet, scanner and its model
+      Sessions/             # the sessions on a host
+      Workspaces/           # workspaces in a session
+      Agents/               # agents in a workspace, blocked first
       Views/                # screens
       Previews/             # #if DEBUG sample data for #Preview only
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
@@ -671,6 +674,35 @@ prompts, guesses, or trusts anything on first sight.
   record's `lastGoodEndpoint`; a copy loaded a moment earlier carries the
   *previous* winner, so saving it undoes the one just recorded. Both
   `recordSuccess` and `recordHerdrPath` edit the stored record in place.
+
+### The list screens (Phase 2)
+
+Sessions, workspaces and agents are the same screen three times, so the loading
+is written once: `RemoteList` holds the generation token, the cancelled-screen
+silence, the drop-a-dead-connection rule and the keep-rows-through-a-refresh
+rule. Three copies of that would drift, and each way it drifts is a bug the user
+sees rather than a crash anyone catches. `RemoteListView` does the same for the
+three states a fetched list has — a result that is empty is not a failure, a
+failure needs a way back, and neither should look like the other.
+
+- **Session selection does not cost a reconnect.** `HERDR_SESSION` is a command
+  prefix, not something the handshake settles, so `SSHTransport.useSession`
+  changes it on a live connection. Making the session part of the connection's
+  identity instead would have meant a fresh handshake on every drill-down from
+  the session list. It assumes one drill-down at a time, which is what the app
+  does.
+- **Ordering is not restated in the UI.** `HerdrClient.agents()` returns them
+  already sorted by attention and `workspaces()` likewise, so the app cannot
+  disagree with the console tool about what "blocked first" means.
+- **`Agent.displayTitle` is in `BleatKit`**, because both the app and
+  `bleat agents` have to choose among Herdr's three names — stripped title, raw
+  title, agent kind — and each can be missing *or empty*. The tool's own version
+  fell back to an empty string, so an untitled pane printed as a blank column;
+  the shared one falls back to the pane id, which is at least unique.
+- **A pane's `foreground_cwd` is shown in preference to `cwd`**, because it
+  follows the running process, and it is truncated at the **head**: every row
+  starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
+  part that distinguishes one checkout from another.
 
 ### The pairing UI (Phase 2)
 

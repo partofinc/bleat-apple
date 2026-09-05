@@ -193,8 +193,7 @@ do {
 
     case "agents":
         for agent in try await client.agents() {
-            let title = agent.terminalTitleStripped ?? agent.terminalTitle ?? ""
-            print("\(agent.agentStatus.rawValue.padded(9)) \(agent.paneID.padded(18)) \(title.padded(24)) \(agent.cwd ?? "")")
+            print("\(agent.agentStatus.rawValue.padded(9)) \(agent.paneID.padded(18)) \(agent.displayTitle.padded(24)) \(agent.cwd ?? "")")
         }
 
     case "schema":

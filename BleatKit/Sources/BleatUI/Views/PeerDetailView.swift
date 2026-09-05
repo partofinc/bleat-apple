@@ -9,13 +9,17 @@ import SwiftUI
 /// they are worth reading is the moment the list above has failed.
 struct PeerDetailView: View {
     let peer: PairedPeer
-    @State private var sessions: SessionsModel
+    @State private var sessions: RemoteList<SessionInfo>
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
     init(peer: PairedPeer, connections: ConnectionStore) {
         self.peer = peer
-        _sessions = State(wrappedValue: SessionsModel(connections: connections))
+        // No session prefix: `session list` is a client-side command that
+        // reports every session regardless of which one is selected.
+        _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
+            try await $0.sessions()
+        })
     }
 
     var body: some View {

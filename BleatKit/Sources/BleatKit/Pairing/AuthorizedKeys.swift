@@ -24,14 +24,49 @@ public enum AuthorizedKeys {
     /// and locking them out of their own machine. Making the empty case
     /// unrepresentable is the only fix that cannot be forgotten at a call site.
     public struct Marker: Sendable, Hashable, CustomStringConvertible {
+        /// What a key was installed for. The two live very different lives: an
+        /// enrollment key is single-use and expires on its own, a device key is
+        /// a phone's durable credential and only leaves when somebody removes
+        /// it.
+        public enum Kind: String, Sendable, Hashable, CaseIterable {
+            case enrollment = "enroll"
+            case device
+        }
+
+        public let kind: Kind
         public let value: String
 
         /// Fails when `id` contains nothing usable. Callers that generate their
         /// own id get a non-optional result from `enrollment()`/`device()`.
-        init?(kind: String, id: String) {
+        init?(kind: Kind, id: String) {
             let cleaned = AuthorizedKeys.sanitizeMarker(id)
             guard !cleaned.isEmpty else { return nil }
-            self.value = "\(AuthorizedKeys.markerPrefix)-\(kind)-\(cleaned)"
+            self.kind = kind
+            self.value = "\(AuthorizedKeys.markerPrefix)-\(kind.rawValue)-\(cleaned)"
+        }
+
+        /// Reads a whole marker back — off a host's `authorized_keys`, or off
+        /// the command line where a user typed one to revoke.
+        ///
+        /// **This one validates rather than sanitising**, unlike the id-taking
+        /// initialiser above, and the asymmetry is deliberate. Sanitising an id
+        /// only ever *makes* a marker; sanitising something a user typed would
+        /// silently turn `bleat-device-ab/12` into `bleat-device-ab12` — a
+        /// different, possibly existing key — and this string's whole purpose
+        /// is to name the line `removeCommand` deletes. Deleting a key nobody
+        /// asked to delete is worse than refusing a typo.
+        public init?(text: String) {
+            let parts = text.split(separator: "-", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3,
+                  parts[0] == AuthorizedKeys.markerPrefix,
+                  let kind = Kind(rawValue: String(parts[1])),
+                  !parts[2].isEmpty,
+                  // Already exactly what `sanitizeMarker` would leave, or it is
+                  // not one of ours.
+                  AuthorizedKeys.sanitizeMarker(String(parts[2])) == parts[2]
+            else { return nil }
+            self.kind = kind
+            self.value = text
         }
 
         public var description: String { value }
@@ -43,18 +78,18 @@ public enum AuthorizedKeys {
     /// marker is interpolated into a shell command and into a key comment.
     /// Nothing reaching either place should be able to carry a quote.
     public static func enrollmentMarker() -> Marker {
-        Marker(kind: "enroll", id: randomHex())!   // randomHex is always usable
+        Marker(kind: .enrollment, id: randomHex())!   // randomHex is always usable
     }
 
     /// A marker for a device's durable key: `bleat-device-<16 hex>`.
     public static func deviceMarker() -> Marker {
-        Marker(kind: "device", id: randomHex())!
+        Marker(kind: .device, id: randomHex())!
     }
 
     /// Rebuilds a marker from a caller-supplied id, e.g. one read back off a
     /// host. Nil when nothing usable survives sanitising.
-    public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: "enroll", id: id) }
-    public static func deviceMarker(id: String) -> Marker? { Marker(kind: "device", id: id) }
+    public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: .enrollment, id: id) }
+    public static func deviceMarker(id: String) -> Marker? { Marker(kind: .device, id: id) }
 
     /// The `authorized_keys` line for a single-use enrollment key.
     ///
@@ -84,11 +119,22 @@ public enum AuthorizedKeys {
 
     /// `YYYYMMDDHHMMSSZ` — the UTC form sshd accepts.
     static func expiryStamp(_ date: Date) -> String {
+        expiryFormatter.string(from: date)
+    }
+
+    /// Reads a stamp back, for showing a leftover enrollment key's deadline.
+    static func expiryDate(stamp: String) -> Date? {
+        expiryFormatter.date(from: stamp)
+    }
+
+    /// Built per call rather than held in a `static let`: `DateFormatter` is
+    /// not `Sendable`, and this package has no main actor to pin one to.
+    private static var expiryFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyyMMddHHmmss'Z'"
-        return formatter.string(from: date)
+        return formatter
     }
 
     /// Lists the marker of every Bleat device key in the file, one per line.
@@ -101,6 +147,29 @@ public enum AuthorizedKeys {
     public static func listDeviceMarkersCommand() -> String {
         let pattern = quote("[[:space:]]\(markerPrefix)-device-[A-Za-z0-9._-]+$")
         return "grep -o -E -- \(pattern) \(path) 2>/dev/null | tr -d '[:blank:]' || true"
+    }
+
+    /// Prints every Bleat line in the file, whole.
+    ///
+    /// This is the command behind `bleat keys list`, and behind the answer to
+    /// the question the pairing design leaves open: *what does this machine
+    /// still let in?* Unpairing on a phone drops the phone's record and cannot
+    /// touch the host, so the host's own file is the only place the truth
+    /// lives.
+    ///
+    /// Whole lines rather than markers, unlike `listDeviceMarkersCommand`,
+    /// because the user is being asked to decide which keys to keep: the
+    /// fingerprint is what they can compare against the phone in their hand,
+    /// and an `expiry-time` is what says a leftover enrollment key is already
+    /// harmless. `Entry.parse` turns each line back into those.
+    ///
+    /// Locked, for the same reason `containsKeyCommand` is: every write-back
+    /// here truncates before it writes, and an unlocked read landing in that
+    /// instant reports an empty file. "No Bleat keys on this machine" is
+    /// precisely the answer a user would stop reading after.
+    public static func listCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-(enroll|device)-[A-Za-z0-9._-]+$")
+        return locked("grep -E -- \(pattern) \(path) 2>/dev/null || true")
     }
 
     /// Removes **every** Bleat enrollment key, whoever left it.

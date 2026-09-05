@@ -10,16 +10,29 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 2 in progress — pairing works on a real phone
+## Current phase: 2 — one gate item left, and it needs Tailscale installed
 
-**Verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned with an
-iPhone: the host key pinned out of band matched
+**Pairing verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned
+with an iPhone: the host key pinned out of band matched
 (`SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78`, the same one this file
 records), `herdr` resolved to `/opt/homebrew/bin/herdr` through a login shell on
 first connect, three endpoints were classified and raced, and the swap completed
 — device key installed, proved by a second handshake, enrollment key deleted.
-The host printed `Paired.` What remains of Phase 2 is the screens: sessions,
-workspaces, agents, and the pane.
+The host printed `Paired.`
+
+**Screens verified on device, 6 Sept 2026.** Hosts → session → workspaces →
+agents → pane, all live against the `work` session. The pane renders at the
+pane's own grid and pans, so nothing is cropped — the sizing problem that held
+this gate open is settled; see **`--cols` crops** below. Unpairing revokes the
+device key from the host, and `bleat keys` can see and remove one from the Mac
+side.
+
+**What is left of the Phase 2 gate is "runs on a real phone over Tailscale",
+and it has never been tried.** Tailscale is not installed on the dev Mac, so
+`bleat pair`'s Tailscale endpoint detection (`tailscale status --json` →
+`Self.DNSName`, `Self.TailscaleIPs`) is written and unverified. Everything so
+far has been on the LAN. Do not call the gate met on the strength of the
+screens alone.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified

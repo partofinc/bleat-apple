@@ -21,10 +21,43 @@ public struct PeerRegistry: Sendable {
 
     public init(url: URL) { self.url = url }
 
+    /// Where this registry writes. Exposed so a test can pin the location
+    /// rather than only the behaviour — the location is the part that was
+    /// wrong, and it fails on device and nowhere else.
+    public var fileURL: URL { url }
+
+    /// `~/.bleat/peers.json` — the **console tool's** location, alongside the
+    /// files it has kept there since Phase 1.
+    ///
+    /// Not usable from an app on iOS, and the failure is not subtle: on iOS
+    /// `NSHomeDirectory()` is the app's container *root*, which is read-only —
+    /// only `Documents/`, `Library/` and `tmp/` inside it can be written. A
+    /// pairing that had already installed and proven its key on the host then
+    /// failed at the last step with `NSCocoaErrorDomain 513`, leaving a key on
+    /// the host that the phone had no record of. Apps use
+    /// `applicationSupport()`.
     public static func standard(
         directory: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bleat")
     ) -> PeerRegistry {
         PeerRegistry(url: directory.appendingPathComponent("peers.json"))
+    }
+
+    /// Where an app keeps its peers: `Application Support/Bleat/peers.json`.
+    ///
+    /// Correct on both platforms with no branch — inside the container on iOS,
+    /// under `~/Library` on a Mac — and it is the location Apple designates for
+    /// data the app needs but the user does not browse.
+    ///
+    /// The directory is **excluded from backup**, deliberately. The device key
+    /// is `ThisDeviceOnly` in the Keychain and so does not restore to a new
+    /// phone; a peer list that did restore would name hosts this device can no
+    /// longer authenticate to, and every one of them would fail at the
+    /// handshake with nothing pointing at why. Re-pairing is the honest answer,
+    /// and it is what the user has to do regardless.
+    public static func applicationSupport() -> PeerRegistry {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return PeerRegistry(url: base.appendingPathComponent("Bleat/peers.json"))
     }
 
     public func all() throws -> [PairedPeer] {
@@ -88,11 +121,19 @@ public struct PeerRegistry: Sendable {
     }
 
     private func write(_ peers: [PairedPeer]) throws {
+        var directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
+            at: directory,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        // See `applicationSupport()`: the device key cannot restore to another
+        // phone, so a peer list that did would name hosts this device can no
+        // longer reach. Set on the directory, and harmless where backup does
+        // not apply.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(peers).write(to: url, options: .atomic)

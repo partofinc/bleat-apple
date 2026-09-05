@@ -11,6 +11,9 @@ public struct KnownHostsStore: Sendable {
     public init(url: URL) { self.url = url }
 
     /// Default location for the console tool: `~/.bleat/known_hosts`.
+    /// `~/.bleat` — the console tool's. An app on iOS must pass a directory
+    /// instead: `NSHomeDirectory()` there is the container's read-only root, so
+    /// this path cannot be created. See `PeerRegistry.applicationSupport()`.
     public static func standard(
         directory: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bleat")
     ) -> KnownHostsStore {

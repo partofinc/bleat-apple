@@ -21,8 +21,12 @@ public final class PeerStore {
     private let registry: PeerRegistry
     private let keys: KeychainKeyStore
 
+    /// - Parameter registry: Defaults to the **app's** location, not the
+    ///   console tool's. `PeerRegistry.standard()` is `~/.bleat`, which on iOS
+    ///   resolves inside the app container's read-only root and cannot be
+    ///   written at all.
     public init(
-        registry: PeerRegistry = .standard(),
+        registry: PeerRegistry = .applicationSupport(),
         keys: KeychainKeyStore = KeychainKeyStore()
     ) {
         self.registry = registry

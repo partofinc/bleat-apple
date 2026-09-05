@@ -642,6 +642,19 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
   recycles the rows a representable lives in; started once, a detached and
   re-attached preview comes back permanently black, and the view above has no
   state for "camera stopped" — it would show a viewfinder that can never fire.
+- **An app's files go under Application Support, never `~/.bleat`.** On iOS
+  `NSHomeDirectory()` is the app container's **read-only root** — only
+  `Documents/`, `Library/` and `tmp/` inside it can be written — so a
+  home-relative dot-directory cannot be created at all. Found on device, at the
+  worst possible moment: the pairing had installed the key, proven it with a
+  second handshake and deleted the enrollment key, and then failed to write the
+  record with `NSCocoaErrorDomain 513`, leaving a key on the host the phone had
+  no memory of. `PeerRegistry.applicationSupport()` is correct on both
+  platforms with no branch; `standard()` stays `~/.bleat` for the console tool,
+  as do `HostRegistry` and `KnownHostsStore`, and all three now say so.
+  The directory is **excluded from backup**: the device key is `ThisDeviceOnly`
+  and does not restore to a new phone, so a peer list that did would name hosts
+  this device can no longer authenticate to.
 - **`PeerStore.deviceKey()` throws instead of writing the shared `failure`.**
   Sharing one error property meant opening the key sheet cleared an
   unreadable-peer-file banner, after which the list said "No hosts yet" —

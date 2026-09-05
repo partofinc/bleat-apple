@@ -10,8 +10,13 @@ struct PaneSurface: View {
 
     var body: some View {
         #if canImport(UIKit)
-        TerminalHost(model: model)
+        TerminalHost(model: model, grid: model.grid)
             .ignoresSafeArea(.container, edges: .bottom)
+            .overlay(alignment: .bottomTrailing) {
+                if case .live = model.phase, let grid = model.grid {
+                    GridBadge(grid: grid, isCropped: model.isCropped)
+                }
+            }
             .overlay {
                 switch model.phase {
                 case .opening:

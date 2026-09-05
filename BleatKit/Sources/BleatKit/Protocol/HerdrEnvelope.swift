@@ -30,6 +30,11 @@ public struct AgentList: Decodable, Sendable {
     public let agents: [Agent]
 }
 
+/// `pane layout`'s payload. The layout is one level down, beside a `type`.
+public struct PaneLayoutResult: Decodable, Sendable {
+    public let layout: PaneLayout
+}
+
 public struct PaneList: Decodable, Sendable {
     public let panes: [Pane]
 }

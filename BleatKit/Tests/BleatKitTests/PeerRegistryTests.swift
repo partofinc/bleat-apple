@@ -3,12 +3,12 @@ import Testing
 @testable import BleatKit
 
 @Suite("Paired peers on disk")
-struct PeerStoreTests {
+struct PeerRegistryTests {
 
-    private func scratch() -> (PeerStore, URL) {
+    private func scratch() -> (PeerRegistry, URL) {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("bleat-peers-\(UUID().uuidString)")
-        return (PeerStore(url: directory.appendingPathComponent("peers.json")), directory)
+        return (PeerRegistry(url: directory.appendingPathComponent("peers.json")), directory)
     }
 
     private func peer(

@@ -48,9 +48,9 @@ struct DeviceKeyView: View {
             }
             .task {
                 guard !loaded else { return }
-                let resolved = context.hosts.deviceKey()
+                let resolved = context.peers.deviceKey()
                 key = resolved
-                failure = context.hosts.failure
+                failure = context.peers.failure
                 loaded = true
             }
         }

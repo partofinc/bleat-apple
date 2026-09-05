@@ -12,15 +12,19 @@ import Foundation
 /// JSON in the app container on iOS, `~/.bleat/` on a Mac, matching
 /// `HostRegistry` and `KnownHostsStore`. Nothing secret lives here: the device
 /// key is in the Keychain, and a host key is public by definition.
-public struct PeerStore: Sendable {
+///
+/// A *registry*, not a store, for the same reason `HostRegistry` is: it is the
+/// file. `PeerStore` in `BleatUI` is the observable that wraps it, and the
+/// naming pair is what says which is which.
+public struct PeerRegistry: Sendable {
     private let url: URL
 
     public init(url: URL) { self.url = url }
 
     public static func standard(
         directory: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bleat")
-    ) -> PeerStore {
-        PeerStore(url: directory.appendingPathComponent("peers.json"))
+    ) -> PeerRegistry {
+        PeerRegistry(url: directory.appendingPathComponent("peers.json"))
     }
 
     public func all() throws -> [PairedPeer] {

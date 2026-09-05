@@ -75,16 +75,11 @@ enum Describe {
             If this was an intentional rekey, remove the line for this host from
             ~/.bleat/known_hosts and connect again.
             """
-        case .authenticationFailed(let detail):
-            return "authentication failed: \(detail)"
-        case .connectionFailed(let detail):
-            return "could not connect: \(detail)"
-        case .channelClosed:
-            return "the channel closed"
-        case .notConnected:
-            return "not connected"
-        case .oversizedRecord(let limit):
-            return "host sent a record larger than \(limit) bytes without a newline"
+        default:
+            // Everything else describes itself now, in BleatKit, where the app
+            // can reach it too. Only the advice above is the tool's own — the
+            // phone has no `known_hosts` to edit.
+            return String(describing: error)
         }
     }
 }

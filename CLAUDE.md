@@ -51,7 +51,9 @@ BleatKit/                   # the local Swift package
       Keys/                 # device ed25519 key + Keychain storage
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
       Context/              # AppContext, routers, stores
+      Pairing/              # the pairing sheet, scanner and its model
       Views/                # screens
+      Previews/             # #if DEBUG sample data for #Preview only
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
@@ -585,15 +587,48 @@ winner as the address it had just reached.
 
 **Saving the peer is the one fallible step after the point of no return.** By
 then the enrollment key is gone from the host, so rescanning the same code
-cannot work — `PeerStore.all()` tolerates a *missing* file but not an
+cannot work — `PeerRegistry.all()` tolerates a *missing* file but not an
 undecodable one, and that failure would otherwise be reported as a generic
 pairing error. `PairingError.peerNotRecorded` says the host half succeeded and
 sends the user to run `bleat pair` again rather than back to a dead QR.
 
-**`PeerStore` is keyed by host key**, so pairing the same Mac again from a
+**`PeerRegistry` is keyed by host key**, so pairing the same Mac again from a
 second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
+
+### The pairing UI (Phase 2)
+
+`PeersView` is the app's first screen and there is no manual host list any more.
+Adding a host by typing an address existed because there was no other way to
+acquire one; pairing is the way now, and the promise is zero host setup beyond
+Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
+
+- **Two ways in, and both are needed.** The camera, and a pasted
+  `bleat://pair?d=…` link. `bleat pair` falls back to printing that link when
+  the window is too small for a QR or is not a terminal at all, and a fallback
+  nothing can consume is not a fallback.
+- **A refused camera is not a dead end.** The scan section says what happened
+  and offers Settings; the paste field is still there below it.
+- **Claiming a scanned code is synchronous.** A camera reports the same QR many
+  times a second and each frame spawns a `Task`, so checking "have we tried
+  this?" and marking it must happen in one non-suspending step. An `await`
+  between them is a place the second frame runs — and the enrollment key is
+  single-use, so two redemptions would race to install and then delete it.
+- **The result screen shows the host key fingerprint**, because `bleat pair`
+  prints the same string above the QR. Matching them by eye is the one check no
+  software in this flow can do for the user.
+- **`TransportError` describes itself** now, in `BleatKit`. The console tool's
+  private rendering could not be reached from the app, so a failed connection
+  arrived at the user as `connectionFailed("…")`, enum case and all. The tool
+  keeps only the advice it alone can give — which `known_hosts` line to delete
+  after an intentional rekey; the phone has no such file.
+- **The camera purpose string is `INFOPLIST_KEY_NSCameraUsageDescription`** on
+  the app target. There is no `INFOPLIST_KEY_` for `CFBundleURLTypes`, so
+  registering `bleat://` as a URL scheme — which would let the system camera
+  open the app straight from the QR — needs a real `Info.plist`, and that
+  fights `GENERATE_INFOPLIST_FILE`. Deferred deliberately; in-app scanning does
+  not depend on it.
 
 ### Endpoint selection on the phone
 
@@ -777,6 +812,6 @@ a file there — so a login shell puts `/opt/homebrew/bin` back whatever it was
 handed. Supply a stub `$SHELL` instead, as `EnrollmentShellTests` does.
 
 Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the passwd
-entry — so `PeerStore.standard()` and `HostRegistry.standard()` still write to
+entry — so `PeerRegistry.standard()` and `HostRegistry.standard()` still write to
 the real `~/.bleat/` under a scratch `HOME`. Pass an explicit directory when that
 matters.

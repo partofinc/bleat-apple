@@ -32,7 +32,7 @@ enum Redeem {
         print("  endpoints  \(peer.endpoints.map(\.description).joined(separator: ", "))")
     }
 
-    static func list(peers: PeerStore) throws {
+    static func list(peers: PeerRegistry) throws {
         let all = try peers.all()
         guard !all.isEmpty else {
             print("No paired peers yet. Run `bleat pair` on the host and `bleat redeem <url>` here.")

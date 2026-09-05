@@ -17,11 +17,15 @@ public final class NavigationRouter {
     ///
     /// Carries the identifiers a screen needs, not model objects: a pushed
     /// value must survive the list beneath it being refreshed.
+    ///
+    /// `peer` throughout is a **host key**, which is what identifies a peer —
+    /// its addresses change, and a route holding one would break the moment the
+    /// phone moved networks.
     public enum Route: Hashable {
-        case sessions(host: String)
-        case workspaces(host: String, session: String?)
-        case agents(host: String, session: String?, workspace: String?)
-        case pane(host: String, session: String?, target: String, title: String)
+        case peer(peer: String)
+        case workspaces(peer: String, session: String?)
+        case agents(peer: String, session: String?, workspace: String?)
+        case pane(peer: String, session: String?, target: String, title: String)
     }
 
     public func push(_ route: Route) { path.append(route) }

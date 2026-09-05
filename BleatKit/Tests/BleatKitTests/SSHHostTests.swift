@@ -66,7 +66,7 @@ struct RemoteCommandTests {
         SSHTransport(
             host: try SSHHost(parsing: "ravil@example:22"),
             privateKey: Curve25519.Signing.PrivateKey(),
-            knownHosts: KnownHostsStore(url: URL(fileURLWithPath: "/dev/null")),
+            hostKeys: .knownHosts(KnownHostsStore(url: URL(fileURLWithPath: "/dev/null"))),
             herdrPath: herdrPath,
             session: session
         )

@@ -28,6 +28,13 @@ public enum PairingError: Error, Sendable, Equatable {
     case noSupportedHostKey
     /// Enrollment did not finish: the phone never swapped its own key in.
     case enrollmentIncomplete(String)
+    /// The swap worked and the peer could not be written down.
+    ///
+    /// Its own case because the remedy is the opposite of every other failure
+    /// here: the host **is** paired, the enrollment key is already gone, and
+    /// rescanning the same code cannot work. Reported as a generic failure it
+    /// would send the user back to a QR that has nothing left to give.
+    case peerNotRecorded(String)
 }
 
 extension PairingError: CustomStringConvertible {
@@ -47,6 +54,9 @@ extension PairingError: CustomStringConvertible {
             "that host has no ed25519 or ECDSA host key, so Bleat cannot verify it"
         case .enrollmentIncomplete(let reason):
             "pairing did not complete: \(reason)"
+        case .peerNotRecorded(let reason):
+            "the host is paired but this device could not save it: \(reason). "
+            + "Run `bleat pair` on the host again once that is fixed."
         }
     }
 }

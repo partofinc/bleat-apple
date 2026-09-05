@@ -143,6 +143,12 @@ enum Pair {
             }
             print("")
             print("Waiting for the phone… (Ctrl-C cancels and removes the key)")
+            // stdout to a pipe or a file is block-buffered, and what follows is
+            // a poll loop that can run for five minutes. Without this the whole
+            // fallback is useless exactly where it is needed — piped, the link
+            // appears only once the tool exits, by which point the key it
+            // carries has already been removed.
+            fflush(stdout)
         }
 
         switch waitForRedemption(

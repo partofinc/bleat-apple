@@ -1,0 +1,143 @@
+import Foundation
+import Testing
+@testable import BleatKit
+
+@Suite("Paired peers on disk")
+struct PeerStoreTests {
+
+    private func scratch() -> (PeerStore, URL) {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bleat-peers-\(UUID().uuidString)")
+        return (PeerStore(url: directory.appendingPathComponent("peers.json")), directory)
+    }
+
+    private func peer(
+        key: String = "ssh-ed25519 AAAAKEY",
+        endpoints: [String] = ["mac.local"],
+        herdr: String? = nil
+    ) -> PairedPeer {
+        PairedPeer(
+            hostKey: key,
+            name: "Mac",
+            username: "ravil",
+            endpoints: endpoints.compactMap { Endpoint(string: $0) },
+            herdrPath: herdr
+        )
+    }
+
+    @Test("an empty store reads as empty rather than failing")
+    func emptyStore() throws {
+        let (store, _) = scratch()
+        #expect(try store.all().isEmpty)
+        #expect(try store.peer(hostKey: "ssh-ed25519 AAAAKEY") == nil)
+    }
+
+    @Test("a peer survives a round trip")
+    func roundTrip() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try store.save(peer(herdr: "/opt/homebrew/bin/herdr"))
+        let loaded = try #require(try store.peer(hostKey: "ssh-ed25519 AAAAKEY"))
+        #expect(loaded.name == "Mac")
+        #expect(loaded.herdrPath == "/opt/homebrew/bin/herdr")
+    }
+
+    /// The rule the whole peer model rests on: one machine, several addresses.
+    /// Pairing again over Tailscale must not cost the peer its LAN addresses,
+    /// which are the fast path when the phone is home.
+    @Test("pairing the same machine from a second network merges, never duplicates")
+    func mergesByHostKey() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try store.save(peer(endpoints: ["mac.local", "10.0.0.5"]))
+        let merged = try store.save(peer(endpoints: ["mac.tail1234.ts.net"]))
+
+        #expect(try store.all().count == 1)
+        #expect(merged.endpoints.map(\.description) == ["mac.local", "10.0.0.5", "mac.tail1234.ts.net"])
+    }
+
+    /// Identity is the host key, so a different key is a different machine —
+    /// two peers, not a merge.
+    @Test("a different host key is a different peer")
+    func differentKeyIsDifferentPeer() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try store.save(peer(key: "ssh-ed25519 AAAAONE"))
+        try store.save(peer(key: "ssh-ed25519 AAAATWO"))
+        #expect(try store.all().count == 2)
+    }
+
+    @Test("the winning endpoint is remembered, so the next connection tries it first")
+    func recordsLastGood() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try store.save(peer(endpoints: ["mac.local", "10.0.0.5"]))
+        let winner = try #require(Endpoint(string: "10.0.0.5"))
+        try store.recordSuccess(endpoint: winner, forHostKey: "ssh-ed25519 AAAAKEY")
+
+        let loaded = try #require(try store.peer(hostKey: "ssh-ed25519 AAAAKEY"))
+        #expect(loaded.lastGoodEndpoint == winner)
+        #expect(loaded.endpointsToTry(onLocalLink: true).first == winner)
+    }
+
+    /// Called on the success path of a connection. Failing there would turn a
+    /// working connection into an error over bookkeeping.
+    @Test("recording success for an unknown peer is not an error")
+    func recordSuccessIsForgiving() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let endpoint = try #require(Endpoint(string: "10.0.0.5"))
+        try store.recordSuccess(endpoint: endpoint, forHostKey: "ssh-ed25519 NOBODY")
+        #expect(try store.all().isEmpty)
+    }
+
+    @Test("removing reports whether anything was there")
+    func remove() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try store.save(peer())
+        #expect(try store.remove(hostKey: "ssh-ed25519 AAAAKEY"))
+        #expect(try store.remove(hostKey: "ssh-ed25519 AAAAKEY") == false)
+        #expect(try store.all().isEmpty)
+    }
+
+    /// A re-pairing knows something the stored record does not: which address
+    /// answered *just now*. Keeping the old one sends the next connection to
+    /// the network the phone has left, and spends its timeout there.
+    @Test("re-pairing over a new network updates which endpoint worked")
+    func mergeTakesTheNewWinner() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var home = peer(endpoints: ["mac.local", "10.0.0.5"])
+        home.lastGoodEndpoint = Endpoint(string: "10.0.0.5")
+        try store.save(home)
+
+        var away = peer(endpoints: ["mac.tail1234.ts.net"])
+        away.lastGoodEndpoint = Endpoint(string: "mac.tail1234.ts.net")
+        let merged = try store.save(away)
+
+        #expect(merged.lastGoodEndpoint == Endpoint(string: "mac.tail1234.ts.net"))
+        #expect(merged.endpointsToTry(onLocalLink: false).first == Endpoint(string: "mac.tail1234.ts.net"))
+    }
+
+    /// …but a record that learned nothing must not erase what was known.
+    @Test("a merge with no winner of its own keeps the stored one")
+    func mergeKeepsTheOldWinnerWhenItLearnedNothing() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var first = peer(endpoints: ["mac.local"])
+        first.lastGoodEndpoint = Endpoint(string: "mac.local")
+        try store.save(first)
+
+        let merged = try store.save(peer(endpoints: ["10.0.0.5"]))
+        #expect(merged.lastGoodEndpoint == Endpoint(string: "mac.local"))
+    }
+}
+

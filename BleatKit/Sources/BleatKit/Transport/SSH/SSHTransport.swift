@@ -23,16 +23,19 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     ///   - herdrPath: Absolute path is the safe default — a non-login shell
     ///     often lacks `herdr` on `PATH`.
     ///   - session: Named session, applied as a command prefix (see `command`).
+    ///   - hostKeys: How to decide the machine that answered is the right one.
+    ///     A paired peer supplies `.expect(peer.hostKey)`, which is the pin;
+    ///     the console tool falls back to the trust-on-first-use file.
     public init(
         host: SSHHost,
         privateKey: Curve25519.Signing.PrivateKey,
-        knownHosts: KnownHostsStore = .standard(),
+        hostKeys: HostKeyPolicy = .standard,
         herdrPath: String = "herdr",
         session: String? = nil
     ) {
         self.host = host
         self.privateKey = privateKey
-        self.validator = PinningHostKeyValidator(host: host.pinKey, store: knownHosts)
+        self.validator = PinningHostKeyValidator(host: host.pinKey, policy: hostKeys)
         self.herdrPath = herdrPath
         self.session = session
     }
@@ -143,23 +146,34 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     }
 
     public func run(_ args: [String]) async throws -> Data {
+        try await execute(command(for: args)) { exitCode, stderr in
+            // herdr writes its error envelope to stderr and exits non-zero.
+            HerdrError.fromStderr(command: args, exitCode: exitCode, stderr: stderr)
+        }
+    }
+
+    /// Runs one command on its own exec channel and returns stdout.
+    ///
+    /// - Parameter onFailure: builds the error for a non-zero exit. The two
+    ///   callers describe failure differently — a `herdr` command that was
+    ///   reached and said no, against a shell command that did not do what it
+    ///   was told — and nothing else about the channel differs.
+    private func execute(
+        _ commandLine: String,
+        onFailure: (Int32, Data) -> any Error
+    ) async throws -> Data {
         let connection = try await connected()
         var stdout = Data(), stderr = Data()
 
         do {
-            for try await chunk in try await connection.executeCommandStream(command(for: args)) {
+            for try await chunk in try await connection.executeCommandStream(commandLine) {
                 switch chunk {
                 case .stdout(let buffer): stdout.append(contentsOf: buffer.readableBytesView)
                 case .stderr(let buffer): stderr.append(contentsOf: buffer.readableBytesView)
                 }
             }
         } catch let failure as SSHClient.CommandFailed {
-            // herdr writes its error envelope to stderr and exits non-zero.
-            throw HerdrError.fromStderr(
-                command: args,
-                exitCode: Int32(clamping: failure.exitCode),
-                stderr: stderr
-            )
+            throw onFailure(Int32(clamping: failure.exitCode), stderr)
         } catch is CancellationError {
             // The caller went away; the connection is still fine.
             throw CancellationError()
@@ -176,5 +190,23 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     public func openStream(_ args: [String]) async throws -> any HerdrStream {
         let connection = try await connected()
         return await SSHStream(client: connection, command: command(for: args), args: args)
+    }
+}
+
+/// Pairing runs shell commands, not `herdr` commands: installing a key in
+/// `authorized_keys` and finding where `herdr` lives are both plain shell. The
+/// conformance sits on the transport so both kinds of work share one
+/// connection, one dial and one host key check.
+extension SSHTransport: ShellRunner {
+    public func run(shell command: String) async throws -> String {
+        let stdout = try await execute(command) { exitCode, stderr in
+            ShellError(
+                command: command,
+                exitCode: exitCode,
+                stderr: String(decoding: stderr, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        return String(decoding: stdout, as: UTF8.self)
     }
 }

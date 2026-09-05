@@ -261,3 +261,53 @@ struct AuthorizedKeysLockTests {
         }
     }
 }
+
+@Suite("Removing a key by the key itself")
+struct KeyPatternTests {
+
+    private let line = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj"
+
+    /// The phone never learns the enrollment marker — it is minted on the host
+    /// and the QR does not carry it — so the line is found by the key, which
+    /// the phone does have.
+    @Test("the blob is matched as a whole field, not as a substring")
+    func delimited() throws {
+        let pattern = try #require(AuthorizedKeys.keyPattern(publicKeyLine: line))
+        #expect(pattern.hasPrefix("'[[:space:]]"))
+        #expect(pattern.hasSuffix("([[:space:]]|$)'"))
+    }
+
+    /// base64's alphabet includes `+`, which is an ERE metacharacter. Unescaped
+    /// it would turn the preceding character into "one or more", so the pattern
+    /// would match keys that are not this one — and `grep -v` would delete them.
+    @Test("base64's + is escaped, so the pattern cannot become a wildcard")
+    func escapesPlus() throws {
+        let pattern = try #require(AuthorizedKeys.keyPattern(publicKeyLine: line))
+        #expect(pattern.contains(#"Jie\+EkZ"#))
+        #expect(!pattern.contains("Jie+EkZ"))
+    }
+
+    /// A pattern built from something unparsable is how an `authorized_keys`
+    /// gets truncated: `grep -v` with an over-broad pattern removes everything
+    /// it matches, and the user's own keys are in the same file.
+    @Test("an unparsable line yields no command at all")
+    func refusesGarbage() {
+        #expect(AuthorizedKeys.removeKeyCommand(publicKeyLine: "") == nil)
+        #expect(AuthorizedKeys.removeKeyCommand(publicKeyLine: "not-a-key") == nil)
+        #expect(AuthorizedKeys.containsKeyCommand(publicKeyLine: "ssh-ed25519 %%%") == nil)
+    }
+
+    /// The two ends write the same key differently: the host puts
+    /// `restrict,expiry-time=…` in front and a marker behind, and the phone has
+    /// neither. Matching the blob rather than the line is what lets the phone
+    /// delete a line it could not have reconstructed.
+    @Test("options and comments do not change the pattern")
+    func ignoresOptionsAndComments() throws {
+        let bare = try #require(AuthorizedKeys.keyPattern(publicKeyLine: line))
+        let decorated = try #require(AuthorizedKeys.keyPattern(
+            publicKeyLine: line + " bleat-enroll-0123456789abcdef"
+        ))
+        #expect(bare == decorated)
+    }
+}
+

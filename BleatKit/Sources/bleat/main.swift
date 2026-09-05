@@ -23,9 +23,13 @@ Against a host (omit <host> to use the local herdr):
   bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
   bleat schema     [host]
 
-Pairing:
+Pairing (host side):
   bleat pair    [--port N] [--endpoint HOST[:PORT]]... [--timeout SECONDS]
   bleat inspect [--port N] [--endpoint HOST[:PORT]]...
+
+Pairing (the side a phone takes; here for testing the host side):
+  bleat redeem <bleat://pair?d=...>
+  bleat peers
 
 Ctrl-] detaches: sends terminal.release and exits cleanly.
 """
@@ -150,6 +154,22 @@ do {
 
     if command == "pair" {
         try Pair.run(options: options)
+        exit(0)
+    }
+
+    // The phone's side. Kept in the tool so the swap — install the device key,
+    // verify it, and only then delete the enrollment key — can be run against a
+    // real `bleat pair` before there is an app to run it from.
+    if command == "redeem" {
+        guard options.positional.count == 1 else {
+            fail("redeem takes exactly one pairing URL (bleat://pair?d=...)")
+        }
+        try await Redeem.run(code: options.positional[0])
+        exit(0)
+    }
+
+    if command == "peers" {
+        try Redeem.list(peers: .standard())
         exit(0)
     }
 

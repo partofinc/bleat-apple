@@ -175,6 +175,69 @@ public enum AuthorizedKeys {
         )
     }
 
+    /// Removes every line carrying this exact public key, whatever its comment.
+    ///
+    /// **The phone removes the enrollment line by key, because it never learns
+    /// the marker.** The marker is minted on the host and the QR does not carry
+    /// it — a field that exists only so the *other* side can name a line would
+    /// be paid for in QR modules on every pairing. The key is already in the
+    /// phone's hands: it arrived as a seed and is the thing being revoked.
+    ///
+    /// Also used before installing the device key, so re-pairing a phone that
+    /// is already known replaces its line instead of appending a second copy of
+    /// the same key.
+    ///
+    /// - Parameter publicKeyLine: An OpenSSH `<algorithm> <base64> [comment]`
+    ///   line. Only the blob is matched — options and comments differ between
+    ///   how a key was installed and how it is being removed.
+    /// - Returns: nil when the line will not parse, rather than a command that
+    ///   matches something else. `grep -v` with a pattern built from garbage is
+    ///   how an `authorized_keys` file gets truncated.
+    public static func removeKeyCommand(publicKeyLine: String) -> String? {
+        guard let pattern = keyPattern(publicKeyLine: publicKeyLine) else { return nil }
+        // Same read-modify-write as `removeCommand`, and the same reasons for
+        // every part of it: `cat` back rather than `mv` so the file keeps its
+        // inode and mode, `|| true` because `grep -v` exits 1 when it emits
+        // nothing, and the `-f` guard so a removal on a fresh account does not
+        // create an `authorized_keys` at the umask default.
+        return locked(
+            "f=\(path); if [ -f \"$f\" ]; then t=$(mktemp) && "
+            + "{ grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" "
+            + "&& cat \"$t\" > \"$f\" && rm -f \"$t\"; fi"
+        )
+    }
+
+    /// True when a line carrying this exact public key is present.
+    ///
+    /// Both halves of the swap are verified with it. Installing the device key
+    /// and *believing* it landed is how a phone deletes the only credential it
+    /// has and discovers on the next launch that it cannot connect.
+    public static func containsKeyCommand(publicKeyLine: String) -> String? {
+        guard let pattern = keyPattern(publicKeyLine: publicKeyLine) else { return nil }
+        return "grep -q -E -- \(pattern) \(path) 2>/dev/null && echo yes || echo no"
+    }
+
+    /// Matches the key's blob as a whitespace-delimited field.
+    ///
+    /// Delimited rather than a bare substring: base64 is not self-delimiting,
+    /// and a shorter key's encoding can appear inside a longer one's. The blob
+    /// is what gets matched rather than the whole line, because the line
+    /// differs between the two ends — the host writes the enrollment key with
+    /// `restrict,expiry-time=…` in front and a marker behind, and the phone has
+    /// neither.
+    static func keyPattern(publicKeyLine: String) -> String? {
+        guard let parsed = SSHPublicKeyLine(line: publicKeyLine) else { return nil }
+        let blob = parsed.blob.base64EncodedString()
+        // base64's alphabet is `A-Za-z0-9+/=`, of which only `+` is an ERE
+        // metacharacter — but escaping by construction rather than by that
+        // observation, so a change of encoding cannot quietly turn the pattern
+        // into a wildcard.
+        let escaped = String(blob.flatMap { character -> String in
+            "^$.[]|()*+?{}\\".contains(character) ? "\\\(character)" : "\(character)"
+        })
+        return quote("[[:space:]]\(escaped)([[:space:]]|$)")
+    }
+
     /// True when a line carrying `marker` is present. Prints `yes` or `no`
     /// rather than relying on an exit code, since the caller reads stdout.
     /// Anchored the same way as `removeCommand`, so the two always agree.

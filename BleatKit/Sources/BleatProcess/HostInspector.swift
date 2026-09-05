@@ -68,25 +68,15 @@ public struct HostInspector: Sendable {
 
     /// Finds `herdr` through a **login** shell.
     ///
-    /// sshd runs an exec channel through a non-login shell, which does not read
-    /// the profile that puts Homebrew on `PATH` — verified: a plain
-    /// `zsh -c 'command -v herdr'` finds nothing while `zsh -lc` returns
-    /// `/opt/homebrew/bin/herdr`. Resolving the absolute path here is what
-    /// spares the phone from that problem entirely.
+    /// The question and the reading of its answer are `HerdrLookup`'s, in
+    /// `BleatKit`, because the phone asks the same thing over SSH on first
+    /// connect. Two copies of "which line of this output is the path" would
+    /// drift, and the way they would drift — a profile banner ending up in the
+    /// stored path — is silent until the first herdr call fails.
     func locateHerdr() -> String? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/sh"
         guard let output = run(shell, ["-lc", "command -v herdr"]) else { return nil }
-        // A login shell sources the profile, and profiles print things — a
-        // banner, a motd, an nvm notice. Taking the whole of stdout would put
-        // "Welcome back!\n/opt/homebrew/bin/herdr" in the QR, which fails at
-        // the first remote herdr call with an opaque error. `command -v`
-        // answers last, so the last line is the answer.
-        let path = output
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .last(where: { !$0.isEmpty })
-        guard let path, path.hasPrefix("/") else { return nil }
-        return path
+        return HerdrLookup.path(inOutput: output)
     }
 
     /// The host key the phone will actually be shown.

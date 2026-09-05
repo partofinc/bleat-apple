@@ -442,14 +442,16 @@ Alongside it, three redundancies went:
   dirt and creases; this code is drawn pixel-exact, scanned from a foot away and
   gone in minutes.
 
-**`herdrPath` is deliberately not in the QR — and nothing resolves it yet.**
-The phone must run `command -v herdr` through a login shell on first connect and
-store the result on the peer; until that lands, `PairedPeer.herdrPath` is always
-nil and `SSHTransport`'s bare `"herdr"` default will fail on sshd's non-login
-shell. **This is an open item for the iOS PR, not finished behaviour.** `bleat pair` already
-refuses to pair a host without herdr, so it exists; a baked path costs 24 bytes
-and goes stale the moment herdr moves, so discovering it is both smaller and
-more robust. `PairedPeer.herdrPath` is therefore optional — nil until first use.
+**`herdrPath` is deliberately not in the QR; the client resolves it.** A baked
+path costs 24 bytes and goes stale the moment herdr moves, so discovering it is
+both smaller and more robust. `Enrollment` asks `HerdrLookup.command`
+(`${SHELL:-/bin/sh} -lc 'command -v herdr'`) on the enrollment connection and
+stores the answer on the `PairedPeer` — **before** anything is written, so a
+host without herdr is refused with nothing to undo. `PairedPeer.herdrPath` stays
+optional because a record can predate that. Reading the answer is
+`HerdrLookup.path(inOutput:)` and both ends use it: a login shell sources the
+profile, profiles print banners, and taking the whole of stdout stores
+`"Welcome back!\n/opt/homebrew/bin/herdr"` as the path.
 
 Measured across these changes on the three-endpoint case: the URL went
 **411 → 383 → 350 → 221** characters and the rendered code **85 → 77 → 73 → 61**
@@ -480,6 +482,75 @@ Verified end to end: the glyphs written to a pty were parsed back into modules
 and decoded with `CIDetector`, returning the exact `bleat://pair?d=…` URL. That
 proves the *payload* survives the render; it says nothing about orientation, for
 which see the finder-pattern note above.
+
+### The phone's side of the swap (verified end to end, 5 Sept 2026)
+
+`PairingClient` is the whole of it, and `bleat redeem <url>` runs the same code
+path from a terminal so it can be exercised against a real `bleat pair` without
+a phone. The order is fixed and each step exists because of a way the previous
+one lies:
+
+1. **Resolve `herdr` first**, while nothing has been written. A host that cannot
+   serve the app is refused with nothing to undo.
+2. **Clear this device's own key, then append it.** Re-pairing a known phone
+   must replace its line, not add a second copy of the same key under a second
+   marker.
+3. **Verify the line is there.** An append that succeeded loudly and did nothing
+   — `StrictModes`, a full disk, an unwritable `~/.ssh` — reads back as absent.
+4. **Open a second connection authenticated with the device key.** This is the
+   step that matters, and the one a file check cannot substitute for: a line in
+   `authorized_keys` is not the claim "sshd will accept this key". Found live —
+   an sshd whose `AuthorizedKeysFile` pointed somewhere other than the session's
+   own `~` passed every file check and reported a pairing that could never have
+   worked. One handshake buys certainty.
+5. **Only then delete the enrollment key**, over the *device* session, and
+   verify it is gone. `bleat pair` calls the pairing done when the enrollment
+   line is gone **and** a new `bleat-device-` marker has appeared, so a removal
+   that exited 0 without removing anything would hang the tool while the phone
+   claimed success.
+
+Every failure before step 5 leaves the enrollment key live, so the user scans
+again rather than walking to the Mac.
+
+**The phone deletes the enrollment line by key, not by marker.** The marker is
+minted on the host and the QR does not carry it — a field existing only so the
+other side can name a line would be paid for in modules on every pairing. The
+key is already in the phone's hands. `AuthorizedKeys.keyPattern` matches the
+base64 blob as a **whitespace-delimited field** (base64 is not self-delimiting)
+and escapes ERE metacharacters — `+` is in base64's alphabet, and unescaped it
+would turn the pattern into a wildcard that `grep -v` then deletes by.
+
+**Two host key mechanisms, and the app uses the stronger one.**
+`HostKeyPolicy.knownHosts` is trust-on-first-use in a file, keyed by
+`host:port` — the console tool's, because it is handed a hostname and has
+nothing else. `HostKeyPolicy.expect` compares against a key learned out of band,
+from the QR and afterwards from the `PairedPeer`. It writes nothing, which
+matters: a peer is identified by its host key while its *addresses* come and go,
+and a recycled DHCP lease would otherwise leave a stale pin at
+`192.168.1.50:22` that no legitimate pairing could get past. Verified live: with
+the genuine sshd stopped and an impostor on another port answering with a
+different key, redemption is refused.
+
+**Endpoints are raced, not tried in order.** The first entry is usually a
+`.local` name, and off the LAN that does not fail so much as sit there while the
+working overlay address behind it never gets a turn. `PeerConnector` races them
+all and keeps the first to authenticate; losers are **closed**, since `SSHClient`
+has no deinit that does it and an abandoned session stays open on the host. A
+host key mismatch is promoted over every other failure when nothing wins — it is
+the only outcome that is not about the network, and reporting it as "no address
+answered" sends the user to check their Wi-Fi.
+
+**A merge takes the endpoint that just worked.** `PairedPeer.merging` keeps the
+older record's endpoints but takes the newer `lastGoodEndpoint`, for the same
+reason it takes the newer `herdrPath`: the fresh record is the one that just
+reached the machine. Keeping the stored value sends the next connection to the
+network the phone has left. Seen live — a re-pairing reported the *previous*
+winner as the address it had just reached.
+
+**`PeerStore` is keyed by host key**, so pairing the same Mac again from a
+second network merges into the record that exists. `HostRegistry` is keyed by a
+user-chosen name and cannot do that; it predates pairing and stays as the
+console tool's own list.
 
 ### Endpoint selection on the phone
 
@@ -531,6 +602,25 @@ that govern it — they are settled, not per-PR decisions.
 The QR must be rendered so it does not persist: draw it in the alternate screen
 buffer and restore on exit, so it never enters scrollback. This matters even
 with the enrollment key being single-use.
+
+### `bleat redeem` and `bleat peers` (Phase 2)
+
+```
+bleat redeem <bleat://pair?d=...>   # the phone's side, run from a terminal
+bleat peers                          # what pairing produced
+```
+
+The same `PairingClient` the app will call. It exists so the swap can be run
+against a real `bleat pair` before there is an app, and it is the fastest way to
+reproduce a pairing problem. Its device key lives in `~/.bleat/device_key` rather
+than the Keychain — `KeychainKeyStore` is `ThisDeviceOnly` and prompts, which is
+right on a phone and an obstacle in a terminal.
+
+**Piped output is block-buffered, and both commands print before a long wait.**
+`bleat pair`'s fallback link and `bleat redeem`'s progress line are flushed
+explicitly. Without that, `bleat pair > file` shows the link only once the tool
+exits — by which point the key it carries has been removed, which makes the
+entire non-TTY path useless exactly where it is needed.
 
 ## Concurrency settings (verified 4 Sept 2026)
 
@@ -596,12 +686,6 @@ behaviour when it moves across the seam.
 
 ## Open questions (resolve against the live host, then delete)
 
-- **The phone must resolve `herdrPath` on first connect** (`sh -lc 'command -v
-  herdr'`, verified working when host inspection landed) and store it on the
-  `PairedPeer`. Nothing does this yet; a peer paired today has `herdrPath == nil`
-  and any transport built from it would run a bare `herdr` that sshd's non-login
-  shell cannot find.
-
 - Does `agent prompt --wait` return a JSON result on completion, and what is
   the timeout behavior?
 - Capturing a `blocked` and a `done` agent row into `Fixtures/`. Only `idle`,
@@ -632,3 +716,19 @@ and a client key, write an `sshd_config` with `StrictModes no` and
 `UsePAM no`, and run `/usr/sbin/sshd -f <config> -D -e` as your own user on a
 high port bound to `127.0.0.1`. Remember `herdr` will not be on the PATH of the
 resulting non-login shell, so pass `--herdr /opt/homebrew/bin/herdr`.
+
+**Testing pairing needs one more line in that config, and it is not optional.**
+Pairing writes to `~/.ssh/authorized_keys`, and `~` in an exec channel is the
+*real* home: sshd logs you into your actual account whatever `HOME` the tool was
+started with. Pointing `AuthorizedKeysFile` at a scratch file does **not** move
+the shell's `~`, so the two disagree — and a run under that config installs a key
+in your own `authorized_keys` while reporting success against a file sshd never
+reads. Add `SetEnv HOME=<scratch>` alongside the scratch `AuthorizedKeysFile`
+(verified: the session's `HOME` and `~` both become the scratch), and run
+`bleat pair` with the same `HOME`. Then everything stays inside the scratch
+directory.
+
+Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the passwd
+entry — so `PeerStore.standard()` and `HostRegistry.standard()` still write to
+the real `~/.bleat/` under a scratch `HOME`. Pass an explicit directory when that
+matters.

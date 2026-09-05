@@ -82,6 +82,13 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         merged.username = other.username
         // Keep a path we already resolved if the newer record has none.
         merged.herdrPath = other.herdrPath ?? herdrPath
+        // Likewise the endpoint that just worked. Keeping the stored one would
+        // send the next connection to the network the phone has left: re-pair a
+        // laptop over Tailscale and the LAN address it answered on last week is
+        // tried first, and its timeout is spent before anything else is. Seen
+        // in a live run — a re-pairing reported the previous winner as the one
+        // it had just reached.
+        merged.lastGoodEndpoint = other.lastGoodEndpoint ?? lastGoodEndpoint
         for endpoint in other.endpoints where !merged.endpoints.contains(endpoint) {
             merged.endpoints.append(endpoint)
         }

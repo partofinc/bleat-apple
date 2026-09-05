@@ -3,12 +3,12 @@ import Testing
 @testable import BleatKit
 
 @Suite("Paired peers on disk")
-struct PeerStoreTests {
+struct PeerRegistryTests {
 
-    private func scratch() -> (PeerStore, URL) {
+    private func scratch() -> (PeerRegistry, URL) {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("bleat-peers-\(UUID().uuidString)")
-        return (PeerStore(url: directory.appendingPathComponent("peers.json")), directory)
+        return (PeerRegistry(url: directory.appendingPathComponent("peers.json")), directory)
     }
 
     private func peer(
@@ -139,5 +139,35 @@ struct PeerStoreTests {
         let merged = try store.save(peer(endpoints: ["10.0.0.5"]))
         #expect(merged.lastGoodEndpoint == Endpoint(string: "mac.local"))
     }
-}
 
+    /// The bug this pins: `~/.bleat` is the console tool's location, and on iOS
+    /// `NSHomeDirectory()` is the app container's **read-only root**. A real
+    /// pairing got all the way through — key installed on the host, proven by a
+    /// second handshake, enrollment key deleted — and then failed to write the
+    /// record with `NSCocoaErrorDomain 513`, leaving a key on the host the
+    /// phone had no memory of.
+    @Test("an app's peers live under Application Support, not in the home directory")
+    func applicationSupportIsNotTheHomeDirectory() throws {
+        let url = PeerRegistry.applicationSupport().fileURL
+        let support = try #require(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        )
+        #expect(url.path.hasPrefix(support.path))
+        #expect(url.deletingLastPathComponent().lastPathComponent == "Bleat")
+        // The shape that fails: a dot-directory straight off the home root.
+        #expect(!url.path.contains("/.bleat/"))
+    }
+
+    /// Writing has to create the directory it was pointed at — on a fresh
+    /// install nothing under Application Support exists yet.
+    @Test("the first save creates the directory it needs")
+    func createsItsDirectory() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bleat-fresh-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = PeerRegistry(url: directory.appendingPathComponent("Bleat/peers.json"))
+        try store.save(peer())
+        #expect(try store.all().count == 1)
+    }
+}

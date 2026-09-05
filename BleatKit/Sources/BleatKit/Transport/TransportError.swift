@@ -11,6 +11,32 @@ public enum TransportError: Error, Sendable, Equatable {
     case oversizedRecord(limit: Int)
 }
 
+extension TransportError: CustomStringConvertible {
+    /// `HerdrError` and `PairingError` already describe themselves; this was
+    /// the odd one out, and the console tool's private rendering could not be
+    /// reached from the app — so a failed connection reached the user as
+    /// `connectionFailed("…")`, enum case and all.
+    ///
+    /// A caller with more to say still can: the tool adds what to do about a
+    /// changed host key, which is advice only it can give.
+    public var description: String {
+        switch self {
+        case .notConnected:
+            "not connected"
+        case .connectionFailed(let detail):
+            "could not connect: \(detail)"
+        case .channelClosed:
+            "the connection closed"
+        case .hostKeyMismatch:
+            "the host key changed — refusing to connect"
+        case .authenticationFailed(let detail):
+            "the host refused this key: \(detail)"
+        case .oversizedRecord(let limit):
+            "the host sent a record longer than \(limit) bytes without a newline"
+        }
+    }
+}
+
 /// The `herdr` process ran and reported failure. `stderr` is never discarded.
 public struct HerdrError: Error, Sendable, Equatable {
     public let command: [String]

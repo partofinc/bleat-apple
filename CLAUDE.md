@@ -10,7 +10,16 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 1 complete — ready for Phase 2
+## Current phase: 2 in progress — pairing works on a real phone
+
+**Verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned with an
+iPhone: the host key pinned out of band matched
+(`SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78`, the same one this file
+records), `herdr` resolved to `/opt/homebrew/bin/herdr` through a login shell on
+first connect, three endpoints were classified and raced, and the swap completed
+— device key installed, proved by a second handshake, enrollment key deleted.
+The host printed `Paired.` What remains of Phase 2 is the screens: sessions,
+workspaces, agents, and the pane.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
@@ -30,6 +39,17 @@ Read the phase gates before proposing work outside them.
 
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
 push notifications, watchOS, Live Activities, multi-account badges.
+
+### Must ship before any release
+
+- **`bleat keys list` / `bleat keys revoke <marker>`.** Unpairing on the phone
+  drops the local record and leaves the `bleat-device-…` line in the host's
+  `~/.ssh/authorized_keys` — permanently, with no way to see it or remove it
+  short of hand-editing the file. A phone that is lost, sold or wiped keeps
+  shell access to the Mac until somebody notices. `AuthorizedKeys` already has
+  `listDeviceMarkersCommand()` and `removeCommand(marker:)`; what is missing is
+  a command surface and a screen that tells the user unpairing is only half the
+  job. **This is a release blocker, not a nice-to-have.**
 
 ## Repository layout
 
@@ -51,7 +71,9 @@ BleatKit/                   # the local Swift package
       Keys/                 # device ed25519 key + Keychain storage
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
       Context/              # AppContext, routers, stores
+      Pairing/              # the pairing sheet, scanner and its model
       Views/                # screens
+      Previews/             # #if DEBUG sample data for #Preview only
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
@@ -585,15 +607,92 @@ winner as the address it had just reached.
 
 **Saving the peer is the one fallible step after the point of no return.** By
 then the enrollment key is gone from the host, so rescanning the same code
-cannot work — `PeerStore.all()` tolerates a *missing* file but not an
+cannot work — `PeerRegistry.all()` tolerates a *missing* file but not an
 undecodable one, and that failure would otherwise be reported as a generic
 pairing error. `PairingError.peerNotRecorded` says the host half succeeded and
 sends the user to run `bleat pair` again rather than back to a dead QR.
 
-**`PeerStore` is keyed by host key**, so pairing the same Mac again from a
+**`PeerRegistry` is keyed by host key**, so pairing the same Mac again from a
 second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
+
+### The pairing UI (Phase 2)
+
+`PeersView` is the app's first screen and there is no manual host list any more.
+Adding a host by typing an address existed because there was no other way to
+acquire one; pairing is the way now, and the promise is zero host setup beyond
+Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
+
+- **Two ways in, and both are needed.** The camera, and a pasted
+  `bleat://pair?d=…` link. `bleat pair` falls back to printing that link when
+  the window is too small for a QR or is not a terminal at all, and a fallback
+  nothing can consume is not a fallback.
+- **A refused camera is not a dead end.** The scan section says what happened
+  and offers Settings; the paste field is still there below it.
+- **Claiming a scanned code is synchronous.** A camera reports the same QR many
+  times a second and each frame spawns a `Task`, so checking "have we tried
+  this?" and marking it must happen in one non-suspending step. An `await`
+  between them is a place the second frame runs — and the enrollment key is
+  single-use, so two redemptions would race to install and then delete it.
+- **A code that is not addressed to Bleat is ignored, not failed.** A camera
+  sees whatever is in front of it, and turning a Wi-Fi QR into "pairing failed"
+  buries the real errors and takes the viewfinder away while the user is still
+  aiming. `PairingPayload.looksLikeAPairingCode` checks only scheme and host —
+  anything that *claims* to be a pairing code and will not decode is a damaged
+  or newer code, and that is worth reporting.
+- **"Try again" clears the codes already tried.** Otherwise the button does
+  nothing at all: the failure being retried is nearly always transient, so the
+  user points the camera at the *same* QR, and every frame of it is filtered.
+  For the same reason the paste path must not mark a code as attempted — a
+  failed paste would block the camera from ever reading that QR.
+- **The sheet cannot be dismissed mid-swap**, by the button or by swiping. A
+  pairing left running with nobody watching loses the two outcomes that matter
+  most: a host key that does not match the code — the whole point of the
+  out-of-band pin — and a peer the host accepted but the phone could not record.
+- **The capture session is owned by one `nonisolated ... @unchecked Sendable`
+  type and never handed out.** AVFoundation's classes are not `Sendable` and
+  cannot be, so every `DispatchQueue.async` that captured one was a
+  strict-concurrency diagnostic. `@preconcurrency import` silences the question
+  rather than answering it; owning the objects and capturing only `self` answers
+  it, and the invariant `@unchecked` stands for — everything touching the
+  session happens on its queue — is the serialisation AVFoundation asks for
+  anyway.
+- **The scanner starts in `viewWillAppear`, not `viewDidLoad`.** SwiftUI
+  recycles the rows a representable lives in; started once, a detached and
+  re-attached preview comes back permanently black, and the view above has no
+  state for "camera stopped" — it would show a viewfinder that can never fire.
+- **An app's files go under Application Support, never `~/.bleat`.** On iOS
+  `NSHomeDirectory()` is the app container's **read-only root** — only
+  `Documents/`, `Library/` and `tmp/` inside it can be written — so a
+  home-relative dot-directory cannot be created at all. Found on device, at the
+  worst possible moment: the pairing had installed the key, proven it with a
+  second handshake and deleted the enrollment key, and then failed to write the
+  record with `NSCocoaErrorDomain 513`, leaving a key on the host the phone had
+  no memory of. `PeerRegistry.applicationSupport()` is correct on both
+  platforms with no branch; `standard()` stays `~/.bleat` for the console tool,
+  as do `HostRegistry` and `KnownHostsStore`, and all three now say so.
+  The directory is **excluded from backup**: the device key is `ThisDeviceOnly`
+  and does not restore to a new phone, so a peer list that did would name hosts
+  this device can no longer authenticate to.
+- **`PeerStore.deviceKey()` throws instead of writing the shared `failure`.**
+  Sharing one error property meant opening the key sheet cleared an
+  unreadable-peer-file banner, after which the list said "No hosts yet" —
+  confidently wrong, and an invitation to pair again into the same broken file.
+- **The result screen shows the host key fingerprint**, because `bleat pair`
+  prints the same string above the QR. Matching them by eye is the one check no
+  software in this flow can do for the user.
+- **`TransportError` describes itself** now, in `BleatKit`. The console tool's
+  private rendering could not be reached from the app, so a failed connection
+  arrived at the user as `connectionFailed("…")`, enum case and all. The tool
+  keeps only the advice it alone can give — which `known_hosts` line to delete
+  after an intentional rekey; the phone has no such file.
+- **The camera purpose string is `INFOPLIST_KEY_NSCameraUsageDescription`** on
+  the app target. There is no `INFOPLIST_KEY_` for `CFBundleURLTypes`, so
+  registering `bleat://` as a URL scheme — which would let the system camera
+  open the app straight from the QR — needs a real `Info.plist`, and that
+  fights `GENERATE_INFOPLIST_FILE`. Deferred deliberately; in-app scanning does
+  not depend on it.
 
 ### Endpoint selection on the phone
 
@@ -777,6 +876,6 @@ a file there — so a login shell puts `/opt/homebrew/bin` back whatever it was
 handed. Supply a stub `$SHELL` instead, as `EnrollmentShellTests` does.
 
 Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the passwd
-entry — so `PeerStore.standard()` and `HostRegistry.standard()` still write to
+entry — so `PeerRegistry.standard()` and `HostRegistry.standard()` still write to
 the real `~/.bleat/` under a scratch `HOME`. Pass an explicit directory when that
 matters.

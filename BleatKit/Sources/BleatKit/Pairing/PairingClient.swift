@@ -7,13 +7,13 @@ import Foundation
 /// `bleat redeem` is the same code path a phone takes, which is how this gets
 /// exercised end to end against a real `bleat pair` without an iPhone in hand.
 public struct PairingClient: Sendable {
-    private let peers: PeerStore
+    private let peers: PeerRegistry
     private let deviceKey: SSHKeyPair
 
     /// - Parameter deviceKey: The phone's durable key. On iOS this comes from
     ///   the Keychain and is generated on first launch; the caller owns where
     ///   it lives, because the console tool keeps its keys in a file.
-    public init(peers: PeerStore, deviceKey: SSHKeyPair) {
+    public init(peers: PeerRegistry, deviceKey: SSHKeyPair) {
         self.peers = peers
         self.deviceKey = deviceKey
     }
@@ -78,12 +78,12 @@ public struct PairingClient: Sendable {
         var peer = PairedPeer(payload: payload)
         peer.herdrPath = redemption.herdrPath
         peer.lastGoodEndpoint = connection.endpoint
-        // Merging is `PeerStore.save`'s job, so re-pairing the same machine
+        // Merging is `PeerRegistry.save`'s job, so re-pairing the same machine
         // from a second network keeps the addresses it already had.
         //
         // By this point the pairing cannot be undone: the enrollment key is
         // gone from the host, so a failure to write the record locally is not
-        // something rescanning fixes. `PeerStore.all()` tolerates a *missing*
+        // something rescanning fixes. `PeerRegistry.all()` tolerates a *missing*
         // file but not an undecodable one, which is the realistic way this
         // fails — and the user needs to be told the host half succeeded.
         do {

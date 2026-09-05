@@ -6,7 +6,7 @@ import SwiftUI
 /// view. Everything else lives in BleatKit and BleatUI.
 @main
 struct BleatApp: App {
-    @State private var context = AppContext(hosts: HostStore())
+    @State private var context = AppContext(peers: PeerStore())
 
     var body: some Scene {
         WindowGroup {

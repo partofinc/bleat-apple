@@ -29,6 +29,9 @@ public struct HostRegistry: Sendable {
 
     public init(url: URL) { self.url = url }
 
+    /// `~/.bleat` — the console tool's. An app on iOS must pass a directory
+    /// instead: `NSHomeDirectory()` there is the container's read-only root, so
+    /// this path cannot be created. See `PeerRegistry.applicationSupport()`.
     public static func standard(
         directory: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bleat")
     ) -> HostRegistry {

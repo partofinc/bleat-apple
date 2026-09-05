@@ -8,10 +8,10 @@ import Observation
 @Observable
 public final class AppContext {
     public let navigation: NavigationRouter
-    public let hosts: HostStore
+    public let peers: PeerStore
 
-    public init(hosts: HostStore) {
+    public init(peers: PeerStore) {
         self.navigation = NavigationRouter()
-        self.hosts = hosts
+        self.peers = peers
     }
 }

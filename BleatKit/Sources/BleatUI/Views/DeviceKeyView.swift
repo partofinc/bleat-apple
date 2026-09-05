@@ -17,10 +17,12 @@ struct DeviceKeyView: View {
 
     /// Resolved once in `.task`, never in `body`.
     ///
-    /// Reading the key writes `HostStore.failure`, and `@Observable` notifies on
-    /// every set with no equality check — so calling it from `body` invalidated
-    /// `HostsView`, which re-evaluated this sheet, which read the key again.
-    /// That spun, with a blocking Keychain call each pass.
+    /// Reading the key used to write a shared `failure` property, and
+    /// `@Observable` notifies on every set with no equality check — so calling
+    /// it from `body` invalidated the list behind this sheet, which
+    /// re-evaluated the sheet, which read the key again. That spun, with a
+    /// blocking Keychain call each pass. The key no longer writes shared state,
+    /// but a Keychain read still belongs off the body.
     @State private var key: SSHKeyPair?
     @State private var loaded = false
     @State private var failure: String?
@@ -48,9 +50,11 @@ struct DeviceKeyView: View {
             }
             .task {
                 guard !loaded else { return }
-                let resolved = context.hosts.deviceKey()
-                key = resolved
-                failure = context.hosts.failure
+                do {
+                    key = try context.peers.deviceKey()
+                } catch {
+                    failure = String(describing: error)
+                }
                 loaded = true
             }
         }

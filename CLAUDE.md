@@ -872,13 +872,60 @@ entire non-TTY path useless exactly where it is needed.
   default besides: Herdr allows one input owner, and taking it from a running
   agent because someone glanced at their phone would be indefensible. `control`
   and `--takeover` are Phase 3, behind a deliberate gesture.
-- **The host is asked to render at the phone's size.** `observe --cols --rows`
-  is honoured — verified live: asking for 60×20 returns a frame reporting
-  `60 x 20` — so an 80-column pane arrives already reflowed instead of needing
-  to be scrolled sideways. The size is only knowable after a layout pass, which
-  is why the terminal lives in a view *controller*; rotation reopens the stream,
-  and the first frame of a new one is `full: true`, so the screen simply
-  redraws.
+- **The host is asked to render at the phone's size, and this is a known
+  problem — see below.** `observe --cols --rows` is honoured in the sense that
+  the frame reports the size asked for. The size is only knowable after a layout
+  pass, which is why the terminal lives in a view *controller*; rotation reopens
+  the stream, and the first frame of a new one is `full: true`, so the screen
+  simply redraws.
+
+### `--cols` crops. It does not reflow. (measured 5 Sept 2026)
+
+An earlier version of this file claimed a wide pane "arrives already reflowed".
+**That is false**, and the app currently ships the consequence: it asks for the
+phone's width and silently loses everything to the right of it.
+
+Measured against `w5:p1`, whose grid is 142 columns
+(`herdr pane layout --pane w5:p1` → `rect: {width: 142, height: 47}`):
+
+| asked | frame reports | widest content |
+|---|---|---|
+| 53 | 53 × 12 | 53, cut mid-word |
+| 100 | 100 × 12 | 100, cut mid-word |
+| 500 | 500 × 12 | **140** |
+
+So `--cols` is a **viewport onto the existing grid** — it crops when narrower and
+pads when wider. Asking for a phone's 53 columns hides 63% of every line with
+nothing on screen to say so. `observe` takes no horizontal offset, so panning
+has to happen on the client.
+
+**This is not a herdr limitation.** A pane is one pty with one screen buffer and
+that buffer has a single width; the program inside wrapped its output to it. Any
+client that wants different wrapping has to resize the pty, which resizes it for
+whoever is at the Mac too — `control` can do exactly that, via `terminal.resize`,
+and Phase 3 will have to decide whether it may.
+
+**The layout is sized to the attached client.** `area` was `{width: 142, x: 26}`
+— a 26-column sidebar inside a ~168-column window, which is the Mac's terminal.
+So a *separate session*, attached only from a phone, would be phone-shaped
+throughout with no cropping and no panning. That is the real path to a
+comfortable mobile view, and it meets the session-creation note above. Untested:
+what herdr does when two clients of different sizes attach to one session (tmux
+shrinks to the smallest).
+
+**Options when this is picked up**, in the order they were judged:
+
+1. Ask for the pane's real size from `pane layout --pane` and let the user pan
+   or rotate — nothing is ever hidden, and landscape gives ~118 of 142 columns.
+2. Fit the full width to the screen: ~2.8pt type. Not viable.
+3. Keep fitting to the phone but label it ("columns 1–53 of 142") so the loss is
+   at least visible.
+4. Phase 3: take over and genuinely resize the pane, accepting that it changes
+   for whoever is at the Mac.
+
+Option 1 was the recommendation. **The Phase 2 gate should not be called met
+until this is settled** — a pane view that hides most of the pane is not the
+thing the gate is asking for.
 - **Frames that arrive before the renderer exists are held, not dropped.** The
   first frame is the full-screen replay, and on an idle pane nothing follows it
   — losing it leaves a blank screen until something changes on the host, which

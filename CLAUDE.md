@@ -691,6 +691,20 @@ failure needs a way back, and neither should look like the other.
   identity instead would have meant a fresh handshake on every drill-down from
   the session list. It assumes one drill-down at a time, which is what the app
   does.
+- **`pane_id` is already the full target.** The host sends
+  `"pane_id":"w2:p1"` next to `"workspace_id":"w2"` — in the fixtures and live —
+  so joining the two gives `w2:w2:p1` and every attach fails. `Agent.target`
+  exists to stop that being rebuilt by hand, which is exactly how it went wrong
+  once. A test that built its own `Agent` with a bare `"p1"` passed happily
+  while the property was wrong; the test reads the fixture now. **Build model
+  test data from `Fixtures/`, not from memory** — CLAUDE.md already said to look
+  at the fixture before writing a model, and this is what skipping it costs.
+- **A failed refresh keeps the rows it had.** `Loadable.stale` carries the last
+  value alongside the failure, because replacing a good agent list with an
+  error page over one dropped packet is a worse lie than showing slightly old
+  data and saying so. An empty-state overlay is `allowsHitTesting(false)` for a
+  related reason: it covers the whole list, and "no agents are running here" is
+  precisely the message a user wants to pull-to-refresh out of.
 - **Ordering is not restated in the UI.** `HerdrClient.agents()` returns them
   already sorted by attention and `workspaces()` likewise, so the app cannot
   disagree with the console tool about what "blocked first" means.

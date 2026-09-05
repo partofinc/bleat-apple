@@ -24,10 +24,10 @@ struct RouteView: View {
             } else {
                 unpaired
             }
-        case .agents(let hostKey, let session, let workspace):
+        case .agents(let hostKey, let session, let workspace, let label):
             if let peer = peer(hostKey) {
                 AgentsView(
-                    peer: peer, session: session, workspace: workspace,
+                    peer: peer, session: session, workspace: workspace, title: label,
                     connections: context.connections
                 )
             } else {

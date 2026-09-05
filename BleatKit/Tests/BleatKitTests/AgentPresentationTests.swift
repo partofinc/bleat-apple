@@ -9,7 +9,7 @@ struct AgentPresentationTests {
         title: String? = nil,
         raw: String? = nil,
         kind: String? = nil,
-        pane: String = "p1",
+        pane: String = "w2:p1",
         workspace: String = "w2"
     ) -> Agent {
         Agent(
@@ -38,21 +38,32 @@ struct AgentPresentationTests {
     /// indistinguishable from every other untitled pane.
     @Test("an empty or blank name is not a name")
     func rejectsBlankNames() {
-        #expect(agent(title: "", raw: "   ", kind: "").displayTitle == "p1")
-        #expect(agent(title: "  ").displayTitle == "p1")
+        #expect(agent(title: "", raw: "   ", kind: "").displayTitle == "w2:p1")
+        #expect(agent(title: "  ").displayTitle == "w2:p1")
     }
 
-    /// The pane id is the last resort because it is at least unique.
+    /// The pane id is the last resort because it is at least unique — and it
+    /// is a full target, `w2:p7`, which is what the host sends.
     @Test("a nameless agent falls back to something that identifies it")
     func fallsBackToPaneID() {
-        #expect(agent(pane: "p7").displayTitle == "p7")
+        #expect(agent(pane: "w2:p7").displayTitle == "w2:p7")
     }
 
-    /// Workspace ids are opaque and both short and long forms occur, so the
-    /// target is built rather than assumed to follow a numbering.
-    @Test("the pane target is workspace:pane")
-    func target() {
-        #expect(agent(pane: "p1", workspace: "w2").target == "w2:p1")
-        #expect(agent(pane: "p3", workspace: "w653998617a6031").target == "w653998617a6031:p3")
+    /// Read from the captured host output rather than from a hand-built
+    /// `Agent`, because the shape is the whole point: `pane_id` arrives as
+    /// `"w2:p1"` — already the full target — alongside `"workspace_id":"w2"`.
+    /// A test that invented a bare `"p1"` passed happily while `target`
+    /// returned `w2:w2:p1`, which would have failed every attach in Phase 3.
+    @Test("the pane target is what the host already sent, not a rebuilt one")
+    func targetComesFromTheHost() throws {
+        let data = try Fixture.data("agent-list.json")
+        let agents = try JSONDecoder().decode(HerdrEnvelope<AgentList>.self, from: data).result.agents
+        #expect(!agents.isEmpty)
+        for agent in agents {
+            #expect(agent.target == agent.paneID)
+            // One colon: `workspace:pane`. Two means it was joined twice.
+            #expect(agent.target.filter { $0 == ":" }.count == 1)
+            #expect(agent.target.hasPrefix("\(agent.workspaceID):"))
+        }
     }
 }

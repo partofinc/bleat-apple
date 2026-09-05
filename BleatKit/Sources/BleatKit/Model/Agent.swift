@@ -21,7 +21,14 @@ public struct Agent: Codable, Sendable, Identifiable, Hashable {
     public var id: String { paneID }
 
     /// The pane's target, as every `terminal session` command spells it.
-    public var target: String { "\(workspaceID):\(paneID)" }
+    ///
+    /// **`pane_id` is already the full target.** The host sends
+    /// `"pane_id":"w2:p1"` next to `"workspace_id":"w2"` — verified in the
+    /// fixtures and against the live host — so joining the two produces
+    /// `w2:w2:p1` and every attach fails. This property exists precisely to
+    /// stop that being rebuilt by hand, which is how it went wrong the first
+    /// time. `AgentOrdering` has always treated `paneID` as a target.
+    public var target: String { paneID }
 
     /// What to call this agent on screen.
     ///

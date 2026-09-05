@@ -65,7 +65,14 @@ public final class ConnectionStore {
         }
 
         if let pending = connecting, pending.hostKey == peer.hostKey {
-            return try await pending.task.value.client
+            let joined = try await pending.task.value
+            // The session has to be applied here too, and it was not. The dial
+            // in flight was started for whatever session asked first — a
+            // refresh of the session *list* asks with none — so a screen that
+            // joins it and skips this step lists the workspaces of the wrong
+            // session, with nothing to show that anything went wrong.
+            joined.transport.useSession(session ?? peer.session)
+            return joined.client
         }
 
         await release()

@@ -31,10 +31,16 @@ struct AgentRow: View {
 
     /// What the pane is actually working in, which is not always where it
     /// started: `foreground_cwd` follows the running process.
+    ///
+    /// Shown whole. `abbreviatingWithTildeInPath` was here and did nothing:
+    /// it abbreviates against *this device's* home, which on iOS is the app
+    /// container, while the path belongs to the host. Head truncation does the
+    /// shortening, and it keeps the end of the path — the part that tells two
+    /// checkouts apart.
     private var directory: String? {
         let path = agent.foregroundCwd ?? agent.cwd
         guard let path, !path.isEmpty else { return nil }
-        return (path as NSString).abbreviatingWithTildeInPath
+        return path
     }
 }
 

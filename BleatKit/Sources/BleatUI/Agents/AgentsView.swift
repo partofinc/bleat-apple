@@ -14,12 +14,22 @@ struct AgentsView: View {
     /// nil means every agent in the session, which is what the host answers
     /// with. A workspace narrows it.
     let workspace: String?
+    /// The workspace's label. Its id is opaque — `w2` and `w653998617a6031`
+    /// both occur — and belongs in a subtitle at most, never in a title bar.
+    let title: String
     @State private var agents: RemoteList<Agent>
 
-    init(peer: PairedPeer, session: String?, workspace: String?, connections: ConnectionStore) {
+    init(
+        peer: PairedPeer,
+        session: String?,
+        workspace: String?,
+        title: String,
+        connections: ConnectionStore
+    ) {
         self.peer = peer
         self.session = session
         self.workspace = workspace
+        self.title = title
         _agents = State(wrappedValue: RemoteList(connections: connections, session: session) {
             let all = try await $0.agents()
             guard let workspace else { return all }
@@ -37,7 +47,7 @@ struct AgentsView: View {
                 AgentLink(peer: peer, session: session, agent: agent)
             }
         }
-        .navigationTitle(workspace ?? "Agents")
+        .navigationTitle(title)
         .refreshable { await agents.load(for: peer) }
         .task { await agents.load(for: peer) }
     }

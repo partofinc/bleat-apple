@@ -11,7 +11,12 @@ struct WorkspaceLink: View {
     var body: some View {
         Button {
             context.navigation.push(
-                .agents(peer: peer.hostKey, session: session, workspace: workspace.workspaceID)
+                .agents(
+                    peer: peer.hostKey,
+                    session: session,
+                    workspace: workspace.workspaceID,
+                    label: workspace.label
+                )
             )
         } label: {
             WorkspaceRow(workspace: workspace)

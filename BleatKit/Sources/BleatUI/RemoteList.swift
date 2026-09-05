@@ -49,7 +49,8 @@ final class RemoteList<Item: Sendable> {
         // Rows already on screen stay there. `refreshable` draws its own
         // spinner above them, and replacing them with a placeholder underneath
         // it is a downgrade twice over.
-        if case .loaded = state {} else { state = .loading }
+        let previous = state.value
+        if previous == nil { state = .loading }
 
         do {
             let client = try await connections.client(for: peer, session: session)
@@ -57,12 +58,28 @@ final class RemoteList<Item: Sendable> {
             guard generation == self.generation else { return }
             state = .loaded(items)
         } catch is CancellationError {
-            // The screen went away, or a newer load replaced this one. There is
-            // nobody to tell and nothing to correct.
-        } catch {
-            await connections.handle(error)
             guard generation == self.generation else { return }
-            state = .failed(ErrorMessage.of(error))
+            // Our own task going away is silence: the screen has gone and there
+            // is nobody to tell. A cancellation while this screen is still on
+            // it came from the connection being released underneath us — and a
+            // spinner that never resolves, with no rows and no way to retry, is
+            // the worst of the outcomes available.
+            guard !Task.isCancelled else { return }
+            report("the connection closed before this finished", over: previous)
+        } catch {
+            // Guarded *before* `handle`: a superseded load that finally fails
+            // would otherwise tear down the connection a newer, successful one
+            // just established, and the next command would pay a full handshake
+            // for it. If the newer load also fails, it calls `handle` itself.
+            guard generation == self.generation else { return }
+            await connections.handle(error)
+            report(ErrorMessage.of(error), over: previous)
         }
+    }
+
+    /// A failure keeps whatever had already arrived, so one dropped packet on a
+    /// pull-to-refresh does not replace a good list with an error page.
+    private func report(_ message: String, over previous: [Item]?) {
+        state = previous.map { .stale($0, message) } ?? .failed(message)
     }
 }

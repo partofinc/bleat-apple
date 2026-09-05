@@ -47,15 +47,18 @@ final class FakeHost: ShellRunner, @unchecked Sendable {
         let blob = lock.withLock { known.first { Self.mentions(command, $0) } }
         guard let blob else { return "" }
 
-        if command.hasPrefix("grep -q -E") {
+        if command.contains("grep -q -E") {
             return lock.withLock { installed.contains(blob) } ? "yes\n" : "no\n"
+        }
+        // Order matters: `replaceKeyCommand` contains *both* verbs — it greps
+        // the key out and prints it back in one command — and its net effect is
+        // the insert.
+        if command.contains("printf '%s\\n'") {
+            if !swallowAppends { lock.withLock { installed.insert(blob) } }
+            return ""
         }
         if command.contains("grep -v -E") {
             if !swallowRemovals { lock.withLock { _ = installed.remove(blob) } }
-            return ""
-        }
-        if command.contains("printf '%s\\n'") {
-            if !swallowAppends { lock.withLock { installed.insert(blob) } }
             return ""
         }
         return ""
@@ -184,10 +187,11 @@ struct EnrollmentTests {
     }
 
     /// Re-pairing a phone that is already known must not append a second copy
-    /// of the same key: the older marker would then name a line that no longer
-    /// stands alone.
-    @Test("re-pairing clears this device's old line before writing the new one")
-    func rePairingReplaces() async throws {
+    /// of the same key — and must not have a moment where the key is absent
+    /// either. For an already-paired phone that moment holds its only durable
+    /// credential, so removal and insertion are one command.
+    @Test("re-pairing replaces this device's line without ever removing it alone")
+    func rePairingReplacesAtomically() async throws {
         let device = SSHKeyPair(), enrollment = SSHKeyPair()
         let host = host(device: device, enrollment: enrollment)
         _ = try await Enrollment.redeem(
@@ -195,13 +199,12 @@ struct EnrollmentTests {
         )
 
         let deviceBlob = blob(device)
-        let cleared = try #require(host.commands.firstIndex {
-            $0.contains("grep -v -E") && FakeHost.mentions($0, deviceBlob)
-        })
-        let appended = try #require(host.commands.firstIndex {
-            $0.contains("printf '%s\\n'") && FakeHost.mentions($0, deviceBlob)
-        })
-        #expect(cleared < appended)
+        let touching = host.commands.filter { FakeHost.mentions($0, deviceBlob) }
+        // One command that both clears and writes, plus the read that verifies
+        // it. Never a removal standing on its own.
+        let install = try #require(touching.first { $0.contains("printf '%s\\n'") })
+        #expect(install.contains("grep -v -E"))
+        #expect(!touching.contains { $0.contains("grep -v -E") && !$0.contains("printf '%s\\n'") })
     }
 
     /// The check a file cannot make. A line in `authorized_keys` is not the

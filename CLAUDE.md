@@ -492,9 +492,13 @@ one lies:
 
 1. **Resolve `herdr` first**, while nothing has been written. A host that cannot
    serve the app is refused with nothing to undo.
-2. **Clear this device's own key, then append it.** Re-pairing a known phone
-   must replace its line, not add a second copy of the same key under a second
-   marker.
+2. **Replace this device's line in one command.** Re-pairing a known phone must
+   not add a second copy of the same key under a second marker — and must not
+   have a moment where the key is *absent* either. A removal followed by an
+   append has that moment, and for an already-paired phone it holds its only
+   durable credential; if the append then failed quietly the phone would have
+   destroyed the access it arrived with. `replaceKeyCommand` does the whole
+   edit in a temporary file and lands it with one write.
 3. **Verify the line is there.** An append that succeeded loudly and did nothing
    — `StrictModes`, a full disk, an unwritable `~/.ssh` — reads back as absent.
 4. **Open a second connection authenticated with the device key.** This is the
@@ -511,6 +515,19 @@ one lies:
 
 Every failure before step 5 leaves the enrollment key live, so the user scans
 again rather than walking to the Mac.
+
+**Absence must be a normal answer, not a failed command.**
+`HerdrLookup.command` ends in `|| true`, because `command -v` exits 1 when it
+finds nothing and the login shell exits with it. Without that, a host without
+herdr produces a failed *command* over the exec channel and the user is told
+`the host rejected a command (exit 1)` — the `herdrNotFound` guard downstream is
+unreachable. Verified both ways against a real shell.
+
+**The phone's verification reads take the `mkdir` lock; the host's poll does
+not.** Every write-back here is `cat "$t" > "$f"`, which truncates before it
+writes, so an unlocked read landing in that instant sees an empty file — and the
+phone's read decides whether a pairing failed. The host polls ten times a second
+and would contend continuously, and a wrong answer there only costs a tick.
 
 **The phone deletes the enrollment line by key, not by marker.** The marker is
 minted on the host and the QR does not carry it — a field existing only so the
@@ -533,12 +550,31 @@ different key, redemption is refused.
 
 **Endpoints are raced, not tried in order.** The first entry is usually a
 `.local` name, and off the LAN that does not fail so much as sit there while the
-working overlay address behind it never gets a turn. `PeerConnector` races them
-all and keeps the first to authenticate; losers are **closed**, since `SSHClient`
-has no deinit that does it and an abandoned session stays open on the host. A
-host key mismatch is promoted over every other failure when nothing wins — it is
-the only outcome that is not about the network, and reporting it as "no address
-answered" sends the user to check their Wi-Fi.
+working overlay address behind it never gets a turn.
+
+**The race must return on the first win, and a task group cannot do that.**
+Leaving a group's scope awaits every child, and `group.cancelAll()` cannot
+shorten a losing attempt: `SSHClient.connect` does not observe task
+cancellation, so a dead address still costs its full TCP timeout — which is the
+very cost the race exists to avoid. `PeerConnector` therefore runs the group in
+a **detached** task and hands the winner back through a continuation; the drain
+keeps running, **closes** any connection that finishes late (`SSHClient` has no
+deinit that does it, and an abandoned session stays open on the host), and ends
+by itself. Measured: with a black-holed address in the list — one that swallows
+SYNs for four seconds rather than refusing — pairing completes in **0.2s**.
+
+**What is raced is the handshake, not a command.** `SSHTransport.connect()`
+proves TCP, the host key, key exchange and authentication, which is everything
+"this endpoint works" can mean. An earlier version ran `printf ok` and compared
+stdout exactly — but `.zshenv` is sourced for every non-interactive zsh, so
+anything a user's startup file prints would have made every healthy endpoint
+fail, and the message blames the network.
+
+A host key mismatch is promoted over every other failure when nothing wins — it
+is the only outcome that is not about the network, and reporting it as "no
+address answered" sends the user to check their Wi-Fi. Verified live: with the
+genuine sshd stopped and an impostor answering on another port, redemption is
+refused.
 
 **A merge takes the endpoint that just worked.** `PairedPeer.merging` keeps the
 older record's endpoints but takes the newer `lastGoodEndpoint`, for the same
@@ -546,6 +582,13 @@ reason it takes the newer `herdrPath`: the fresh record is the one that just
 reached the machine. Keeping the stored value sends the next connection to the
 network the phone has left. Seen live — a re-pairing reported the *previous*
 winner as the address it had just reached.
+
+**Saving the peer is the one fallible step after the point of no return.** By
+then the enrollment key is gone from the host, so rescanning the same code
+cannot work — `PeerStore.all()` tolerates a *missing* file but not an
+undecodable one, and that failure would otherwise be reported as a generic
+pairing error. `PairingError.peerNotRecorded` says the host half succeeded and
+sends the user to run `bleat pair` again rather than back to a dead QR.
 
 **`PeerStore` is keyed by host key**, so pairing the same Mac again from a
 second network merges into the record that exists. `HostRegistry` is keyed by a
@@ -727,6 +770,11 @@ reads. Add `SetEnv HOME=<scratch>` alongside the scratch `AuthorizedKeysFile`
 (verified: the session's `HOME` and `~` both become the scratch), and run
 `bleat pair` with the same `HOME`. Then everything stays inside the scratch
 directory.
+
+`PATH` cannot describe a host without herdr, either: `/etc/profile` runs
+`path_helper`, which rebuilds `PATH` from `/etc/paths.d` — and Homebrew installs
+a file there — so a login shell puts `/opt/homebrew/bin` back whatever it was
+handed. Supply a stub `$SHELL` instead, as `EnrollmentShellTests` does.
 
 Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the passwd
 entry — so `PeerStore.standard()` and `HostRegistry.standard()` still write to

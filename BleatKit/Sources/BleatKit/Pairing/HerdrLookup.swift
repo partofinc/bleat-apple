@@ -22,7 +22,13 @@ public enum HerdrLookup {
     /// startup files per shell, and the one that has the user's `PATH` is
     /// theirs. sshd sets `SHELL` from the passwd entry, but the fallback costs
     /// nothing and covers an environment that does not.
-    public static let command = "${SHELL:-/bin/sh} -lc 'command -v herdr'"
+    /// The trailing `|| true` is load-bearing. `command -v` exits 1 when it
+    /// finds nothing, and the login shell exits with it, so over an exec
+    /// channel a host without herdr produces a *failed command* rather than an
+    /// empty answer — and the caller reports `the host rejected a command
+    /// (exit 1)` instead of "herdr is not installed on that host". Absence is a
+    /// normal answer to this question, so it is spelled as empty output.
+    public static let command = "${SHELL:-/bin/sh} -lc 'command -v herdr' || true"
 
     /// Reads the answer out of the shell's output.
     ///

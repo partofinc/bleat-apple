@@ -95,6 +95,17 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
         }
     }
 
+    /// Dials, without running anything.
+    ///
+    /// What "this endpoint works" means: TCP, the host key, key exchange and
+    /// authentication. `PeerConnector` races this rather than a shell command,
+    /// because a shell command's *output* is not a reliable signal — `.zshenv`
+    /// is sourced for every non-interactive zsh, and anything it prints would
+    /// make a healthy endpoint look broken.
+    public func connect() async throws {
+        _ = try await connected()
+    }
+
     /// Drops the connection. The next call reconnects.
     public func disconnect() async {
         // Cancel first: a dial still in flight would otherwise install its

@@ -29,19 +29,24 @@ public enum PeerConnector {
 
     /// Races every endpoint and keeps the first that authenticates.
     ///
-    /// Each attempt is bounded by NIO's own connect timeout rather than by a
-    /// deadline here, which would only look like a bound: `SSHClient.connect`
-    /// does not observe task cancellation, so a timeout could stop *waiting*
-    /// without stopping the dial. The race is what makes this fast in practice
-    /// — one slow address costs nothing as long as another answers.
+    /// **Returns the moment one succeeds, and does not wait for the rest.**
+    /// That is the whole point, and it needs saying because a task group cannot
+    /// deliver it: leaving the group's scope awaits every child, and
+    /// `group.cancelAll()` cannot shorten a losing attempt —
+    /// `SSHClient.connect` does not observe task cancellation, so a dead
+    /// address still costs its full TCP timeout. Waiting for that is exactly
+    /// the cost the race exists to avoid.
+    ///
+    /// So the group runs in a detached task that outlives this call. It keeps
+    /// draining after the winner is handed back, and **closes** any connection
+    /// that finishes late — `SSHClient` has no deinit that does it, and an
+    /// abandoned session stays open on the host. The drain ends on its own once
+    /// every dial has finished.
     ///
     /// - Parameters:
     ///   - hostKey: OpenSSH `<algorithm> <base64>`, from the pairing QR or the
     ///     stored peer. Not trust-on-first-use: a mismatch is an error on the
     ///     very first connection, not a pin.
-    ///   - probe: Run on each candidate to prove the channel works. The
-    ///     handshake alone is not proof — the transport connects lazily, so
-    ///     without running something there is nothing to race.
     public static func connect(
         endpoints: [Endpoint],
         username: String,
@@ -54,42 +59,51 @@ public enum PeerConnector {
             throw TransportError.connectionFailed("no endpoint to try")
         }
 
-        return try await withThrowingTaskGroup(of: Attempt.self) { group in
-            for endpoint in endpoints {
-                group.addTask {
-                    await attempt(
-                        endpoint: endpoint,
-                        username: username,
-                        hostKey: hostKey,
-                        privateKey: privateKey,
-                        herdrPath: herdrPath,
-                        session: session
-                    )
+        return try await withCheckedThrowingContinuation { continuation in
+            // Resumed exactly once, from whichever of the two paths gets there
+            // first: a winner, or the drain running out of candidates.
+            let done = LockedBox(false)
+            let finish: @Sendable (Result<Connection, any Error>) -> Bool = { result in
+                let already = done.withLock { was -> Bool in
+                    defer { was = true }
+                    return was
                 }
+                guard !already else { return false }
+                continuation.resume(with: result)
+                return true
             }
 
-            var winner: Connection?
-            var failures: [(Endpoint, any Error)] = []
-            for try await result in group {
-                switch result {
-                case .failed(let endpoint, let error):
-                    failures.append((endpoint, error))
-                case .connected(let connection):
-                    if winner == nil {
-                        winner = connection
-                        group.cancelAll()
-                    } else {
-                        // A late arrival on a second address is a real, open
-                        // SSH session on the host. Dropping the reference would
-                        // leave it there — `SSHClient` has no deinit that
-                        // closes it — so the loser is closed, not forgotten.
-                        await connection.transport.disconnect()
+            Task.detached {
+                await withTaskGroup(of: Attempt.self) { group in
+                    for endpoint in endpoints {
+                        group.addTask {
+                            await attempt(
+                                endpoint: endpoint,
+                                username: username,
+                                hostKey: hostKey,
+                                privateKey: privateKey,
+                                herdrPath: herdrPath,
+                                session: session
+                            )
+                        }
                     }
+
+                    var failures: [(Endpoint, any Error)] = []
+                    for await result in group {
+                        switch result {
+                        case .failed(let endpoint, let error):
+                            failures.append((endpoint, error))
+                        case .connected(let connection):
+                            if finish(.success(connection)) {
+                                group.cancelAll()
+                            } else {
+                                await connection.transport.disconnect()
+                            }
+                        }
+                    }
+                    _ = finish(.failure(failure(from: failures, endpoints: endpoints)))
                 }
             }
-
-            guard let winner else { throw failure(from: failures, endpoints: endpoints) }
-            return winner
         }
     }
 
@@ -131,13 +145,11 @@ public enum PeerConnector {
             session: session
         )
         do {
-            // Cheap, present everywhere, and it proves the whole path: TCP,
-            // the host key, the key exchange, authentication, and that an exec
-            // channel actually runs a command.
-            guard try await transport.run(shell: "printf ok") == "ok" else {
-                await transport.disconnect()
-                return .failed(endpoint, TransportError.connectionFailed("no answer from the shell"))
-            }
+            // The handshake alone, with no command run over it. It already
+            // proves everything "this endpoint works" can mean — TCP, the host
+            // key, key exchange, authentication — and it proves it without
+            // depending on what the host's shell prints on startup.
+            try await transport.connect()
             return .connected(Connection(transport: transport, endpoint: endpoint))
         } catch {
             await transport.disconnect()

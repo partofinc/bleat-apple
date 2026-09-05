@@ -72,13 +72,16 @@ public enum Enrollment {
         let deviceLine = deviceKey.authorizedKeyLine(comment: marker.value)
         let enrollmentLine = enrollmentKey.authorizedKeyLine(comment: "")
 
-        // Re-pairing a phone that is already known would otherwise append a
-        // second copy of the same key under a second marker, and the stale
-        // marker would then name a line that no longer exists on its own.
-        if let clear = AuthorizedKeys.removeKeyCommand(publicKeyLine: deviceLine) {
-            _ = try await runner.run(shell: clear)
+        // One command, not a removal followed by an append. Re-pairing a phone
+        // that is already known must not leave a moment where its own key is
+        // absent from the file — that moment holds its only durable credential,
+        // and an append that then quietly failed would destroy the access the
+        // phone arrived with. `replaceKeyCommand` does the whole edit in a
+        // temporary file and lands it with one write.
+        guard let install = AuthorizedKeys.replaceKeyCommand(line: deviceLine) else {
+            throw PairingError.enrollmentIncomplete("the device key could not be read back")
         }
-        _ = try await runner.run(shell: AuthorizedKeys.appendCommand(line: deviceLine))
+        _ = try await runner.run(shell: install)
 
         guard try await contains(deviceLine, on: runner) else {
             // Deliberately before any deletion: the enrollment key is still

@@ -207,6 +207,36 @@ public enum AuthorizedKeys {
         )
     }
 
+    /// Replaces every line carrying this key with `line`, in **one** command.
+    ///
+    /// Removing and appending as two commands has a window in between where the
+    /// key is not in the file, and for a phone that is *already* paired that
+    /// window contains its only durable credential. If the append then
+    /// succeeded loudly and did nothing — `StrictModes`, a full disk, an
+    /// `~/.ssh` that turned read-only — the phone would have destroyed the
+    /// access it arrived with. That is the same "delete before install" shape
+    /// `Enrollment` is built to avoid, one level down.
+    ///
+    /// So the whole edit happens in a temporary file and lands with a single
+    /// `cat`: the key is in `authorized_keys` before the command and after it,
+    /// and no intermediate state is ever written back.
+    ///
+    /// - Returns: nil when the line will not parse. See `removeKeyCommand`.
+    public static func replaceKeyCommand(line: String) -> String? {
+        guard let pattern = keyPattern(publicKeyLine: line) else { return nil }
+        let quoted = quote(line)
+        return locked(
+            "f=\(path); mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch \"$f\" && "
+            + "t=$(mktemp) && { grep -v -E -- \(pattern) \"$f\" || true; } > \"$t\" && "
+            // The same trailing-newline guard the append path needs, for the
+            // same reason: without it the new key is glued onto the end of the
+            // last one and neither authenticates.
+            + "{ [ ! -s \"$t\" ] || [ -z \"$(tail -c1 \"$t\")\" ] || printf '\\n' >> \"$t\"; } && "
+            + "printf '%s\\n' \(quoted) >> \"$t\" && "
+            + "cat \"$t\" > \"$f\" && rm -f \"$t\" && chmod 600 \"$f\""
+        )
+    }
+
     /// True when a line carrying this exact public key is present.
     ///
     /// Both halves of the swap are verified with it. Installing the device key
@@ -214,7 +244,13 @@ public enum AuthorizedKeys {
     /// has and discovers on the next launch that it cannot connect.
     public static func containsKeyCommand(publicKeyLine: String) -> String? {
         guard let pattern = keyPattern(publicKeyLine: publicKeyLine) else { return nil }
-        return "grep -q -E -- \(pattern) \(path) 2>/dev/null && echo yes || echo no"
+        // Locked, unlike the host's marker check. Every write-back here is a
+        // `cat "$t" > "$f"`, which truncates before it writes, so an unlocked
+        // read that lands in that instant sees an empty file and answers "no" —
+        // and this answer decides whether a pairing failed. The host's own poll
+        // stays unlocked because it runs ten times a second and would contend
+        // with the phone continuously; a wrong answer there only costs a tick.
+        return locked("grep -q -E -- \(pattern) \(path) 2>/dev/null && echo yes || echo no")
     }
 
     /// Matches the key's blob as a whitespace-delimited field.

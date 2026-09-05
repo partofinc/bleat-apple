@@ -80,7 +80,17 @@ public struct PairingClient: Sendable {
         peer.lastGoodEndpoint = connection.endpoint
         // Merging is `PeerStore.save`'s job, so re-pairing the same machine
         // from a second network keeps the addresses it already had.
-        return try peers.save(peer)
+        //
+        // By this point the pairing cannot be undone: the enrollment key is
+        // gone from the host, so a failure to write the record locally is not
+        // something rescanning fixes. `PeerStore.all()` tolerates a *missing*
+        // file but not an undecodable one, which is the realistic way this
+        // fails — and the user needs to be told the host half succeeded.
+        do {
+            return try peers.save(peer)
+        } catch {
+            throw PairingError.peerNotRecorded(String(describing: error))
+        }
     }
 
     /// Both sessions, on every path out. `defer` cannot await, so this is

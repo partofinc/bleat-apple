@@ -12,6 +12,15 @@ import Testing
 /// that still exists and no longer authenticates anything.
 struct LocalShell: ShellRunner {
     let home: URL
+    /// Overrides `SHELL`, so a test can describe a host that does not have
+    /// herdr.
+    ///
+    /// `PATH` cannot do it: `/etc/profile` runs `path_helper`, which rebuilds
+    /// `PATH` from `/etc/paths.d` — and Homebrew installs a file there — so a
+    /// login shell puts `/opt/homebrew/bin` back whatever it was handed. The
+    /// only way to describe a host without herdr on this machine is to supply
+    /// the login shell itself.
+    var loginShell: String?
 
     func run(shell command: String) async throws -> String {
         let process = Process()
@@ -22,7 +31,7 @@ struct LocalShell: ShellRunner {
         // The lookup asks `$SHELL -lc`, and the scratch home's `.profile` is
         // written for `sh`. Pinning it also keeps the developer's own shell
         // configuration out of the test.
-        environment["SHELL"] = "/bin/sh"
+        environment["SHELL"] = loginShell ?? "/bin/sh"
         process.environment = environment
 
         let out = Pipe(), err = Pipe()
@@ -49,15 +58,17 @@ struct EnrollmentShellTests {
 
     /// A home directory with a `herdr` on the login shell's PATH, a chatty
     /// profile, and an `authorized_keys` holding a key the user put there.
-    private func scratchHome() throws -> URL {
+    private func scratchHome(withHerdr: Bool = true) throws -> URL {
         let home = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("bleat-enroll-\(UUID().uuidString)")
         let bin = home.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
 
-        let herdr = bin.appendingPathComponent("herdr")
-        try "#!/bin/sh\necho stub\n".write(to: herdr, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: herdr.path)
+        if withHerdr {
+            let herdr = bin.appendingPathComponent("herdr")
+            try "#!/bin/sh\necho stub\n".write(to: herdr, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: herdr.path)
+        }
 
         // Profiles print things. A banner here is not decoration: taking the
         // whole of stdout would store "Welcome back!" as part of the path.
@@ -198,6 +209,77 @@ struct EnrollmentShellTests {
 
         let lines = try authorizedKeys(in: home)
         #expect(lines.contains(usersKey))
+        #expect(lines.count == 2)
+    }
+
+    /// `command -v` exits 1 when it finds nothing, and the login shell exits
+    /// with it — so without the `|| true` in `HerdrLookup.command` a host
+    /// without herdr produces a *failed command*, and the user is told
+    /// "the host rejected a command (exit 1)" instead of what is wrong. The
+    /// guard for `herdrNotFound` was unreachable against a real shell.
+    @Test("a host without herdr says so, rather than failing the command")
+    func herdrMissingOnARealShell() async throws {
+        let home = try scratchHome(withHerdr: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+        // A "login shell" with a PATH of its own, standing in for a host where
+        // herdr is simply not installed.
+        let stub = home.appendingPathComponent("bin/login-shell")
+        try "#!/bin/sh\nPATH=/usr/bin:/bin\nexport PATH\nshift\nexec /bin/sh -c \"$1\"\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let shell = LocalShell(home: home, loginShell: stub.path)
+
+        // The command itself must succeed and answer nothing.
+        let output = try await shell.run(shell: HerdrLookup.command)
+        #expect(HerdrLookup.path(inOutput: output) == nil)
+
+        let enrollment = SSHKeyPair()
+        _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
+            line: enrollment.authorizedKeyLine(comment: "")
+        ))
+        await #expect(throws: PairingError.herdrNotFound) {
+            try await Enrollment.redeem(
+                deviceKey: SSHKeyPair(), enrollmentKey: enrollment, on: shell,
+                openDeviceSession: { shell }
+            )
+        }
+        // And nothing was written on the way to finding out.
+        #expect(try authorizedKeys(in: home).count == 1)
+    }
+
+    /// Re-pairing a phone that is already paired rewrites its line. Doing that
+    /// as a removal followed by an append would leave a window with the phone's
+    /// only durable credential missing from the file.
+    @Test("re-pairing leaves exactly one line for this device")
+    func rePairingLeavesOneLine() async throws {
+        let home = try scratchHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let shell = LocalShell(home: home)
+
+        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj ravil@laptop"
+        _ = try await shell.run(shell: AuthorizedKeys.appendCommand(line: usersKey))
+
+        // This device, from an earlier pairing, under an older marker.
+        let device = SSHKeyPair()
+        let oldMarker = try #require(AuthorizedKeys.deviceMarker(id: "0000000000000000"))
+        _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
+            line: device.authorizedKeyLine(comment: oldMarker.value)
+        ))
+
+        let enrollment = SSHKeyPair()
+        _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
+            line: enrollment.authorizedKeyLine(comment: "")
+        ))
+
+        let result = try await Enrollment.redeem(
+            deviceKey: device, enrollmentKey: enrollment, on: shell, openDeviceSession: { shell }
+        )
+
+        let lines = try authorizedKeys(in: home)
+        #expect(lines.contains(usersKey))
+        #expect(lines.filter { $0.contains("bleat-device-") }.count == 1)
+        #expect(lines.contains { $0.hasSuffix(result.deviceMarker) })
+        #expect(!lines.contains { $0.contains(oldMarker.value) })
         #expect(lines.count == 2)
     }
 }

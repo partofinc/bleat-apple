@@ -74,8 +74,10 @@ public struct HostInspector: Sendable {
     /// drift, and the way they would drift — a profile banner ending up in the
     /// stored path — is silent until the first herdr call fails.
     func locateHerdr() -> String? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/sh"
-        guard let output = run(shell, ["-lc", "command -v herdr"]) else { return nil }
+        // The command as well as the reading of it: `HerdrLookup.command`
+        // resolves `$SHELL` itself, so this is the same question the phone
+        // asks over SSH rather than a local restatement of it.
+        guard let output = run("/bin/sh", ["-c", HerdrLookup.command]) else { return nil }
         return HerdrLookup.path(inOutput: output)
     }
 

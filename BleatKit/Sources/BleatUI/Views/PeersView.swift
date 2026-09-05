@@ -59,11 +59,17 @@ public struct PeersView: View {
         }
     }
 
-    /// Snapshotted first: `remove` reloads the array, so indices after the
-    /// first are stale — a multi-select delete would unpair the wrong host or
-    /// run off the end.
+    /// Swiping to delete **asks**; it does not unpair.
+    ///
+    /// Unpairing is not list management — it decides what a machine will let
+    /// in — and the record is the only thing that knows how to reach the host
+    /// and which key line is this phone's. Dropping it on a swipe threw both
+    /// away and left a working key behind.
+    ///
+    /// One at a time, because the flow is one modal conversation: a multi-row
+    /// delete offers the first and the rest stay.
     private func unpair(_ offsets: IndexSet) {
-        let doomed = offsets.map { context.peers.peers[$0] }
-        for peer in doomed { context.peers.remove(peer) }
+        guard let first = offsets.first, context.peers.peers.indices.contains(first) else { return }
+        context.unpair.ask(about: context.peers.peers[first])
     }
 }

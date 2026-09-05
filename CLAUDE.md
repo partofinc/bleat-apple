@@ -47,13 +47,12 @@ push notifications, watchOS, Live Activities, multi-account badges.
   matching `ssh-keygen -lf` exactly — that equality is the whole point, since
   comparing the two by eye is how a user identifies which phone a key belongs
   to. See **`bleat keys`** below.
-- **Still missing: the phone must say that unpairing is half the job.**
-  `PeerStore.remove` drops the local record and cannot touch the host, so the
-  `bleat-device-…` line stays in `~/.ssh/authorized_keys` granting a full shell.
-  A phone that is lost, sold or wiped keeps it. Unpairing should *try* to
-  revoke over the connection it still has, and when it cannot, name the marker
-  and the command that will. **This is a release blocker, not a
-  nice-to-have.**
+- **The phone's side is done too.** Unpairing revokes over the connection it
+  still has and drops the record only once the key is gone; when it cannot, it
+  shows the command that finishes the job before offering to forget the record
+  that names it. See **Unpairing** below. Verified end to end against a
+  throwaway sshd on 5 Sept 2026, including that the revoked key stops
+  authenticating.
 
 ## Creating panes and sessions from the phone (Phase 3 note, herdr 0.8.2, 5 Sept 2026)
 
@@ -845,6 +844,82 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
   fights `GENERATE_INFOPLIST_FILE`. Deferred deliberately; in-app scanning does
   not depend on it.
 
+### Unpairing (Phase 2)
+
+Unpairing is two things, and the app used to do only the easy one. Dropping the
+local record is bookkeeping; removing this device's key from the host is the
+part that decides whether a phone can still open a shell on someone's Mac.
+
+- **The record is dropped only once the key is gone.** Forgetting first would
+  discard the `PairedPeer` — its endpoints, its host key, its device marker —
+  which is everything needed both to reach the host and to name the line to
+  delete. There would be nothing to retry with and nothing to name.
+- **Revocation matches on the key, not the marker.** The phone always holds its
+  key; a marker can be absent from a record made before it was stored, or stale
+  if the file was edited. `PairedPeer.deviceMarker` exists for *telling the
+  user* which line to remove — `Enrollment` always minted it and
+  `PairingClient` used to throw it away.
+- **The file is read on both sides of the removal, and *absent before* is a
+  failure too.** `removeKeyCommand` ends in `|| true`, so it exits 0 whether or
+  not it deleted anything — hence the read after. The read *before* is the
+  subtler one, and it is the same failure `Enrollment` was built around: the
+  handshake that opened this connection proves sshd accepts the key, so if it
+  is not in `~/.ssh/authorized_keys` then sshd is reading a different
+  `AuthorizedKeysFile` and nothing done to this file can revoke anything.
+  Without that check the app removed nothing, reported success, deleted the
+  `PairedPeer`, and left the phone a full shell on that Mac with no record
+  naming the line. **A first version shipped without it and a test asserted the
+  permissive behaviour** — the same shape as the `Agent.target` test that
+  passed while the property was wrong.
+- **The connection is released afterwards.** It authenticated with a key that
+  is no longer in `authorized_keys` — sshd does not re-check a live session, so
+  it keeps working, which is exactly why it must not stay cached.
+- **Swiping a row asks; it does not unpair.** Unpairing is not list management,
+  and a swipe has nowhere to say what it does.
+- **"Forget without removing the key" is offered, third, and named for what it
+  leaves behind.** The alternative is worse: a Mac that has been rebuilt or
+  sold would otherwise be un-removable, and a list that will not let go of a
+  dead entry teaches people to ignore it. It is reachable only from a screen
+  that has already shown the command that finishes the job.
+- **`RevocationAdvice` lives in `BleatKit`**, for the reason `Agent.displayTitle`
+  does: it names a command surface (`bleat keys revoke <marker>`) defined there.
+  A phone printing a syntax the tool no longer accepts would be worse than
+  printing nothing — the user runs it, sees it fail, and has no reason to think
+  the key is still there. It validates the marker with the same
+  `Marker(text:)` the tool applies, and falls back to `bleat keys list` plus a
+  fingerprint when there is none.
+- **`bleat unpair <name>` runs the same path from a terminal**, for the reason
+  `bleat redeem` does: taking access away has one failure worth catching —
+  reporting success over a key that still works — and only a real host shows
+  it.
+
+#### "Reached and refused" is not "could not reach"
+
+`SSHTransport.dial` mapped every failure to `connectionFailed`, so a **revoked
+device key looked like a network problem** — on every screen, not just this
+one. The user is told to check their Wi-Fi while the truth is that the phone is
+no longer paired.
+
+Citadel throws `SSHClientError.allAuthenticationOptionsFailed` for exactly this,
+and an address that is not listening throws `NIOConnectionError` (verified live,
+5 Sept 2026, by probing a stopped sshd and a revoked key). `dial` now raises
+`TransportError.authenticationFailed` — worded to name the possibilities rather
+than assert revocation, since sshd also refuses every method under
+`MaxAuthTries`/`MaxStartups` throttling, a changed `AllowUsers`, a locked
+account or a `StrictModes` permissions drift, several of which are transient
+and all of which reach every screen through this one string. `PeerConnector`
+promotes it when nothing wins — after `hostKeyMismatch`, since identity outranks credential, and
+before "none of N addresses could be reached", since a host that refused us was
+reached.
+
+The unpair screen says something different for it, because the advice inverts:
+the likeliest reading is that the key has **already** been removed there, so
+"the key is still on that Mac" would be false and `bleat keys revoke` would
+fail with "no Bleat key with that marker" — reading like a second problem. The
+other reading is that the key is in the file and sshd is ignoring it, which is
+what a `StrictModes` permissions drift does. Only looking tells them apart, so
+the screen names both and offers `bleat keys list`.
+
 ### Endpoint selection on the phone
 
 Try last-known-good first with a short timeout, then race the remaining
@@ -902,6 +977,7 @@ with the enrollment key being single-use.
 
 ```
 bleat redeem <bleat://pair?d=...>   # the phone's side, run from a terminal
+bleat unpair <name>                  # revoke this device's key, then forget
 bleat peers                          # what pairing produced
 ```
 
@@ -936,8 +1012,8 @@ in, and until this existed there was nothing that showed it or removed it.
   deletes. Refusing a typo beats repairing it into someone else's key.
 - **A revocation is checked before and after.** `removeCommand` exits 0 when it
   matches nothing, so the exit status cannot say whether anything happened.
-  Revoking an absent marker is refused outright, and `containsCommand` is asked
-  again afterwards — a confident "Revoked" over an unchanged file is the exact
+  Revoking an absent marker is refused outright, and the file is read again
+  afterwards — a confident "Revoked" over an unchanged file is the exact
   class of lie the rest of this design is built against.
 - **An expired enrollment key is reported as harmless**, because it is: sshd
   already refuses it and the next `bleat pair` sweeps it. A listing that showed
@@ -960,7 +1036,10 @@ in, and until this existed there was nothing that showed it or removed it.
 - **Both checks happen before anything is removed.** Validating only the
   *format* up front is not enough: `revoke <good> <typo>` then removed the
   first key before finding the second was not there. Markers are also
-  de-duplicated, or the same one is revoked once and reported twice.
+  de-duplicated, or the same one is revoked once and reported twice. That pass
+  rules out a *missing* marker; a removal that fails partway can still leave an
+  earlier one revoked, so the message says which rather than claiming nothing
+  happened.
 - **A concrete `bleat keys revoke <marker>` is only suggested when exactly one
   device is paired.** With two, naming either is naming an arbitrary one, and
   the user pastes it and revokes the phone they meant to keep. Which key is

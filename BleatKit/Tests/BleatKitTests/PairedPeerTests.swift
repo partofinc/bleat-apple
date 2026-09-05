@@ -12,11 +12,13 @@ struct PairedPeerTests {
         lastGood: Endpoint? = nil,
         name: String = "rawillk.air",
         user: String = "ravil",
-        herdr: String = "/opt/homebrew/bin/herdr"
+        herdr: String = "/opt/homebrew/bin/herdr",
+        marker: String? = nil
     ) -> PairedPeer {
         PairedPeer(
             hostKey: hostKey, name: name, username: user,
-            endpoints: endpoints, herdrPath: herdr, lastGoodEndpoint: lastGood
+            endpoints: endpoints, herdrPath: herdr, lastGoodEndpoint: lastGood,
+            deviceMarker: marker
         )
     }
 
@@ -46,6 +48,28 @@ struct PairedPeerTests {
         let original = peer(endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54")])
         let merged = try original.merging(original)
         #expect(merged.endpoints == original.endpoints)
+    }
+
+    /// Re-pairing *replaces* the line: `replaceKeyCommand` drops every line
+    /// carrying this key and appends one under a freshly minted marker. Keeping
+    /// the stored marker would leave the phone printing a revoke command for a
+    /// line that is no longer in the file.
+    @Test("re-pairing takes the new device marker, because the old line is gone")
+    func mergeTakesTheNewerMarker() throws {
+        let old = peer(endpoints: [Endpoint(host: "a")], marker: "bleat-device-1111111111111111")
+        let new = peer(endpoints: [Endpoint(host: "a")], marker: "bleat-device-2222222222222222")
+        #expect(try old.merging(new).deviceMarker == "bleat-device-2222222222222222")
+    }
+
+    /// A record made before the marker was stored still merges: the newer side
+    /// has one and the older does not, and either way the marker is only ever
+    /// a convenience. Revocation matches on the key.
+    @Test("a record that predates the marker gains one rather than losing it")
+    func mergeFillsInAMissingMarker() throws {
+        let old = peer(endpoints: [Endpoint(host: "a")], marker: nil)
+        let new = peer(endpoints: [Endpoint(host: "a")], marker: "bleat-device-2222222222222222")
+        #expect(try old.merging(new).deviceMarker == "bleat-device-2222222222222222")
+        #expect(try new.merging(old).deviceMarker == "bleat-device-2222222222222222")
     }
 
     @Test("mutable details take the newer value, since the tool just read them off the host")

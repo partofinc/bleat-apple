@@ -101,8 +101,32 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
             )
         } catch {
             // A host-key mismatch surfaces from NIO as a generic auth failure;
-            // report what actually went wrong.
+            // report what actually went wrong. Checked first, because the
+            // identity question outranks the credential one.
             if let recorded = validator.recordedFailure { throw recorded }
+            // A genuinely refused key, told apart from an unreachable address.
+            // Verified against a live sshd (5 Sept 2026): a reachable host that
+            // will not accept the key throws exactly this, while an address
+            // that is not listening throws `NIOConnectionError`.
+            //
+            // Worth its own case because the remedy is the opposite: nothing
+            // about the network will fix it. This is what a *revoked* device
+            // key looks like from the phone — `bleat keys revoke` on the Mac,
+            // or a rebuilt host — and reporting it as "no address could be
+            // reached" sends the user to check their Wi-Fi forever.
+            if case SSHClientError.allAuthenticationOptionsFailed = error {
+                // Names the possibilities rather than asserting one. Revocation
+                // is the likeliest, but sshd refuses every method for several
+                // other reasons — `MaxAuthTries` or `MaxStartups` throttling, a
+                // changed `AllowUsers`, a locked account, `StrictModes`
+                // rejecting a permissions drift on `~/.ssh`. Several are
+                // transient, and this string is what *every* screen shows, so
+                // asserting "revoked; pair again" would send a user to re-pair
+                // over a host that is briefly busy.
+                throw TransportError.authenticationFailed(
+                    "it may have been revoked there, or that host's SSH configuration may have changed"
+                )
+            }
             throw TransportError.connectionFailed(String(describing: error))
         }
     }

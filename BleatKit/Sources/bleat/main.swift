@@ -33,6 +33,7 @@ Keys this machine accepts (local only — it edits ~/.ssh/authorized_keys):
 
 Pairing (the side a phone takes; here for testing the host side):
   bleat redeem <bleat://pair?d=...>
+  bleat unpair <name>                       # revoke this device's key, then forget
   bleat peers
 
 Ctrl-] detaches: sends terminal.release and exits cleanly.
@@ -178,6 +179,17 @@ do {
             fail("redeem takes exactly one pairing URL (bleat://pair?d=...)")
         }
         try await Redeem.run(code: options.positional[0])
+        exit(0)
+    }
+
+    // The phone's side of unpairing. Here for the same reason `redeem` is:
+    // taking access away has one failure worth catching — reporting success
+    // over a key that still works — and only a real host can show it.
+    if command == "unpair" {
+        guard options.positional.count == 1 else {
+            fail("unpair takes exactly one peer name, as shown by `bleat peers`")
+        }
+        try await Redeem.unpair(name: options.positional[0], peers: .standard())
         exit(0)
     }
 

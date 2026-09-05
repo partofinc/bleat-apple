@@ -78,6 +78,11 @@ public struct PairingClient: Sendable {
         var peer = PairedPeer(payload: payload)
         peer.herdrPath = redemption.herdrPath
         peer.lastGoodEndpoint = connection.endpoint
+        // Kept so unpairing can name the line it leaves behind if it cannot
+        // remove it. `Enrollment` has always returned this; it used to be
+        // dropped here, which left the phone unable to say which of the host's
+        // keys was its own.
+        peer.deviceMarker = redemption.deviceMarker
         // Merging is `PeerRegistry.save`'s job, so re-pairing the same machine
         // from a second network keeps the addresses it already had.
         //

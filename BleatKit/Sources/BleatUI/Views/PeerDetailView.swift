@@ -8,6 +8,7 @@ import SwiftUI
 /// what makes a connection problem diagnosable from the phone, and the moment
 /// they are worth reading is the moment the list above has failed.
 struct PeerDetailView: View {
+    @Environment(AppContext.self) private var context
     let peer: PairedPeer
     @State private var sessions: RemoteList<SessionInfo>
 
@@ -44,6 +45,23 @@ struct PeerDetailView: View {
                 }
             }
 
+            // The other half of pairing, and the half that has to be visible.
+            // A swipe on the list unpairs too, but a swipe has nowhere to say
+            // what unpairing does — and what it does is decide whether this
+            // phone can still open a shell on someone's Mac.
+            Section {
+                if let marker = peer.deviceMarker {
+                    LabeledContent("Key on host", value: marker)
+                        .font(.footnote.monospaced())
+                }
+                Button("Unpair \(peer.name)", role: .destructive) {
+                    context.unpair.ask(about: peer)
+                }
+            } header: {
+                Text("This device")
+            } footer: {
+                Text("Unpairing removes this device's key from \(peer.name), so this phone can no longer log in there.")
+            }
         }
         .navigationTitle(peer.name)
         .refreshable { await sessions.load(for: peer) }

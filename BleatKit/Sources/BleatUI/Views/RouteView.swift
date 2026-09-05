@@ -33,8 +33,15 @@ struct RouteView: View {
             } else {
                 unpaired
             }
-        case .pane(_, _, let target, let title):
-            PlaceholderView(title: title, detail: target)
+        case .pane(let hostKey, let session, let target, let title):
+            if let peer = peer(hostKey) {
+                PaneView(
+                    peer: peer, session: session, target: target, title: title,
+                    connections: context.connections
+                )
+            } else {
+                unpaired
+            }
         }
     }
 

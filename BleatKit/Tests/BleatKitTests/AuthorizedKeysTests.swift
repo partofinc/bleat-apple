@@ -44,6 +44,61 @@ struct AuthorizedKeysTests {
         }
     }
 
+    /// `Marker(text:)` is the one place a marker comes from outside this
+    /// module — a line read off a host, or a string a user typed to revoke.
+    @Test("a whole marker reads back with its kind")
+    func markerRoundTrips() throws {
+        let device = AuthorizedKeys.deviceMarker()
+        let read = try #require(AuthorizedKeys.Marker(text: device.value))
+        #expect(read == device)
+        #expect(read.kind == .device)
+        #expect(AuthorizedKeys.Marker(text: AuthorizedKeys.enrollmentMarker().value)?.kind == .enrollment)
+    }
+
+    /// The asymmetry with the id-taking initialiser, which sanitises. Here the
+    /// string names the line `removeCommand` will delete, so quietly turning
+    /// `bleat-device-ab/12` into `bleat-device-ab12` could delete a *different*
+    /// phone's key. A typo must be refused, not repaired.
+    @Test("a typed marker is validated, never sanitised into a different one")
+    func markerTextIsValidated() {
+        for rejected in [
+            "bleat-device-ab/12",       // would sanitise to an existing marker
+            "bleat-device-ab 12",
+            "bleat-device-",
+            "bleat-device",
+            "bleat-agent-ab12",         // not a kind
+            "device-ab12",              // not namespaced
+            "xbleat-device-ab12",
+            "bleat-device-ab'; rm -rf ~; echo '",
+            "",
+        ] {
+            #expect(AuthorizedKeys.Marker(text: rejected) == nil, "\(rejected.debugDescription)")
+        }
+    }
+
+    /// The id may itself contain `-`, since `randomHex` could be replaced and
+    /// `sanitizeMarker` allows it. Splitting on every `-` would truncate such a
+    /// marker and delete nothing — or, worse, match by prefix.
+    @Test("an id containing a dash survives the round trip whole")
+    func markerKeepsDashesInTheID() throws {
+        let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab-12-cd"))
+        #expect(marker.value == "bleat-device-ab-12-cd")
+        #expect(AuthorizedKeys.Marker(text: marker.value) == marker)
+    }
+
+    /// The command behind `bleat keys list`. Locked for the same reason the
+    /// phone's verification reads are: every write-back truncates before it
+    /// writes, and an unlocked read landing there reports an empty file — which
+    /// here reads as "no keys on this machine".
+    @Test("listing every Bleat key takes the lock and tolerates a missing file")
+    func listCommandShape() {
+        let command = AuthorizedKeys.listCommand()
+        #expect(command.contains("mkdir ~/.ssh/.bleat-lock"))
+        #expect(command.contains("bleat-(enroll|device)-"))
+        #expect(command.contains("|| true"), "grep exits 1 on no match, which is a normal answer")
+        #expect(command.contains("2>/dev/null"), "a host with no authorized_keys is not an error")
+    }
+
     /// sshd's `StrictModes` is on by default and makes it **silently ignore**
     /// authorized_keys when the directory or file is too permissive.
     @Test("appending sets the permissions sshd silently requires")
@@ -93,7 +148,7 @@ struct AuthorizedKeysTests {
     @Test("the match is anchored, so one marker cannot strip another's key")
     func removeIsAnchored() throws {
         let command = AuthorizedKeys.removeCommand(marker: try #require(AuthorizedKeys.deviceMarker(id: "01")))
-        #expect(command.contains("bleat-device-01$"))
+        #expect(command.contains("bleat-device-01[[:space:]]*$"))
         #expect(command.contains("[[:space:]]"))
         #expect(command.contains("grep -v -E"))
     }
@@ -109,7 +164,7 @@ struct AuthorizedKeysTests {
     @Test("presence uses the same anchored pattern as removal, so the two agree")
     func containsMatchesRemoval() throws {
         let marker = try #require(AuthorizedKeys.deviceMarker(id: "ab12"))
-        #expect(AuthorizedKeys.containsCommand(marker: marker).contains("bleat-device-ab12$"))
+        #expect(AuthorizedKeys.containsCommand(marker: marker).contains("bleat-device-ab12[[:space:]]*$"))
         #expect(AuthorizedKeys.containsCommand(marker: marker).contains("echo yes"))
         #expect(AuthorizedKeys.containsCommand(marker: marker).contains("echo no"))
     }
@@ -161,7 +216,7 @@ struct EnrollmentKeyTests {
     @Test("the sweep matches any enrollment marker, not one particular key")
     func sweepMatchesAny() {
         let command = AuthorizedKeys.sweepEnrollmentsCommand()
-        #expect(command.contains("bleat-enroll-[A-Za-z0-9._-]+$"))
+        #expect(command.contains("bleat-enroll-[A-Za-z0-9._-]+[[:space:]]*$"))
         #expect(command.contains("|| true"))
         #expect(command.contains(#"cat "$t" > "$f""#))
     }
@@ -181,7 +236,7 @@ struct EnrollmentKeyTests {
     @Test("device markers can be listed, so redemption compares before and after")
     func listsDeviceMarkers() {
         let command = AuthorizedKeys.listDeviceMarkersCommand()
-        #expect(command.contains("bleat-device-[A-Za-z0-9._-]+$"))
+        #expect(command.contains("bleat-device-[A-Za-z0-9._-]+[[:space:]]*$"))
         #expect(command.contains("grep -o -E"))
         #expect(!command.contains("-enroll-"))
         #expect(command.contains("|| true"))   // no matches is normal, not failure

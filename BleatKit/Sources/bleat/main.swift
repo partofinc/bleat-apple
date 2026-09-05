@@ -27,6 +27,10 @@ Pairing (host side):
   bleat pair    [--port N] [--endpoint HOST[:PORT]]... [--timeout SECONDS]
   bleat inspect [--port N] [--endpoint HOST[:PORT]]...
 
+Keys this machine accepts (local only — it edits ~/.ssh/authorized_keys):
+  bleat keys list
+  bleat keys revoke <marker>...
+
 Pairing (the side a phone takes; here for testing the host side):
   bleat redeem <bleat://pair?d=...>
   bleat peers
@@ -154,6 +158,15 @@ do {
 
     if command == "pair" {
         try Pair.run(options: options)
+        exit(0)
+    }
+
+    // Local, and not `[host]`-taking like the commands below it. See `Keys`:
+    // this edits the file that decides who may reach the machine, and doing
+    // that down a channel the file itself authorises means a mistake takes away
+    // the connection that would fix it.
+    if command == "keys" {
+        try Keys.run(options: options)
         exit(0)
     }
 

@@ -39,12 +39,12 @@ enum Pair {
         // the one overlay address they asked for, and still look fine.
         let extra = options.endpoints.compactMap { Endpoint(string: $0, defaultPort: port) }
         guard extra.count == options.endpoints.count else {
-            throw PairingFailure("an --endpoint could not be resolved against port \(port)")
+            throw ToolFailure("an --endpoint could not be resolved against port \(port)")
         }
         let report = try HostInspector().inspect(port: port, extraEndpoints: extra)
 
         guard !report.endpoints.isEmpty else {
-            throw PairingFailure("no reachable address found for this host; pass one with --endpoint")
+            throw ToolFailure("no reachable address found for this host; pass one with --endpoint")
         }
 
         // A previous run killed with SIGKILL cannot have cleaned up after
@@ -199,7 +199,7 @@ enum Pair {
     ) -> Outcome {
         while Date() < deadline {
             if cleanup.wasSignalled { return .cancelled }
-            let enrollmentGone = (try? shellOutput(AuthorizedKeys.containsCommand(marker: marker)))?
+            let enrollmentGone = (try? Shell.output(AuthorizedKeys.containsCommand(marker: marker)))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) == "no"
             if enrollmentGone, !deviceMarkers().subtracting(knownDevices).isEmpty { return .redeemed }
             Thread.sleep(forTimeInterval: 0.1)
@@ -208,7 +208,7 @@ enum Pair {
     }
 
     static func deviceMarkers() -> Set<String> {
-        guard let output = try? shellOutput(AuthorizedKeys.listDeviceMarkersCommand()) else { return [] }
+        guard let output = try? Shell.output(AuthorizedKeys.listDeviceMarkersCommand()) else { return [] }
         return Set(output.split(separator: "\n").map(String.init).filter { !$0.isEmpty })
     }
 
@@ -293,54 +293,19 @@ enum Pair {
                 PairScreen.leave()
                 enteredAlternateScreen = false
             }
-            _ = try? shellOutput(AuthorizedKeys.removeCommand(marker: marker))
+            _ = try? Shell.output(AuthorizedKeys.removeCommand(marker: marker))
         }
     }
 
     // MARK: - Shell
-
-    struct PairingFailure: Error, CustomStringConvertible {
-        let description: String
-        init(_ description: String) { self.description = description }
-    }
 
     /// Runs the very command strings the phone will run, rather than a local
     /// reimplementation, so both sides exercise one definition of what a Bleat
     /// entry is and how it is removed.
     @discardableResult
     static func shell(_ command: String, _ what: String? = nil) throws -> String {
-        do { return try shellOutput(command) }
-        catch { throw PairingFailure("\(what ?? "command") failed: \(error)") }
-    }
-
-    /// Captures stderr and puts it in the error.
-    ///
-    /// CLAUDE.md's rule — never swallow stderr — earns its keep here: the
-    /// failures users actually hit are an unwritable `~/.ssh`, a full disk or a
-    /// failed `chmod`, and every one of them arrives as a bare non-zero status
-    /// with the explanation on stderr. Reporting "exit 1" alone leaves nothing
-    /// to act on.
-    static func shellOutput(_ command: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = FileHandle.nullDevice
-        try process.run()
-        // Read before waiting: a full pipe buffer would deadlock the child.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errorData = err.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let detail = String(data: errorData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw PairingFailure(detail.isEmpty
-                ? "exit \(process.terminationStatus)"
-                : "exit \(process.terminationStatus): \(detail)")
-        }
-        return String(data: data, encoding: .utf8) ?? ""
+        do { return try Shell.output(command) }
+        catch { throw ToolFailure("\(what ?? "command") failed: \(error)") }
     }
 }
 

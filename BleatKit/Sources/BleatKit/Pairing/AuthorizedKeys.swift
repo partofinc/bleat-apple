@@ -24,18 +24,69 @@ public enum AuthorizedKeys {
     /// and locking them out of their own machine. Making the empty case
     /// unrepresentable is the only fix that cannot be forgotten at a call site.
     public struct Marker: Sendable, Hashable, CustomStringConvertible {
+        /// What a key was installed for. The two live very different lives: an
+        /// enrollment key is single-use and expires on its own, a device key is
+        /// a phone's durable credential and only leaves when somebody removes
+        /// it.
+        public enum Kind: String, Sendable, Hashable, CaseIterable {
+            case enrollment = "enroll"
+            case device
+        }
+
+        public let kind: Kind
         public let value: String
 
         /// Fails when `id` contains nothing usable. Callers that generate their
         /// own id get a non-optional result from `enrollment()`/`device()`.
-        init?(kind: String, id: String) {
+        init?(kind: Kind, id: String) {
             let cleaned = AuthorizedKeys.sanitizeMarker(id)
             guard !cleaned.isEmpty else { return nil }
-            self.value = "\(AuthorizedKeys.markerPrefix)-\(kind)-\(cleaned)"
+            self.kind = kind
+            self.value = "\(AuthorizedKeys.markerPrefix)-\(kind.rawValue)-\(cleaned)"
+        }
+
+        /// Reads a whole marker back — off a host's `authorized_keys`, or off
+        /// the command line where a user typed one to revoke.
+        ///
+        /// **This one validates rather than sanitising**, unlike the id-taking
+        /// initialiser above, and the asymmetry is deliberate. Sanitising an id
+        /// only ever *makes* a marker; sanitising something a user typed would
+        /// silently turn `bleat-device-ab/12` into `bleat-device-ab12` — a
+        /// different, possibly existing key — and this string's whole purpose
+        /// is to name the line `removeCommand` deletes. Deleting a key nobody
+        /// asked to delete is worse than refusing a typo.
+        public init?(text: String) {
+            let parts = text.split(separator: "-", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3,
+                  parts[0] == AuthorizedKeys.markerPrefix,
+                  let kind = Kind(rawValue: String(parts[1])),
+                  !parts[2].isEmpty,
+                  // Already exactly what `sanitizeMarker` would leave, or it is
+                  // not one of ours.
+                  AuthorizedKeys.sanitizeMarker(String(parts[2])) == parts[2]
+            else { return nil }
+            self.kind = kind
+            self.value = text
         }
 
         public var description: String { value }
     }
+
+    /// End of line, allowing trailing blanks — and a `\r`, since `[:space:]`
+    /// includes one.
+    ///
+    /// A bare `$` looks equivalent and is not. A line ending in a space, or a
+    /// file that has been through a Windows editor, is invisible to a
+    /// `$`-anchored pattern while **sshd still accepts the key on it**.
+    /// Verified against BSD grep: one trailing space made a `bleat-device-…`
+    /// line vanish from `listCommand`, `containsCommand` *and*
+    /// `removeCommand` at once — so it could neither be seen nor revoked, which
+    /// is the precise failure `bleat keys` exists to prevent. It also meant an
+    /// enrollment key on such a line survived `bleat pair`'s own cleanup.
+    ///
+    /// Every marker-anchored pattern uses this, so the listing and the deletion
+    /// cannot disagree about which lines exist.
+    static let lineEnd = "[[:space:]]*$"
 
     /// A marker for one enrollment: `bleat-enroll-<16 hex>`.
     ///
@@ -43,18 +94,18 @@ public enum AuthorizedKeys {
     /// marker is interpolated into a shell command and into a key comment.
     /// Nothing reaching either place should be able to carry a quote.
     public static func enrollmentMarker() -> Marker {
-        Marker(kind: "enroll", id: randomHex())!   // randomHex is always usable
+        Marker(kind: .enrollment, id: randomHex())!   // randomHex is always usable
     }
 
     /// A marker for a device's durable key: `bleat-device-<16 hex>`.
     public static func deviceMarker() -> Marker {
-        Marker(kind: "device", id: randomHex())!
+        Marker(kind: .device, id: randomHex())!
     }
 
     /// Rebuilds a marker from a caller-supplied id, e.g. one read back off a
     /// host. Nil when nothing usable survives sanitising.
-    public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: "enroll", id: id) }
-    public static func deviceMarker(id: String) -> Marker? { Marker(kind: "device", id: id) }
+    public static func enrollmentMarker(id: String) -> Marker? { Marker(kind: .enrollment, id: id) }
+    public static func deviceMarker(id: String) -> Marker? { Marker(kind: .device, id: id) }
 
     /// The `authorized_keys` line for a single-use enrollment key.
     ///
@@ -84,11 +135,47 @@ public enum AuthorizedKeys {
 
     /// `YYYYMMDDHHMMSSZ` — the UTC form sshd accepts.
     static func expiryStamp(_ date: Date) -> String {
+        expiryFormatter().string(from: date) + "Z"
+    }
+
+    /// Reads a stamp back, for showing a key's deadline.
+    ///
+    /// **sshd accepts more forms than this tool writes**, and reading only the
+    /// one it writes is how a live deadline gets reported as no deadline at
+    /// all. `YYYYMMDD`, `YYYYMMDDHHMM` and `YYYYMMDDHHMMSS` are all valid, each
+    /// with or without a `Z`; without one sshd reads it as *local* time, which
+    /// is why nothing here writes that form. A stamp that still will not parse
+    /// is reported as unreadable rather than absent — sshd is enforcing
+    /// something, and "no expiry" would be both wrong and alarming.
+    static func expiryDate(stamp: String) -> Date? {
+        for format in ["yyyyMMddHHmmss", "yyyyMMddHHmm", "yyyyMMdd"] {
+            let utc = stamp.hasSuffix("Z")
+            let formatter = expiryFormatter(format: format, utc: utc)
+            if let date = formatter.date(from: utc ? String(stamp.dropLast()) : stamp) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    /// Built per call rather than held in a `static let`: `DateFormatter` is
+    /// not `Sendable`, and this package has no main actor to pin one to.
+    private static func expiryFormatter(
+        format: String = "yyyyMMddHHmmss",
+        utc: Bool = true
+    ) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "yyyyMMddHHmmss'Z'"
-        return formatter.string(from: date)
+        // A stamp with no `Z` means the host's local time, which is what sshd
+        // does with it. Reading it as UTC would move the deadline by the
+        // offset and could report a live key as expired.
+        formatter.timeZone = utc ? TimeZone(identifier: "UTC") : .current
+        formatter.dateFormat = format
+        // A short format must not accept a longer stamp by ignoring the tail:
+        // `yyyyMMdd` would otherwise parse `20260905123456` as 5 Sept and drop
+        // the time, so the fallback order would stop being a fallback.
+        formatter.isLenient = false
+        return formatter
     }
 
     /// Lists the marker of every Bleat device key in the file, one per line.
@@ -99,8 +186,36 @@ public enum AuthorizedKeys {
     /// anything and would turn any disappearance of the enrollment line into a
     /// false success.
     public static func listDeviceMarkersCommand() -> String {
-        let pattern = quote("[[:space:]]\(markerPrefix)-device-[A-Za-z0-9._-]+$")
-        return "grep -o -E -- \(pattern) \(path) 2>/dev/null | tr -d '[:blank:]' || true"
+        let pattern = quote("[[:space:]]\(markerPrefix)-device-[A-Za-z0-9._-]+\(lineEnd)")
+        // `tr` strips what the match dragged in with it: `-o` prints the
+        // leading separator and any trailing blanks as part of the match. `\r`
+        // is named separately because it is not `[:blank:]`, and deleting
+        // `[:space:]` wholesale would take the newlines too and run every
+        // marker together into one word.
+        return "grep -o -E -- \(pattern) \(path) 2>/dev/null | tr -d '[:blank:]\\r' || true"
+    }
+
+    /// Prints every Bleat line in the file, whole.
+    ///
+    /// This is the command behind `bleat keys list`, and behind the answer to
+    /// the question the pairing design leaves open: *what does this machine
+    /// still let in?* Unpairing on a phone drops the phone's record and cannot
+    /// touch the host, so the host's own file is the only place the truth
+    /// lives.
+    ///
+    /// Whole lines rather than markers, unlike `listDeviceMarkersCommand`,
+    /// because the user is being asked to decide which keys to keep: the
+    /// fingerprint is what they can compare against the phone in their hand,
+    /// and an `expiry-time` is what says a leftover enrollment key is already
+    /// harmless. `Entry.parse` turns each line back into those.
+    ///
+    /// Locked, for the same reason `containsKeyCommand` is: every write-back
+    /// here truncates before it writes, and an unlocked read landing in that
+    /// instant reports an empty file. "No Bleat keys on this machine" is
+    /// precisely the answer a user would stop reading after.
+    public static func listCommand() -> String {
+        let pattern = quote("[[:space:]]\(markerPrefix)-(enroll|device)-[A-Za-z0-9._-]+\(lineEnd)")
+        return locked("grep -E -- \(pattern) \(path) 2>/dev/null || true")
     }
 
     /// Removes **every** Bleat enrollment key, whoever left it.
@@ -114,7 +229,7 @@ public enum AuthorizedKeys {
     ///
     /// Device keys are untouched: the pattern requires the `-enroll-` infix.
     public static func sweepEnrollmentsCommand() -> String {
-        let pattern = quote("[[:space:]]\(markerPrefix)-enroll-[A-Za-z0-9._-]+$")
+        let pattern = quote("[[:space:]]\(markerPrefix)-enroll-[A-Za-z0-9._-]+\(lineEnd)")
         // A conditional rather than an early `exit`: this runs inside the lock
         // wrapper, and exiting would leave the lock directory behind.
         return locked(
@@ -163,7 +278,7 @@ public enum AuthorizedKeys {
     /// disables the whole file. `|| true` because `grep -v` exits 1 when it
     /// emits nothing, which is a normal outcome here, not a failure.
     public static func removeCommand(marker: Marker) -> String {
-        let pattern = quote("[[:space:]]\(regexEscape(marker.value))$")
+        let pattern = quote("[[:space:]]\(regexEscape(marker.value))\(lineEnd)")
         // The `-f` guard matters on a fresh account: without it a removal that
         // runs before any key was written creates an empty authorized_keys at
         // the umask default, typically 0644 — a mode the append path takes
@@ -278,7 +393,7 @@ public enum AuthorizedKeys {
     /// rather than relying on an exit code, since the caller reads stdout.
     /// Anchored the same way as `removeCommand`, so the two always agree.
     public static func containsCommand(marker: Marker) -> String {
-        let pattern = quote("[[:space:]]\(regexEscape(marker.value))$")
+        let pattern = quote("[[:space:]]\(regexEscape(marker.value))\(lineEnd)")
         return "grep -q -E -- \(pattern) \(path) 2>/dev/null && echo yes || echo no"
     }
 
@@ -307,7 +422,12 @@ public enum AuthorizedKeys {
     /// The wrapped command must not call `exit`, or the lock would outlive it.
     static func locked(_ command: String) -> String {
         let lock = "~/.ssh/.bleat-lock"
-        return "mkdir -p ~/.ssh 2>/dev/null; "
+        // `-m 700` applies only to a directory this actually creates, so it
+        // never touches a mode the user chose. Without it a *read* — the lock
+        // wraps `listCommand` too — leaves a new `~/.ssh` at the umask default
+        // of 0755 on a machine that had none, which is neither what OpenSSH
+        // creates nor something a listing has any business doing.
+        return "mkdir -m 700 -p ~/.ssh 2>/dev/null; "
             + "while ! mkdir \(lock) 2>/dev/null; do "
             // A failed mkdir means contention only if the lock is actually
             // there. When it is not, the directory is unwritable or read-only,

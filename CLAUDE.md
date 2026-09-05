@@ -629,6 +629,31 @@ prompts, guesses, or trusts anything on first sight.
   session rather than a handshake each. Returning to the peer list releases it —
   re-entering costs a handshake, an idle SSH session left open on someone's Mac
   costs their trust.
+- **Keeping that promise takes more than a stored reference, because a dial
+  cannot be called off.** `PeerConnector` races in a detached task precisely so
+  a slow address cannot hold up a fast one, so a handshake started for a screen
+  the user has already left will still finish. Two guards follow: concurrent
+  callers **join** the dial in flight rather than starting a second (otherwise
+  a pull-to-refresh during the first load races every endpoint twice and leaks
+  whichever transport loses the assignment), and a dial that completes after
+  `release()` **closes itself** instead of installing. `SSHTransport.disconnect`
+  documents the same hazard for its own dial; the store reproduced it one level
+  up before this.
+- **A cached connection is keyed by link state as well as host key.** It is
+  raced once and then pinned to the address that won, so one made on Wi-Fi
+  against a `.local` name can only fail after the phone moves to cellular —
+  and the overlay address that would have worked never gets a turn, because the
+  cache answers first. `ConnectionPolicy` holds this and the "is this error
+  fatal to the connection?" rule, in `BleatKit` where both are tested.
+- **A `HerdrError` does not discard the connection.** The host was reached and
+  said no. Reconnecting on it would cost a handshake per retry and hide the
+  real problem behind a reconnection that always succeeds. `TransportError`
+  does discard it, which is what lets a retry re-race after a network change.
+- **Every list load carries a generation.** Pull-to-refresh and the initial
+  `task` overlap, and without one a slow first load finishing late overwrites a
+  successful refresh with its own failure — an error banner over rows that
+  arrived perfectly well. Refreshing also keeps the rows on screen: `refreshable`
+  draws its own spinner, and replacing the list underneath it is a downgrade.
 - **Reachability is one question**: is this Wi-Fi or Ethernet? On cellular a
   `.local` name and an RFC1918 address cannot resolve or route, so
   `endpointsToTry` drops them rather than ordering them last. `Reachability`

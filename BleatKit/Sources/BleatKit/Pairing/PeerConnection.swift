@@ -61,13 +61,22 @@ public enum PeerConnection {
             // Only reachable for a record made before pairing resolved this.
             // Asking now costs one command on a connection that is already
             // open, where rebuilding the transport would cost a handshake.
-            let output = try await connection.transport.run(shell: HerdrLookup.command)
-            guard let path = HerdrLookup.path(inOutput: output) else {
+            do {
+                let output = try await connection.transport.run(shell: HerdrLookup.command)
+                guard let path = HerdrLookup.path(inOutput: output) else {
+                    throw PairingError.herdrNotFound
+                }
+                connection.transport.useHerdrPath(path)
+                discovered = path
+            } catch {
+                // Every throw, not just the not-found one. This connection is
+                // the only reference to a live SSH session — a failed command
+                // does not close the channel, and neither does cancellation —
+                // so unwinding without disconnecting leaves a session open on
+                // the host, and each retry adds another.
                 await connection.transport.disconnect()
-                throw PairingError.herdrNotFound
+                throw error
             }
-            connection.transport.useHerdrPath(path)
-            discovered = path
         }
 
         return Connected(

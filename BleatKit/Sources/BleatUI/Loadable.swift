@@ -6,8 +6,7 @@
 enum Loadable<Value> {
     case loading
     case loaded(Value)
-    /// A message already fit to show. `HerdrError`, `TransportError` and
-    /// `PairingError` all describe themselves, so this is `String(describing:)`
-    /// of whatever was thrown.
+    /// A message already fit to show — see `ErrorMessage`, which is where the
+    /// two errors that do not describe themselves get a sentence.
     case failed(String)
 }

@@ -13,30 +13,42 @@ struct RouteView: View {
     var body: some View {
         switch route {
         case .peer(let hostKey):
-            if let peer = context.peers.peers.first(where: { $0.hostKey == hostKey }) {
+            if let peer = peer(hostKey) {
                 PeerDetailView(peer: peer, connections: context.connections)
             } else {
-                // Reachable: unpairing a host while its screen is pushed. Saying
-                // so beats an empty screen that looks like a loading failure.
-                ContentUnavailableView(
-                    "Host not paired",
-                    systemImage: "desktopcomputer.trianglebadge.exclamationmark",
-                    description: Text("This host was removed.")
-                )
+                unpaired
             }
-        // `peer` is a host key — a 70-character blob, not something to show.
-        // The placeholders name the peer instead, which is what these screens
-        // will do for real.
-        case .workspaces(let hostKey, _):
-            PlaceholderView(title: "Workspaces", detail: name(of: hostKey))
-        case .agents(let hostKey, _, let workspace):
-            PlaceholderView(title: "Agents", detail: workspace ?? name(of: hostKey))
+        case .workspaces(let hostKey, let session):
+            if let peer = peer(hostKey) {
+                WorkspacesView(peer: peer, session: session, connections: context.connections)
+            } else {
+                unpaired
+            }
+        case .agents(let hostKey, let session, let workspace, let label):
+            if let peer = peer(hostKey) {
+                AgentsView(
+                    peer: peer, session: session, workspace: workspace, title: label,
+                    connections: context.connections
+                )
+            } else {
+                unpaired
+            }
         case .pane(_, _, let target, let title):
             PlaceholderView(title: title, detail: target)
         }
     }
 
-    private func name(of hostKey: String) -> String {
-        context.peers.peers.first { $0.hostKey == hostKey }?.name ?? "unknown host"
+    private func peer(_ hostKey: String) -> PairedPeer? {
+        context.peers.peers.first { $0.hostKey == hostKey }
+    }
+
+    /// Reachable: unpairing a host while one of its screens is pushed. Saying
+    /// so beats an empty screen that looks like a loading failure.
+    private var unpaired: some View {
+        ContentUnavailableView(
+            "Host not paired",
+            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+            description: Text("This host was removed.")
+        )
     }
 }

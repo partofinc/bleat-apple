@@ -4,7 +4,7 @@ import SwiftUI
 /// The sessions on a host, wherever they are being shown.
 struct SessionsSection: View {
     let peer: PairedPeer
-    let model: SessionsModel
+    let model: RemoteList<SessionInfo>
     @Environment(AppContext.self) private var context
 
     var body: some View {
@@ -19,19 +19,22 @@ struct SessionsSection: View {
                     Text("Reaching \(peer.name)…")
                         .foregroundStyle(.secondary)
                 }
+            case .stale(let sessions, let message):
+                // The rows stay; the failure sits above them. Losing a list
+                // that arrived fine because a refresh dropped a packet is the
+                // worse answer.
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .font(.footnote)
+                ForEach(sessions) { session in
+                    SessionLink(peer: peer, session: session)
+                }
             case .loaded(let sessions) where sessions.isEmpty:
                 Text("No sessions. Start one on the host with `herdr session attach <name>`.")
                     .foregroundStyle(.secondary)
             case .loaded(let sessions):
                 ForEach(sessions) { session in
-                    Button {
-                        context.navigation.push(
-                            .workspaces(peer: peer.hostKey, session: session.name)
-                        )
-                    } label: {
-                        SessionRow(session: session)
-                    }
-                    .buttonStyle(.plain)
+                    SessionLink(peer: peer, session: session)
                 }
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle")

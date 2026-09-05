@@ -46,7 +46,12 @@ public final class ConnectionStore {
     }
 
     /// A client for this peer, connecting if there is not one already.
-    public func client(for peer: PairedPeer) async throws -> HerdrClient {
+    ///
+    /// - Parameter session: The Herdr session to select. Applied to the live
+    ///   connection rather than being part of its identity: session selection
+    ///   is an environment prefix on each command, so drilling from the session
+    ///   list into a session's workspaces costs no second handshake.
+    public func client(for peer: PairedPeer, session: String? = nil) async throws -> HerdrClient {
         let onLocalLink = reachability.isOnLocalLink
         if let live = current,
            ConnectionPolicy.canReuse(
@@ -55,11 +60,19 @@ public final class ConnectionStore {
                for: peer,
                onLocalLink: onLocalLink
            ) {
+            live.connected.transport.useSession(session ?? peer.session)
             return live.connected.client
         }
 
         if let pending = connecting, pending.hostKey == peer.hostKey {
-            return try await pending.task.value.client
+            let joined = try await pending.task.value
+            // The session has to be applied here too, and it was not. The dial
+            // in flight was started for whatever session asked first — a
+            // refresh of the session *list* asks with none — so a screen that
+            // joins it and skips this step lists the workspaces of the wrong
+            // session, with nothing to show that anything went wrong.
+            joined.transport.useSession(session ?? peer.session)
+            return joined.client
         }
 
         await release()
@@ -67,7 +80,7 @@ public final class ConnectionStore {
         let deviceKey = try peers.deviceKey()
         let task = Task {
             try await PeerConnection.connect(
-                to: peer, deviceKey: deviceKey, onLocalLink: onLocalLink
+                to: peer, deviceKey: deviceKey, onLocalLink: onLocalLink, session: session
             )
         }
         connecting = (peer.hostKey, task)

@@ -11,6 +11,29 @@ public struct Workspace: Codable, Sendable, Identifiable, Hashable {
 
     public var id: String { workspaceID }
 
+    /// Public because the type is decoded from the host in production and
+    /// constructed by hand in tests and previews; a `Codable` struct's
+    /// memberwise initialiser is internal.
+    public init(
+        workspaceID: String,
+        label: String,
+        number: Int,
+        agentStatus: AgentStatus,
+        focused: Bool = false,
+        paneCount: Int = 1,
+        tabCount: Int = 1,
+        activeTabID: String? = nil
+    ) {
+        self.workspaceID = workspaceID
+        self.label = label
+        self.number = number
+        self.agentStatus = agentStatus
+        self.focused = focused
+        self.paneCount = paneCount
+        self.tabCount = tabCount
+        self.activeTabID = activeTabID
+    }
+
     enum CodingKeys: String, CodingKey {
         case workspaceID = "workspace_id"
         case label

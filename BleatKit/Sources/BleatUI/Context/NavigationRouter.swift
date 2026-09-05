@@ -24,7 +24,12 @@ public final class NavigationRouter {
     public enum Route: Hashable {
         case peer(peer: String)
         case workspaces(peer: String, session: String?)
-        case agents(peer: String, session: String?, workspace: String?)
+        // `label` is display text, not an identifier, and it is here for the
+        // same reason `pane` carries a title: the alternative is a screen
+        // headed `w653998617a6031`. Workspace ids are opaque — CLAUDE.md is
+        // explicit that they are not for display — and the label is in hand at
+        // the moment the route is made.
+        case agents(peer: String, session: String?, workspace: String?, label: String)
         case pane(peer: String, session: String?, target: String, title: String)
     }
 

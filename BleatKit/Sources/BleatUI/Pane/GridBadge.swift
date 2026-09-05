@@ -35,7 +35,7 @@ struct GridBadge: View {
 
     private var accessibilityLabel: String {
         isCropped
-            ? "Showing \(grid.cols) by \(grid.rows) columns, cropped to this screen"
-            : "\(grid.cols) by \(grid.rows) columns. Scroll to see the whole pane."
+            ? "\(grid.cols) columns by \(grid.rows) rows, cropped to this screen"
+            : "\(grid.cols) columns by \(grid.rows) rows. Scroll to see the whole pane."
     }
 }

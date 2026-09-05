@@ -60,6 +60,15 @@ final class PaneModel {
     private var openedFromViewport = false
     /// However much of the grid this phone can show. Only a fallback.
     private var viewport: TerminalGrid?
+    /// The grid the terminal view is actually rendering at, as it reports it.
+    ///
+    /// Frames are held until this matches what the stream was opened at. They
+    /// carry absolute cursor positioning, so a frame written for 142 columns
+    /// fed to a 53-column terminal wraps every line — and `observe` sends a
+    /// full redraw only when it opens, so nothing would ever repair it. The
+    /// view resizes an async hop after `grid` is published, which is exactly
+    /// the window the first frame arrives in.
+    private var applied: TerminalGrid?
 
     init(connections: ConnectionStore, peer: PairedPeer, session: String?, target: String) {
         self.connections = connections
@@ -71,8 +80,13 @@ final class PaneModel {
     /// Registers the renderer and hands it anything that arrived first.
     func attach(_ sink: @escaping (Data) -> Void) {
         self.sink = sink
-        for data in pending { sink(data) }
-        pending.removeAll()
+        flush()
+    }
+
+    /// The size the terminal view is now rendering at.
+    func gridApplied(_ grid: TerminalGrid) {
+        applied = grid
+        flush()
     }
 
     /// Opens the stream, at the pane's own size wherever the host will say what
@@ -115,6 +129,9 @@ final class PaneModel {
         phase = .opening
 
         reader?.cancel()
+        // Dropped, not kept: anything buffered was drawn for the size the old
+        // stream was opened at, and feeding it into the new one would wrap.
+        pending.removeAll()
         let previous = stream
         stream = nil
         // Closed *alongside* the new dial, not before it. `SSHStream.close()`
@@ -148,10 +165,6 @@ final class PaneModel {
                 phase = .failed("Bleat could not work out what size to render \(target) at.")
                 return
             }
-            opened = size.grid
-            openedFromViewport = size.fromViewport
-            grid = size.grid
-            isCropped = size.fromViewport
 
             let opened = try await client.observe(
                 target, cols: size.grid.cols, rows: size.grid.rows
@@ -161,10 +174,21 @@ final class PaneModel {
             // nothing else holds it, so installing it now would orphan it — or
             // worse, overwrite the stream the replacement reader just installed,
             // leaving the live one running and closing the dead one on exit.
+            //
+            // **Nothing above is written before this point.** A reader
+            // suspended in `size()` across a rotation resumes with the
+            // pre-rotation viewport in hand, and writing it here would clobber
+            // the size the live reader had just installed — leaving the screen
+            // rendering one grid while the stream sends another, and a rotation
+            // back deduplicated into doing nothing.
             guard !Task.isCancelled else {
                 await opened.close()
                 return
             }
+            self.opened = size.grid
+            openedFromViewport = size.fromViewport
+            grid = size.grid
+            isCropped = size.fromViewport
             stream = opened
             phase = .live
 
@@ -194,10 +218,12 @@ final class PaneModel {
 
     /// The pane's own grid, or this phone's if the host will not report one.
     ///
-    /// Only `HerdrError` falls back. That is the host reached and answering
-    /// "no" — a herdr too old to know `pane layout`, or a pane that has just
-    /// been closed — and a cropped pane beats no pane. A `TransportError` is a
-    /// different thing entirely and is left to propagate: swallowing it here
+    /// `HerdrError` and `DecodingError` fall back; `TransportError` does not.
+    ///
+    /// The first two are both "this host will not tell me the layout" — a herdr
+    /// too old to know `pane layout`, a pane just closed, or a reply whose
+    /// shape has moved — and a cropped pane beats no pane. A `TransportError`
+    /// is a different thing entirely and is left to propagate: swallowing it
     /// would spend a second opening a stream that cannot open either, and
     /// report the wrong cause when it failed.
     private func size(from client: HerdrClient) async throws -> (grid: TerminalGrid, fromViewport: Bool) {
@@ -213,10 +239,26 @@ final class PaneModel {
             return (TerminalGrid(cols: rect.width, rows: rect.height), false)
         } catch is HerdrError {
             return (fallback, true)
+        } catch is DecodingError {
+            return (fallback, true)
         }
     }
 
+    /// Holds a frame until there is somewhere correct to put it.
     private func deliver(_ data: Data) {
-        if let sink { sink(data) } else { pending.append(data) }
+        guard let sink, isRenderable else { return pending.append(data) }
+        sink(data)
+    }
+
+    private func flush() {
+        guard let sink, isRenderable else { return }
+        for data in pending { sink(data) }
+        pending.removeAll()
+    }
+
+    /// Whether the terminal on screen is the size the stream was opened at.
+    private var isRenderable: Bool {
+        guard let grid else { return true }
+        return applied == grid
     }
 }

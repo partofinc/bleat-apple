@@ -1128,12 +1128,33 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   `wA:t4`). A split tab puts several in `panes`, and rendering at a sibling's
   width would wrap every line. The tab's `area` is not the pane's rect either:
   `x` was 26, because herdr was drawing a sidebar.
-- **A host that will not report a layout still gets a pane.** Only `HerdrError`
-  falls back to the phone's size — the host reached and saying no, which is a
-  herdr too old to know `pane layout`, or a pane just closed. A `TransportError`
-  propagates, because swallowing it would spend a second opening a stream that
-  cannot open either and then blame the wrong thing. The fallback crops, so the
-  badge says so.
+- **A host that will not report a layout still gets a pane.** `HerdrError` and
+  `DecodingError` fall back to the phone's size — the host reached and saying
+  no, or answering in a shape that has moved. `PaneLayout` makes everything but
+  `panes` optional for the same reason: the app reads only a pane's `rect`, and
+  a decode failure on a field nothing uses would jump straight over the fallback
+  and kill the pane instead of cropping it. A `TransportError` does propagate,
+  because swallowing it would spend a second opening a stream that cannot open
+  either and then blame the wrong thing. The fallback crops, so the badge says
+  so.
+- **Frames are held until the terminal is actually that size.** SwiftUI
+  publishes the grid an async hop before the view resizes to it, and the first
+  frame lands in that window — a frame written for 142 columns fed to a
+  53-column terminal wraps every line, and `observe` sends a full redraw only
+  when it opens, so nothing would repair it. The controller reports the size it
+  applied and the model flushes then. Buffered frames are dropped on a reopen:
+  they were drawn for the old size.
+- **Nothing about the chosen size is written before the cancellation guard.** A
+  reader suspended in `pane layout` across a rotation resumes holding the
+  pre-rotation viewport, and writing it then would clobber the size the live
+  reader had just installed — leaving the screen rendering one grid while the
+  stream sends another, and a rotation back deduplicated into doing nothing.
+- **The terminal's background is read off its `layer`.** SwiftTerm's
+  `setupOptions` moves the real colour into `layer.backgroundColor` and then
+  sets `nativeBackgroundColor` to `UIColor.clear`, so the obvious property
+  paints a transparent band — white under a black terminal in light mode, and a
+  47-row pane leaves ~50pt bare under a portrait iPhone plus the whole overscroll
+  region.
 - **The terminal is never sized to the screen and then to the grid in one
   layout pass.** `TerminalView` reflows its buffer on every size change and the
   `observe` stream sends a full redraw only when it opens, so a stray

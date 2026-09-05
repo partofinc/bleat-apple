@@ -31,7 +31,7 @@ struct PaneLayoutTests {
             responses: ["pane layout --pane w5:p1": try Fixture.data("pane-layout.json")]
         ))
         let layout = try await client.paneLayout(target: "w5:p1")
-        #expect(layout.area.x == 26)
+        #expect(layout.area?.x == 26)
         #expect(layout.rect(ofPane: "w5:p1")?.x == 26)
     }
 
@@ -46,6 +46,36 @@ struct PaneLayoutTests {
         let layout = try await client.paneLayout(target: "w5:p1")
         #expect(layout.rect(ofPane: "w5:p2") == nil)
         #expect(layout.rect(ofPane: "w2:p1") == nil)
+    }
+
+    /// The app reads a pane's `rect` and nothing else, and `PaneModel` falls
+    /// back to the phone's size when the host will not report a layout. A
+    /// `DecodingError` on a field nothing uses would jump straight over that
+    /// fallback and kill the pane instead of cropping it — and CLAUDE.md's rule
+    /// for herdr JSON is that a missing field is never fatal.
+    @Test("a reply missing everything the app does not read still decodes")
+    func toleratesAThinnerShape() throws {
+        let json = Data("""
+        {"panes": [{"pane_id": "w5:p1", "rect": {"width": 142, "height": 47}}]}
+        """.utf8)
+        let layout = try JSONDecoder().decode(PaneLayout.self, from: json)
+
+        #expect(layout.rect(ofPane: "w5:p1")?.width == 142)
+        #expect(layout.area == nil)
+        #expect(layout.tabID == nil)
+        // Defaulted rather than required: only width and height decide what the
+        // phone asks the host to draw.
+        #expect(layout.rect(ofPane: "w5:p1")?.x == 0)
+    }
+
+    /// The one thing that is still required. Without a `panes` array there is
+    /// no pane to size to, and the caller's fallback is the right answer —
+    /// which it reaches by finding no rect, not by throwing.
+    @Test("a reply with no panes at all yields no rect rather than an error")
+    func toleratesNoPanes() throws {
+        let layout = try JSONDecoder().decode(PaneLayout.self, from: Data("{}".utf8))
+        #expect(layout.panes.isEmpty)
+        #expect(layout.rect(ofPane: "w5:p1") == nil)
     }
 
     /// A split tab holds several panes and the right one has to be picked.

@@ -27,6 +27,12 @@ struct TerminalHost: UIViewControllerRepresentable {
             // report one — see `PaneModel.open`.
             model.open(viewport: viewport)
         }
+        controller.onGridApplied = { [model] applied in
+            // Frames are held until this arrives: SwiftUI publishes the grid an
+            // async hop before the view resizes to it, and the first frame lands
+            // in that window.
+            model.gridApplied(applied)
+        }
         controller.grid = grid
         return controller
     }

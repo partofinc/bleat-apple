@@ -21,6 +21,13 @@ final class PaneTerminalController: UIViewController {
     var onViewport: ((TerminalGrid) -> Void)?
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
+    /// Called with the grid the terminal is now actually rendering at.
+    ///
+    /// Frames are only safe to feed once this matches what the stream was
+    /// opened at: they carry absolute cursor positioning, so a frame written
+    /// for 142 columns into a 53-column terminal wraps every line, and the
+    /// stream sends a full redraw only when it opens — nothing would repair it.
+    var onGridApplied: ((TerminalGrid) -> Void)?
 
     /// The pane's grid. Set from SwiftUI once the host has reported it; until
     /// then the terminal is sized to the screen so a cell can be measured.
@@ -52,11 +59,19 @@ final class PaneTerminalController: UIViewController {
         scrollView.addSubview(terminalView)
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = true
-        // The sliver of slack below, and any area a pane narrower than the
-        // screen does not cover, should look like the terminal rather than
-        // like a gap in it.
-        scrollView.backgroundColor = terminalView.nativeBackgroundColor
-        view.backgroundColor = terminalView.nativeBackgroundColor
+        // The sliver of slack below, and any area the pane does not cover,
+        // should look like the terminal rather than like a gap in it. A 47-row
+        // pane leaves ~50pt bare under a portrait iPhone, plus the whole
+        // rubber-band overscroll region.
+        //
+        // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
+        // `setupOptions` moves the real colour into `layer.backgroundColor` and
+        // then sets that property to `UIColor.clear`, so asking the obvious
+        // thing paints a transparent band — white under a black terminal in
+        // light mode.
+        let background = terminalView.layer.backgroundColor.map(UIColor.init(cgColor:))
+        scrollView.backgroundColor = background
+        view.backgroundColor = background
         view.addSubview(scrollView)
     }
 
@@ -78,7 +93,9 @@ final class PaneTerminalController: UIViewController {
             cols: Int(scrollView.bounds.width / cell.width),
             rows: Int(scrollView.bounds.height / cell.height)
         )
-        resizeTerminal(to: grid ?? viewport, cell: cell)
+        let applied = grid ?? viewport
+        resizeTerminal(to: applied, cell: cell)
+        onGridApplied?(applied)
 
         if !announced {
             announced = true
@@ -130,7 +147,17 @@ final class PaneTerminalController: UIViewController {
         // Shown once, when there is something off-screen to find. The pane is
         // wider than the phone by design now, and a scroll indicator that only
         // appears once you already know to drag is not an affordance.
-        if !flashed, size.width > scrollView.bounds.width || size.height > scrollView.bounds.height {
+        //
+        // Two guards, and both were needed. Only after the **pane's** grid is
+        // in: the pre-grid pass renders the viewport, which has nothing to pan
+        // to, and spending the one flash there suppresses it forever. And a
+        // tolerance wider than the padding added above: a viewport-sized
+        // terminal is up to 1.5pt larger than the bounds it was derived from,
+        // which would otherwise read as "there is more over there".
+        let slack: CGFloat = 2
+        let overflows = size.width > scrollView.bounds.width + slack
+            || size.height > scrollView.bounds.height + slack
+        if !flashed, self.grid != nil, overflows {
             flashed = true
             scrollView.flashScrollIndicators()
         }

@@ -35,6 +35,14 @@ public enum PairingError: Error, Sendable, Equatable {
     /// rescanning the same code cannot work. Reported as a generic failure it
     /// would send the user back to a QR that has nothing left to give.
     case peerNotRecorded(String)
+    /// Unpairing could not take the device key off the host, so the phone can
+    /// still log in there.
+    ///
+    /// Distinct from every case above because nothing is broken: the peer is
+    /// still paired and still works. What has failed is *removing* access, and
+    /// the remedy is a command on the host rather than another attempt from
+    /// here — which is why the UI shows one.
+    case revocationIncomplete(String)
 }
 
 extension PairingError: CustomStringConvertible {
@@ -57,6 +65,8 @@ extension PairingError: CustomStringConvertible {
         case .peerNotRecorded(let reason):
             "the host is paired but this device could not save it: \(reason). "
             + "Run `bleat pair` on the host again once that is fixed."
+        case .revocationIncomplete(let reason):
+            "this device's key is still on the host: \(reason)"
         }
     }
 }

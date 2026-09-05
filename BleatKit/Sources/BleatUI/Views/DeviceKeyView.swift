@@ -1,11 +1,5 @@
 import BleatKit
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
-#if canImport(AppKit)
-import AppKit
-#endif
 
 /// Shows the public half of the device key, to install on the host.
 ///
@@ -76,7 +70,7 @@ struct DeviceKeyView: View {
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
                 Button {
-                    copy(line)
+                    Pasteboard.copy(line)
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
@@ -87,17 +81,5 @@ struct DeviceKeyView: View {
                     .textSelection(.enabled)
             }
         }
-    }
-
-    /// BleatUI builds for macOS as well as iOS, so the pasteboard is the one
-    /// place this target needs a platform branch — and it needs *both* arms,
-    /// or the button silently does nothing on one of them.
-    private func copy(_ text: String) {
-        #if canImport(UIKit)
-        UIPasteboard.general.string = text
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
     }
 }

@@ -206,6 +206,45 @@ struct KeyRevocationShellTests {
         #expect(answer.trimmingCharacters(in: .whitespacesAndNewlines) == "no")
     }
 
+    /// The phone's own side, against the same real file. `Revocation` matches
+    /// on the key rather than the marker, so this is the check that the two
+    /// halves — a `bleat-device-` line written by `Enrollment` and a removal
+    /// built from the key — actually meet on a real `authorized_keys`.
+    @Test("the phone can take its own key off the host, and takes nothing else")
+    func phoneRevokesItsOwnKey() async throws {
+        let scratch = try await scratch()
+        try await Revocation.revokeDeviceKey(scratch.deviceKey, on: scratch.shell)
+
+        let remaining = try lines(in: scratch.home)
+        #expect(remaining.contains { $0.contains(blob(of: scratch.userKey)) }, "the user's own key")
+        #expect(!remaining.contains { $0.contains(blob(of: scratch.deviceKey)) })
+        // The enrollment key is not this device's, and unpairing has no
+        // business touching it — `bleat pair` sweeps those.
+        #expect(AuthorizedKeys.Entry.parse(
+            output: try await scratch.shell.run(shell: AuthorizedKeys.listCommand())
+        ).map(\.kind) == [.enrollment])
+    }
+
+    /// The failure the phone must never round up to success: the key is still
+    /// there, so the user has to be told to remove it at the Mac.
+    @Test("a host that will not let go of the key says so")
+    func revocationThatCannotWriteIsReported() async throws {
+        let scratch = try await scratch()
+        // An `~/.ssh` that cannot be written is the realistic shape of this —
+        // a permissions change, a full disk, a read-only home. The lock
+        // wrapper detects it and fails fast rather than spinning.
+        let ssh = scratch.home.appendingPathComponent(".ssh")
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: ssh.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: ssh.path) }
+
+        await #expect(throws: (any Error).self) {
+            try await Revocation.revokeDeviceKey(scratch.deviceKey, on: scratch.shell)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: ssh.path)
+        #expect(try lines(in: scratch.home).contains { $0.contains(blob(of: scratch.deviceKey)) },
+                "the key really is still there, which is what the user must be told")
+    }
+
     /// Two phones paired from the same machine share a marker prefix, and
     /// `removeCommand`'s pattern is anchored precisely so revoking one cannot
     /// take the other. Verified here against real `grep` rather than against

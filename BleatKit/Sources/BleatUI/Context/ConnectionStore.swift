@@ -52,6 +52,33 @@ public final class ConnectionStore {
     ///   is an environment prefix on each command, so drilling from the session
     ///   list into a session's workspaces costs no second handshake.
     public func client(for peer: PairedPeer, session: String? = nil) async throws -> HerdrClient {
+        let connected = try await connected(for: peer, session: session)
+        // Applied on every path, including a fresh dial. The three used to
+        // differ — a reused or joined connection took `session ?? peer.session`
+        // while a new one took only `session` — and a screen could not tell
+        // which it had got. (`peer.session` is unset today, so this changes
+        // nothing yet; it stops the paths disagreeing when it is not.)
+        connected.transport.useSession(session ?? peer.session)
+        return connected.client
+    }
+
+    /// A shell on the peer, over the same connection every screen uses.
+    ///
+    /// Pairing and unpairing are plain shell, not herdr — installing and
+    /// removing a key in `authorized_keys` has nothing to do with sessions, so
+    /// this deliberately does **not** touch `useSession`. The prefix is shared
+    /// mutable state on a shared transport, and setting it here would change
+    /// which session a list screen behind the sheet is reading.
+    public func shell(for peer: PairedPeer) async throws -> any ShellRunner {
+        try await connected(for: peer, session: nil).transport
+    }
+
+    /// The one dial, shared by both. Everything about joining, cancelling and
+    /// not leaking a transport lives here rather than being written twice.
+    private func connected(
+        for peer: PairedPeer,
+        session: String?
+    ) async throws -> PeerConnection.Connected {
         let onLocalLink = reachability.isOnLocalLink
         if let live = current,
            ConnectionPolicy.canReuse(
@@ -60,19 +87,11 @@ public final class ConnectionStore {
                for: peer,
                onLocalLink: onLocalLink
            ) {
-            live.connected.transport.useSession(session ?? peer.session)
-            return live.connected.client
+            return live.connected
         }
 
         if let pending = connecting, pending.hostKey == peer.hostKey {
-            let joined = try await pending.task.value
-            // The session has to be applied here too, and it was not. The dial
-            // in flight was started for whatever session asked first — a
-            // refresh of the session *list* asks with none — so a screen that
-            // joins it and skips this step lists the workspaces of the wrong
-            // session, with nothing to show that anything went wrong.
-            joined.transport.useSession(session ?? peer.session)
-            return joined.client
+            return try await pending.task.value
         }
 
         await release()
@@ -107,7 +126,7 @@ public final class ConnectionStore {
         if let path = connected.discoveredHerdrPath {
             peers.recordHerdrPath(path, for: peer)
         }
-        return connected.client
+        return connected
     }
 
     /// Drops the connection when an error means the connection itself is

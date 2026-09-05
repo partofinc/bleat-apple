@@ -25,6 +25,18 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     public var herdrPath: String?
     /// Whichever endpoint last completed a handshake. Tried first next time.
     public var lastGoodEndpoint: Endpoint?
+    /// The marker on this device's line in the host's `authorized_keys`, e.g.
+    /// `bleat-device-1a2b3c4d5e6f7a8b`.
+    ///
+    /// Kept so that unpairing can tell the user exactly which line to remove
+    /// when it cannot remove it itself — `bleat keys revoke <marker>` is a
+    /// command they can copy, where "find the Bleat key" is a hunt. `Enrollment`
+    /// has always minted this and `PairingClient` used to throw it away.
+    ///
+    /// Optional because a record can predate it, and because it is a
+    /// *convenience*, never an identity: revocation itself matches on the key,
+    /// which the phone always holds and which cannot go stale.
+    public var deviceMarker: String?
     /// Session to select by default, once the user has picked one.
     public var session: String?
 
@@ -40,6 +52,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         endpoints: [Endpoint],
         herdrPath: String? = nil,
         lastGoodEndpoint: Endpoint? = nil,
+        deviceMarker: String? = nil,
         session: String? = nil
     ) {
         self.hostKey = hostKey
@@ -48,6 +61,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.endpoints = endpoints
         self.herdrPath = herdrPath
         self.lastGoodEndpoint = lastGoodEndpoint
+        self.deviceMarker = deviceMarker
         self.session = session
     }
 
@@ -89,6 +103,12 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         // in a live run — a re-pairing reported the previous winner as the one
         // it had just reached.
         merged.lastGoodEndpoint = other.lastGoodEndpoint ?? lastGoodEndpoint
+        // The newer marker wins outright when there is one, because re-pairing
+        // *replaced* the line: `replaceKeyCommand` drops every line carrying
+        // this key and appends one under a freshly minted marker. Keeping the
+        // old value would print a revoke command naming a line that is no
+        // longer in the file.
+        merged.deviceMarker = other.deviceMarker ?? deviceMarker
         for endpoint in other.endpoints where !merged.endpoints.contains(endpoint) {
             merged.endpoints.append(endpoint)
         }

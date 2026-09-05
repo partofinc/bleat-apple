@@ -20,5 +20,9 @@ public struct RootView: View {
                     RouteView(route: route)
                 }
         }
+        // On the stack, not on a screen inside it: the peer list and a peer's
+        // detail can both start an unpair, and a modifier on each would bind
+        // two presentations to one piece of state.
+        .unpairFlow()
     }
 }

@@ -101,8 +101,24 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
             )
         } catch {
             // A host-key mismatch surfaces from NIO as a generic auth failure;
-            // report what actually went wrong.
+            // report what actually went wrong. Checked first, because the
+            // identity question outranks the credential one.
             if let recorded = validator.recordedFailure { throw recorded }
+            // A genuinely refused key, told apart from an unreachable address.
+            // Verified against a live sshd (5 Sept 2026): a reachable host that
+            // will not accept the key throws exactly this, while an address
+            // that is not listening throws `NIOConnectionError`.
+            //
+            // Worth its own case because the remedy is the opposite: nothing
+            // about the network will fix it. This is what a *revoked* device
+            // key looks like from the phone — `bleat keys revoke` on the Mac,
+            // or a rebuilt host — and reporting it as "no address could be
+            // reached" sends the user to check their Wi-Fi forever.
+            if case SSHClientError.allAuthenticationOptionsFailed = error {
+                throw TransportError.authenticationFailed(
+                    "it may have been revoked on that machine; pair again to restore access"
+                )
+            }
             throw TransportError.connectionFailed(String(describing: error))
         }
     }

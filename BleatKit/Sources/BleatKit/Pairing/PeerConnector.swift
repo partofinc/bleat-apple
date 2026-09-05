@@ -121,6 +121,14 @@ public enum PeerConnector {
         for (_, error) in failures {
             if case TransportError.hostKeyMismatch = error { return error }
         }
+        // After a host key mismatch and before "nothing answered": a host that
+        // refused the key was *reached*, so reporting the network would be
+        // false. It is what a revoked device key looks like from here, and the
+        // remedy — pair again — has nothing to do with the addresses that did
+        // not answer.
+        for (_, error) in failures {
+            if case TransportError.authenticationFailed = error { return error }
+        }
         return TransportError.connectionFailed(
             "none of \(endpoints.count) address(es) could be reached: "
             + endpoints.map(\.description).joined(separator: ", ")

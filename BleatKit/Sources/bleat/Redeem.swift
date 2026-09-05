@@ -32,6 +32,91 @@ enum Redeem {
         print("  endpoints  \(peer.endpoints.map(\.description).joined(separator: ", "))")
     }
 
+    /// `bleat unpair <name>` — the phone's side of *un*-pairing, run from a
+    /// terminal, and here for exactly the reason `run` is.
+    ///
+    /// The app's unpair button is a confirmation sheet around this call. What
+    /// it does is take away access, so the failure worth catching is the one
+    /// where it *says* it did and did not — and that can only be seen against a
+    /// real host. `bleat keys list` on the other side is the check.
+    static func unpair(name: String, peers: PeerRegistry, reachability onLocalLink: Bool = true) async throws {
+        let all = try peers.all()
+        // By name or by host key, since the host key is the identity and a name
+        // can repeat. `bleat peers` prints both.
+        guard let peer = all.first(where: { $0.name == name || $0.hostKey == name }) else {
+            let known = all.map(\.name).joined(separator: ", ")
+            throw ToolFailure("no paired peer '\(name)'."
+                + (known.isEmpty ? " Nothing is paired." : " Paired: \(known)."))
+        }
+
+        let deviceKey = try FileKeyStore.standard().loadOrCreate()
+        print("Removing this device's key from \(peer.name)…")
+        fflush(stdout)
+
+        // Connecting is inside the same handling as the removal, because it
+        // fails in the same way as far as the user is concerned: the key is
+        // still on the host and this did not take it off. Reporting a bare
+        // connection error left them with no idea the record was still there
+        // or what to run.
+        let connection: PeerConnection.Connected
+        do {
+            connection = try await PeerConnection.connect(
+                to: peer, deviceKey: deviceKey, onLocalLink: onLocalLink
+            )
+        } catch TransportError.authenticationFailed(let detail) {
+            // Reached and refused, which is the opposite advice: the key has
+            // most likely already been removed there.
+            let advice = RevocationAdvice.check(
+                deviceMarker: peer.deviceMarker, deviceFingerprint: deviceKey.fingerprint
+            )
+            throw ToolFailure("""
+                \(peer.name) no longer accepts this device's key: \(detail)
+                It has probably already been removed there.
+                It could also still be in that Mac's authorized_keys with sshd ignoring
+                the file, which is what a change to its permissions does.
+                Check with: \(advice.command)\(advice.detail.map { "\n\($0)" } ?? "")
+                \(peer.name) is still listed here.
+                """)
+        } catch {
+            throw stillPaired(peer, deviceKey: deviceKey, because: error)
+        }
+
+        // The key this session authenticated with is the one being deleted.
+        // sshd authorises at the handshake and does not re-read the file for a
+        // live session, so the verification read still runs afterwards.
+        do {
+            try await Revocation.revokeDeviceKey(deviceKey, on: connection.transport)
+        } catch {
+            await connection.transport.disconnect()
+            throw stillPaired(peer, deviceKey: deviceKey, because: error)
+        }
+        await connection.transport.disconnect()
+
+        try peers.remove(hostKey: peer.hostKey)
+        print("Unpaired \(peer.name). Its `bleat keys list` no longer shows this device.")
+    }
+
+    /// The key is still on the host and the record is still here.
+    ///
+    /// Deliberately does **not** drop the record: the peer is still paired and
+    /// still works, and the record holds the marker that names the line to
+    /// remove. Forgetting it here would throw away the one thing that makes
+    /// the advice below specific.
+    private static func stillPaired(
+        _ peer: PairedPeer,
+        deviceKey: SSHKeyPair,
+        because error: any Error
+    ) -> ToolFailure {
+        let advice = RevocationAdvice.revoke(
+            deviceMarker: peer.deviceMarker, deviceFingerprint: deviceKey.fingerprint
+        )
+        return ToolFailure("""
+            \(error)
+            This device's key is still on \(peer.name), and \(peer.name) is still listed here.
+            On that machine, run: \(advice.command)\(advice.detail.map { "\n\($0)" } ?? "")
+            """)
+    }
+
     static func list(peers: PeerRegistry) throws {
         let all = try peers.all()
         guard !all.isEmpty else {
@@ -42,6 +127,7 @@ enum Redeem {
             print("\(peer.name)  \(peer.username)@\(peer.lastGoodEndpoint?.description ?? peer.endpoints.first?.description ?? "?")")
             print("  \(peer.hostKeyFingerprint ?? peer.hostKey)")
             print("  herdr \(peer.herdrPath ?? "not resolved")  ·  \(peer.endpoints.map(\.description).joined(separator: ", "))")
+            print("  key on host \(peer.deviceMarker ?? "not recorded")")
         }
     }
 }

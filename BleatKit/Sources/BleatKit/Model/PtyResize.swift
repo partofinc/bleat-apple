@@ -10,18 +10,15 @@
 /// with a continuation line rather than a cut one.
 ///
 /// **It is a write, and the only one Bleat does to a running program.** It
-/// changes the width for whoever is at the Mac too, until they attach and their
-/// own client sets it back. That is why it is only used to make a pane *fit* —
-/// never to widen one that already does — and why it is never fatal: every
-/// failure falls back to reading the pane at whatever size it already has.
+/// changes the width for whoever is at the Mac too, until a client there sets
+/// it back. It is never fatal, though: every failure falls back to reading the
+/// pane at whatever size it already has.
 public enum PtyResize {
     /// Whether the pane needs resizing to match this screen.
     ///
-    /// **Growing is allowed.** An earlier version refused to, on the strength
-    /// of an experiment against a buffer that had already been corrupted by a
-    /// stray command — re-measured on a clean pane, a 53-column pty grown to
-    /// 100 reflowed correctly and the content came back 100 wide. herdr's
-    /// layout rect is not a ceiling on the pty.
+    /// **Growing is allowed, and herdr's layout rect is not a ceiling on the
+    /// pty.** Measured on a clean pane: a 53-column pty grown to 100 reflowed
+    /// correctly and the content came back 100 wide.
     ///
     /// - Returns: `nil` when the pane is already this size and must be left
     ///   alone.

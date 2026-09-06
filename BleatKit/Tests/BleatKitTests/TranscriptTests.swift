@@ -125,7 +125,7 @@ struct TranscriptCommandTests {
         let command = try #require(TranscriptCommand.read(sessionID: "abc", turns: 40, scanning: 900))
         #expect(command.contains("tail -n 900"))
         #expect(command.contains("tail -n 40"))
-        #expect(command.contains("length($0) < 16384"))
+        #expect(command.contains("length($0) < 131072"))
         #expect(!command.contains("cat "))
     }
 
@@ -138,6 +138,33 @@ struct TranscriptCommandTests {
     func bypassesAliases() throws {
         let command = try #require(TranscriptCommand.read(sessionID: "abc"))
         #expect(command.contains("command ls -t"))
+    }
+
+    /// **The fixture has to be in the form the host-side filter matches.** The
+    /// pre-filter greps for the compact `"type":"user"`, and a fixture written
+    /// with spaces after the colons would be discarded by the real pipeline
+    /// while still passing every parser test — so the only in-repo sample of
+    /// the format would be one that could never arrive. Verified against a real
+    /// transcript: 635 matches for the compact form, none for the spaced one.
+    @Test("the fixture is in the form the host-side filter matches")
+    func fixtureMatchesTheFilter() throws {
+        let raw = String(decoding: try Fixture.data("transcript.jsonl"), as: UTF8.self)
+        #expect(raw.contains("\"type\":\"user\""))
+        #expect(raw.contains("\"type\":\"assistant\""))
+        #expect(!raw.contains("\"type\": \""))
+    }
+
+    /// The size bound must not exclude ordinary prose. Measured on a live
+    /// transcript, seven of 635 conversational records exceeded 16KB and every
+    /// one was a long prompt or a long answer.
+    @Test("the size bound leaves room for a long turn")
+    func boundLeavesRoomForProse() throws {
+        let command = try #require(TranscriptCommand.read(sessionID: "abc"))
+        let digits = command
+            .components(separatedBy: "length($0) < ").last?
+            .prefix { $0.isNumber } ?? ""
+        let bound = Int(digits) ?? 0
+        #expect(bound >= 65536, "a 64KB turn is ordinary prose, not an attachment")
     }
 
     /// An agent with no transcript is a normal answer, not a failed command —

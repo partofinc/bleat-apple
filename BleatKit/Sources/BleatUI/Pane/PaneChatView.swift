@@ -33,6 +33,12 @@ struct PaneChatView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
+                // Shown above the turns rather than instead of them.
+                if case .stale(_, let message) = phase {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
                 ForEach(entries) { entry in
                     ChatTurn(entry: entry)
                 }
@@ -49,8 +55,10 @@ struct PaneChatView: View {
     }
 
     private var entries: [TranscriptEntry] {
-        if case .loaded(let entries) = phase { return entries }
-        return []
+        switch phase {
+        case .loaded(let entries), .stale(let entries, _): entries
+        default: []
+        }
     }
 
     @ViewBuilder
@@ -65,7 +73,7 @@ struct PaneChatView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        case .loaded:
+        case .loaded, .stale:
             EmptyView()
         // Its own case, and worded as a fact rather than a failure: a plain
         // shell pane has no transcript and never will, so an error page with a

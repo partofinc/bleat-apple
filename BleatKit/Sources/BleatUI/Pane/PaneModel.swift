@@ -41,6 +41,11 @@ final class PaneModel {
 
     /// Whether Bleat made the pane this size.
     private(set) var didResizePane = false
+    /// The pane's grid before Bleat first resized it, so it can be put back.
+    ///
+    /// Set once, on the first successful resize, and kept across rotations —
+    /// the thing to restore is what the Mac had, not the previous orientation.
+    private var restoreTo: TerminalGrid?
 
     /// Whether output is being cut off horizontally.
     ///
@@ -54,8 +59,15 @@ final class PaneModel {
     /// while the pty was 47 and the rect 48, which made every resized pane
     /// claim to be cropped.
     var isCropped: Bool {
-        guard !didResizePane, let grid, let paneGrid else { return false }
-        return grid.cols < paneGrid.cols - 1
+        guard !didResizePane, grid != nil else { return false }
+        // **No layout reported is the cropped case, not the safe one.** Without
+        // a rect there is nothing to resize the pty to, so the stream is opened
+        // at this phone's width against a pane that is very likely wider — the
+        // exact situation the badge exists for. Reading it as "not cropped"
+        // silenced the warning precisely when it was needed.
+        guard let paneGrid else { return true }
+        // The one column herdr reserves of the rect does not count as a crop.
+        return grid!.cols < paneGrid.cols - 1
     }
 
     private let connections: ConnectionStore
@@ -141,6 +153,18 @@ final class PaneModel {
     func close() async {
         reader?.cancel()
         reader = nil
+        // **Put the pane back.** Bleat narrowed someone's pty to suit a phone;
+        // leaving it that way means the next person at the Mac finds their
+        // agent wrapped at 53 columns with nothing to explain it. Best effort
+        // and deliberately not awaited into the failure path: the screen is
+        // going away either way.
+        if let restoreTo, didResizePane {
+            let peer = self.peer
+            let target = self.target
+            let connections = self.connections
+            Task { await Self.restore(to: restoreTo, target: target, peer: peer, connections: connections) }
+        }
+        restoreTo = nil
         // Forgotten, so a screen that comes back reopens rather than
         // deduplicating itself into a permanently blank pane.
         opened = nil
@@ -172,12 +196,21 @@ final class PaneModel {
             // opening frame caught mid-flight, which is how a pane's input box
             // and status line ended up composited onto one row. Measured at
             // rest, the same pane renders them as four clean rows.
+            // **Guarded before the resize, not just before the assignment.** A
+            // reopen cancels this reader while it is suspended in `paneSize` or
+            // `paneProcessInfo`; the replacement then resizes the pty to the new
+            // orientation and opens its stream, and this one would resume and
+            // `stty` the same tty back to the *pre-rotation* width — leaving the
+            // host's pty disagreeing with the live stream, so every line wraps.
+            // A write to someone's machine is the last thing that should run on
+            // a reader that has already been replaced.
+            guard !Task.isCancelled else { return }
+
             var resized = false
             if let fit {
                 resized = await resizePty(to: fit, on: peer, client: client)
                 if resized { try? await Task.sleep(for: .milliseconds(350)) }
             }
-            didResizePane = resized
             let opened = try await client.observe(
                 target, cols: size.cols, rows: size.rows
             )
@@ -200,6 +233,8 @@ final class PaneModel {
             self.opened = size
             grid = size
             paneGrid = pane
+            didResizePane = resized
+            if resized { restoreTo = restoreTo ?? pane }
             stream = opened
             phase = .live
 
@@ -251,10 +286,36 @@ final class PaneModel {
             else { return false }
             // The plain-shell seam, not herdr: there is no herdr command that
             // sets a pane's size, which is the whole reason this exists.
-            _ = try await connections.shell(for: peer).run(shell: command)
-            return true
+            let output = try await connections.shell(for: peer).run(shell: command)
+            // The command prints its marker only when `stty` actually
+            // succeeded; it exits 0 either way, so the status says nothing.
+            return output.contains(PtyResize.marker)
         } catch {
             return false
+        }
+    }
+
+    /// Puts a pane's pty back to the size it had before Bleat touched it.
+    ///
+    /// Static because it outlives the screen: `close()` returns immediately and
+    /// this finishes on its own, so it must not hold the model.
+    private static func restore(
+        to grid: TerminalGrid,
+        target: String,
+        peer: PairedPeer,
+        connections: ConnectionStore
+    ) async {
+        do {
+            let client = try await connections.client(for: peer)
+            let info = try await client.paneProcessInfo(target: target)
+            guard let pid = info.pid,
+                  let command = PtyResize.command(pid: pid, cols: grid.cols, rows: grid.rows)
+            else { return }
+            _ = try await connections.shell(for: peer).run(shell: command)
+        } catch {
+            // The connection is being released as this runs, so a failure here
+            // is ordinary. The pane is left narrow, which the next client at
+            // the Mac corrects by attaching.
         }
     }
 

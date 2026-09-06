@@ -6,6 +6,9 @@ import SwiftTerm
 /// SwiftTerm's terminal, as a SwiftUI view.
 struct TerminalHost: UIViewControllerRepresentable {
     let model: PaneModel
+    /// Whether the terminal is the mode on screen. Passed from the view body
+    /// rather than read off the model, so SwiftUI observes it.
+    let isActive: Bool
 
     func makeUIViewController(context: Context) -> PaneTerminalController {
         let controller = PaneTerminalController()
@@ -17,6 +20,7 @@ struct TerminalHost: UIViewControllerRepresentable {
                 terminal?.feed(byteArray: ArraySlice(data))
             }
         }
+        controller.isActive = isActive
         controller.onSize = { [model] grid in
             // The terminal has sized itself to the screen. That is what the
             // host is asked to make the pane, and what the stream is opened at.
@@ -25,6 +29,8 @@ struct TerminalHost: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ controller: PaneTerminalController, context: Context) {}
+    func updateUIViewController(_ controller: PaneTerminalController, context: Context) {
+        controller.isActive = isActive
+    }
 }
 #endif

@@ -8,6 +8,7 @@ import SwiftUI
 /// app does not exist yet.
 struct PaneSurface: View {
     let model: PaneModel
+    let isActive: Bool
 
     var body: some View {
         #if canImport(UIKit)
@@ -16,7 +17,7 @@ struct PaneSurface: View {
         // — but the pane's last row is its input line, and the home indicator
         // sits on top of it. A terminal's bottom row is the one that matters
         // most; there is nothing to gain by hiding it.
-        TerminalHost(model: model)
+        TerminalHost(model: model, isActive: isActive)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

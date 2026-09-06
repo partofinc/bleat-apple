@@ -49,8 +49,16 @@ public enum TranscriptCommand {
         // `command` skips aliases and functions and runs the real binary.
         //
         // Then, in order: cut to a bounded number of records; drop the giant
-        // ones, which are attachments and tool results and never prose; keep
-        // only conversational records. The `grep` is a cheap pre-filter and not
+        // ones; keep only conversational records.
+        //
+        // **The size bound is 128KB, not 16KB.** Measured on a live transcript:
+        // of 635 conversational records in the last 1500, seven exceeded 16KB —
+        // and they were long pasted prompts and long answers, which is exactly
+        // what the chat exists to show. They vanished with nothing on screen to
+        // say a turn was missing. Attachments and tool results are what this is
+        // aimed at, and the `grep` below already excludes most of them; the
+        // bound only has to stay under the 1.3MB records that make the file
+        // untransferable. The `grep` is a cheap pre-filter and not
         // the parser — the phone parses the JSON properly, because a substring
         // test cannot tell a top-level type from the same bytes inside a tool
         // result.
@@ -62,7 +70,7 @@ public enum TranscriptCommand {
         return """
             f=$(command ls -t \(path) 2>/dev/null | head -1); \
             [ -n "$f" ] && tail -n \(records) "$f" \
-            | awk 'length($0) < 16384' \
+            | awk 'length($0) < 131072' \
             | grep -E '"type":"(user|assistant)"' \
             | tail -n \(turns) || true
             """

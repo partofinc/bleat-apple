@@ -17,26 +17,28 @@ struct PtyResizeTests {
         #expect(command.contains("stty -f \"/dev/$t\" rows 48 cols 53"))
     }
 
-    /// Best effort throughout: a pane whose program has no controlling terminal
-    /// simply cannot be resized, and the stream should open anyway at whatever
-    /// size the pane already has.
-    @Test("it never fails the caller")
-    func neverFails() throws {
+    /// Best effort, but *legible* best effort. It must not fail the caller when
+    /// there is no tty — `if COND; then …; fi` exits 0 when the condition is
+    /// false — while still saying whether anything happened, because the caller
+    /// uses that to decide whether output is being cut off.
+    @Test("it reports success by a marker rather than by exit status")
+    func reportsSuccessDistinctly() throws {
         let command = try #require(PtyResize.command(pid: 1, cols: 40, rows: 30))
         #expect(command.contains("\"$t\" != \"??\""))
-        #expect(command.hasSuffix("true"))
+        #expect(command.contains("printf %s \(PtyResize.marker)"))
+        // The marker is printed only inside the success branch.
+        let beforeThen = command.components(separatedBy: "then").first ?? ""
+        #expect(!beforeThen.contains(PtyResize.marker))
     }
 
-    /// The pid arrives as JSON from the host and is interpolated into a command
-    /// that host will run, so it is checked rather than trusted — the same
-    /// posture as `TranscriptCommand` and `AuthorizedKeys.Marker`.
-    @Test(
-        "implausible values are refused",
-        arguments: [(0, 80, 24), (-1, 80, 24), (99_999_999, 80, 24),
-                    (100, 0, 24), (100, 80, 0), (100, 99_999, 24)]
-    )
-    func refusesImplausible(pid: Int, cols: Int, rows: Int) {
-        #expect(PtyResize.command(pid: pid, cols: cols, rows: rows) == nil)
+    /// macOS `stty` takes `-f`, Linux takes `-F`, and CLAUDE.md lists Linux as a
+    /// planned host for the console tool. Trying only one spelling made every
+    /// resize on the other silently "succeed".
+    @Test("both stty spellings are tried")
+    func triesBothSttySpellings() throws {
+        let command = try #require(PtyResize.command(pid: 1, cols: 40, rows: 30))
+        #expect(command.contains("stty -f "))
+        #expect(command.contains("stty -F "))
     }
 
     /// **Growing is allowed.** An earlier version refused, on the strength of

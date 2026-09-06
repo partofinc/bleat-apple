@@ -38,17 +38,25 @@ public enum PtyResize {
               cols < 10_000, rows < 10_000
         else { return nil }
         // `ps` gives the tty as a name like `ttys013`; `??` means the process
-        // has none, which is not an error worth failing over — a pane whose
-        // program has no controlling terminal simply cannot be resized.
+        // has none and cannot be resized.
         //
-        // `|| true` for the same reason: this is best effort. The stream opens
-        // either way, and a pane that could not be resized is read at the size
-        // it already had rather than not read at all.
+        // **Success is reported by a marker on stdout, not by the exit status.**
+        // An earlier version ended in `; true` so a failure could not fail the
+        // caller — but then the caller could not tell a resize from a no-op
+        // either, and reported every pane as resized. A pane with no tty, a
+        // denied `stty`, and a Linux host (whose `stty` wants `-F`, not `-f`)
+        // all counted as success, which silently disabled the badge that exists
+        // to say output is being cut off. Both spellings are tried, so this
+        // works on the Linux hosts the console tool already plans for.
         return """
             t=$(ps -o tty= -p \(pid) 2>/dev/null | tr -d ' '); \
-            if [ -n "$t" ] && [ "$t" != "??" ]; then \
-            stty -f "/dev/$t" rows \(rows) cols \(cols) 2>/dev/null; \
-            fi; true
+            if [ -n "$t" ] && [ "$t" != "??" ] && \
+            { stty -f "/dev/$t" rows \(rows) cols \(cols) 2>/dev/null \
+            || stty -F "/dev/$t" rows \(rows) cols \(cols) 2>/dev/null; }; \
+            then printf %s \(marker); fi
             """
     }
+
+    /// Printed by `command` when, and only when, the resize actually happened.
+    public static let marker = "bleat-pty-resized"
 }

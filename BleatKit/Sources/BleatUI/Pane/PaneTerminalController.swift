@@ -31,6 +31,15 @@ final class PaneTerminalController: UIViewController {
     private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
     private var reported: TerminalGrid?
     private var announced = false
+    /// Whether this terminal is the one on screen.
+    ///
+    /// It stays mounted while the chat or reader is showing, so that switching
+    /// back is instant — but a hidden view still lays out, and reporting a size
+    /// from one would reopen a stream and `stty` someone's Mac for a view
+    /// nobody is looking at.
+    var isActive = true {
+        didSet { if isActive, isActive != oldValue { view.setNeedsLayout() } }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -71,7 +80,7 @@ final class PaneTerminalController: UIViewController {
         terminalView.layoutIfNeeded()
 
         let terminal = terminalView.getTerminal()
-        report(TerminalGrid(cols: terminal.cols, rows: terminal.rows))
+        if isActive { report(TerminalGrid(cols: terminal.cols, rows: terminal.rows)) }
 
         if !announced {
             announced = true
@@ -100,11 +109,16 @@ final class PaneTerminalController: UIViewController {
 /// and `requestOpenLink`.
 extension PaneTerminalController: TerminalViewDelegate {
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        // Not the remote asking for 132 columns, whatever the protocol's own
-        // documentation suggests: SwiftTerm fires this from `processSizeChange`
-        // when the *view's* geometry changes what fits. It is the correctly
-        // timed answer, and ignoring it is how a wrong size goes uncorrected.
-        report(TerminalGrid(cols: newCols, rows: newRows))
+        // **Not reported directly, because this is not only the view's
+        // geometry.** SwiftTerm fires it from `processSizeChange`, but also on
+        // DECCOLM — `ESC[?3h`/`ESC[?3l` — once a pane has sent `ESC[?40h` to
+        // allow 80/132 switching. Bytes printed inside the remote pane could
+        // then drive a stream reopen *and* an `stty` against the user's Mac,
+        // which is remote content reaching a host write.
+        //
+        // Asking for a layout pass instead re-derives the size from this view's
+        // own bounds, so the answer can only ever come from the phone.
+        view.setNeedsLayout()
     }
 
     func setTerminalTitle(source: TerminalView, title: String) {

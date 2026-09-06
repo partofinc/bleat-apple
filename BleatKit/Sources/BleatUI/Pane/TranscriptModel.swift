@@ -19,6 +19,12 @@ final class TranscriptModel {
         /// identifies by a path form this build does not read yet.
         case unavailable(String)
         case failed(String)
+        /// A re-read failed over a conversation that had already arrived.
+        ///
+        /// The same rule `Loadable.stale` exists for: replacing a good chat
+        /// with an error page over one dropped packet is a worse lie than
+        /// showing slightly old turns and saying so.
+        case stale([TranscriptEntry], String)
     }
 
     private(set) var phase: Phase = .idle
@@ -60,8 +66,10 @@ final class TranscriptModel {
     }
 
     var entries: [TranscriptEntry] {
-        if case .loaded(let entries) = phase { return entries }
-        return []
+        switch phase {
+        case .loaded(let entries), .stale(let entries, _): entries
+        default: []
+        }
     }
 
     /// Loads, joining a load already in flight rather than starting a second.
@@ -74,6 +82,13 @@ final class TranscriptModel {
         loadTask = task
         await task.value
         if loadTask == task { loadTask = nil }
+    }
+
+    /// A failure keeps whatever had already arrived, so one dropped packet on a
+    /// pull-to-refresh does not replace a readable chat with an error page.
+    private func report(_ message: String) {
+        let existing = entries
+        phase = existing.isEmpty ? .failed(message) : .stale(existing, message)
     }
 
     /// Stops following and abandons any load. Called when the screen goes away.
@@ -125,8 +140,10 @@ final class TranscriptModel {
             let entries = Transcript.entries(from: Data(output.utf8))
             guard !entries.isEmpty else {
                 // The command succeeds and prints nothing both when there is no
-                // file and when the tail held no prose. Neither is an error.
-                phase = .unavailable("No transcript was found for this agent on that Mac.")
+                // file and when the tail held no prose. Neither is an error —
+                // but neither is it a reason to throw away turns already on
+                // screen, so a re-read that comes back empty keeps them.
+                report("The last read of this conversation came back empty.")
                 return
             }
             phase = .loaded(entries)
@@ -139,7 +156,7 @@ final class TranscriptModel {
             // newer, successful one just established.
             guard generation == self.generation else { return }
             await connections.handle(error)
-            phase = .failed(ErrorMessage.of(error))
+            report(ErrorMessage.of(error))
         }
     }
 }
@@ -185,6 +202,11 @@ extension TranscriptModel {
             }
             guard !Task.isCancelled else { return }
             await load(for: peer)
+            // **A floor between re-reads.** Each one moves the tail of a live
+            // transcript — measured at 331KB on this Mac — and an agent that
+            // flaps between working and idle would re-transfer that on every
+            // transition, over cellular, for a handful of new turns.
+            try? await Task.sleep(for: .seconds(3))
         }
     }
 }

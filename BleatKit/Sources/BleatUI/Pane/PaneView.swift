@@ -68,7 +68,7 @@ struct PaneView: View {
             // is instant and shows the screen as it stands rather than waiting
             // for a redraw the host only sends when a stream opens.
             if terminalWasAskedFor {
-                PaneSurface(model: model)
+                PaneSurface(model: model, isActive: mode == .terminal)
                     .opacity(mode == .terminal ? 1 : 0)
                     .allowsHitTesting(mode == .terminal)
                     .accessibilityHidden(mode != .terminal)
@@ -143,9 +143,11 @@ struct PaneView: View {
 
     private func load() async {
         await text.load(for: peer)
-        // Only on an answer. Stamping a failure would date a snapshot that
-        // never arrived, and `Loadable.stale` deliberately keeps showing the
-        // older one — which is the reading whose age still matters.
-        if text.state.value != nil { capturedAt = .now }
+        // **`.loaded`, not `value != nil`.** A failed refresh over existing
+        // lines produces `.stale(previous, message)`, whose `value` is the
+        // *old* content — so the looser test restamped a twenty-minute-old
+        // snapshot with the current time, which is exactly the misdating this
+        // is here to avoid.
+        if case .loaded = text.state { capturedAt = .now }
     }
 }

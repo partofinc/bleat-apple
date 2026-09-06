@@ -37,6 +37,21 @@ public struct HerdrClient: Sendable {
         return list.panes
     }
 
+    /// The grid a pane is really rendered on.
+    ///
+    /// Asked before opening a stream, because `observe --cols` is a viewport
+    /// rather than a resize: it crops. Rendering at the phone's width therefore
+    /// hides most of a wide pane with nothing on screen to say so, and the only
+    /// way to show all of it is to ask for the size it actually has.
+    ///
+    /// - Parameter target: A full `<workspace>:<pane>` id — `Agent.target`.
+    ///   `pane_id` is already that; joining the workspace on again gives
+    ///   `w2:w2:p1` and the host answers `pane_not_found`.
+    public func paneLayout(target: String) async throws -> PaneLayout {
+        let result: PaneLayoutResult = try await enveloped(["pane", "layout", "--pane", target])
+        return result.layout
+    }
+
     /// Named sessions on the host.
     ///
     /// Unlike the commands above this one is client-side: it needs an explicit

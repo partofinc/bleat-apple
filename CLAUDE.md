@@ -10,16 +10,29 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 2 in progress — pairing works on a real phone
+## Current phase: 2 — one gate item left, and it needs Tailscale installed
 
-**Verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned with an
-iPhone: the host key pinned out of band matched
+**Pairing verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned
+with an iPhone: the host key pinned out of band matched
 (`SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78`, the same one this file
 records), `herdr` resolved to `/opt/homebrew/bin/herdr` through a login shell on
 first connect, three endpoints were classified and raced, and the swap completed
 — device key installed, proved by a second handshake, enrollment key deleted.
-The host printed `Paired.` What remains of Phase 2 is the screens: sessions,
-workspaces, agents, and the pane.
+The host printed `Paired.`
+
+**Screens verified on device, 6 Sept 2026.** Hosts → session → workspaces →
+agents → pane, all live against the `work` session. The pane renders at the
+pane's own grid and pans, so nothing is cropped — the sizing problem that held
+this gate open is settled; see **`--cols` crops** below. Unpairing revokes the
+device key from the host, and `bleat keys` can see and remove one from the Mac
+side.
+
+**What is left of the Phase 2 gate is "runs on a real phone over Tailscale",
+and it has never been tried.** Tailscale is not installed on the dev Mac, so
+`bleat pair`'s Tailscale endpoint detection (`tailscale status --json` →
+`Self.DNSName`, `Self.TailscaleIPs`) is written and unverified. Everything so
+far has been on the LAN. Do not call the gate met on the strength of the
+screens alone.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
@@ -1094,13 +1107,10 @@ entire non-TTY path useless exactly where it is needed.
   the stream, and the first frame of a new one is `full: true`, so the screen
   simply redraws.
 
-### `--cols` crops. It does not reflow. (measured 5 Sept 2026)
+### `--cols` crops. It does not reflow — so the app renders the whole pane
 
 An earlier version of this file claimed a wide pane "arrives already reflowed".
-**That is false**, and the app currently ships the consequence: it asks for the
-phone's width and silently loses everything to the right of it.
-
-Measured against `w5:p1`, whose grid is 142 columns
+**That is false.** Measured against `w5:p1`, whose grid is 142 columns
 (`herdr pane layout --pane w5:p1` → `rect: {width: 142, height: 47}`):
 
 | asked | frame reports | widest content |
@@ -1109,38 +1119,101 @@ Measured against `w5:p1`, whose grid is 142 columns
 | 100 | 100 × 12 | 100, cut mid-word |
 | 500 | 500 × 12 | **140** |
 
-So `--cols` is a **viewport onto the existing grid** — it crops when narrower and
-pads when wider. Asking for a phone's 53 columns hides 63% of every line with
-nothing on screen to say so. `observe` takes no horizontal offset, so panning
-has to happen on the client.
+So `--cols` is a **viewport onto the existing grid** — it crops when narrower
+and pads when wider. Asking for a phone's 53 columns hid 63% of every line with
+nothing on screen to say so, and `observe` takes no horizontal offset, so
+panning has to happen on the client.
 
-**This is not a herdr limitation.** A pane is one pty with one screen buffer and
-that buffer has a single width; the program inside wrapped its output to it. Any
-client that wants different wrapping has to resize the pty, which resizes it for
-whoever is at the Mac too — `control` can do exactly that, via `terminal.resize`,
-and Phase 3 will have to decide whether it may.
+**This is not a herdr limitation.** A pane is one pty with one screen buffer of
+a single width, and the program inside wrapped its output to it. Any client that
+wants different wrapping has to resize the pty, which resizes it for whoever is
+at the Mac too — `control` can do that via `terminal.resize`, and Phase 3 will
+have to decide whether it may.
 
-**The layout is sized to the attached client.** `area` was `{width: 142, x: 26}`
-— a 26-column sidebar inside a ~168-column window, which is the Mac's terminal.
-So a *separate session*, attached only from a phone, would be phone-shaped
-throughout with no cropping and no panning. That is the real path to a
-comfortable mobile view, and it meets the session-creation note above. Untested:
-what herdr does when two clients of different sizes attach to one session (tmux
-shrinks to the smallest).
+**What the app does now (option 1 of the four that were weighed).** It asks
+`pane layout --pane <target>` for the pane's real grid, opens the stream at
+*that* size, renders a terminal of exactly that many cells, and lets the user
+pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
 
-**Options when this is picked up**, in the order they were judged:
+- **`PaneLayout` looks the pane up by id.** The layout belongs to a **tab**, not
+  a workspace — verified live: `wA` has two panes and `pane layout` for either
+  returns a single-pane layout, because they are in different tabs (`wA:t1`,
+  `wA:t4`). A split tab puts several in `panes`, and rendering at a sibling's
+  width would wrap every line. The tab's `area` is not the pane's rect either:
+  `x` was 26, because herdr was drawing a sidebar.
+- **A host that will not report a layout still gets a pane.** `HerdrError` and
+  `DecodingError` fall back to the phone's size — the host reached and saying
+  no, or answering in a shape that has moved. `PaneLayout` makes everything but
+  `panes` optional for the same reason: the app reads only a pane's `rect`, and
+  a decode failure on a field nothing uses would jump straight over the fallback
+  and kill the pane instead of cropping it. A `TransportError` does propagate,
+  because swallowing it would spend a second opening a stream that cannot open
+  either and then blame the wrong thing. The fallback crops, so the badge says
+  so.
+- **Frames are held until the terminal is actually that size.** SwiftUI
+  publishes the grid an async hop before the view resizes to it, and the first
+  frame lands in that window — a frame written for 142 columns fed to a
+  53-column terminal wraps every line, and `observe` sends a full redraw only
+  when it opens, so nothing would repair it. The controller reports the size it
+  applied and the model flushes then. Buffered frames are dropped on a reopen:
+  they were drawn for the old size.
+- **Nothing about the chosen size is written before the cancellation guard.** A
+  reader suspended in `pane layout` across a rotation resumes holding the
+  pre-rotation viewport, and writing it then would clobber the size the live
+  reader had just installed — leaving the screen rendering one grid while the
+  stream sends another, and a rotation back deduplicated into doing nothing.
+- **The terminal's background is read off its `layer`.** SwiftTerm's
+  `setupOptions` moves the real colour into `layer.backgroundColor` and then
+  sets `nativeBackgroundColor` to `UIColor.clear`, so the obvious property
+  paints a transparent band — white under a black terminal in light mode, and a
+  47-row pane leaves ~50pt bare under a portrait iPhone plus the whole overscroll
+  region.
+- **The terminal is never sized to the screen and then to the grid in one
+  layout pass.** `TerminalView` reflows its buffer on every size change and the
+  `observe` stream sends a full redraw only when it opens, so a stray
+  intermediate size scrambles the screen with nothing left to repaint it. No
+  bootstrap pass is needed to measure a cell either: SwiftTerm's
+  `cellDimension` comes from the font at init rather than from the frame, and
+  although it is internal, `getOptimalFrameSize()` is public and returns exactly
+  `cellDimension × (cols, rows)` — so dividing by the terminal's own size
+  recovers it without guessing at a font metric.
+- **The frame is the only way to ask for a number of columns.** `TerminalView`
+  derives its size from its bounds (`Int(width / cellWidth)`) and has no public
+  setter. Landing exactly on `cols * cellWidth` puts that division on a boundary
+  where an error of one ulp costs a whole column, and a terminal one column
+  narrower than the stream it is fed wraps every line. Rounding up and adding
+  half a point clears the boundary by far more than any float error and far less
+  than a cell.
+- **Rotation no longer reopens the stream.** The size asked for is the pane's,
+  not the phone's, so turning the device changes only how much of it is visible.
+  A stream opened at the *fallback* size does still reopen, because that one is
+  cropped to the phone.
+- **The pane's own scrollback is not reachable, and that is the price.**
+  `TerminalView` is a `UIScrollView` that uses its own `contentOffset` to choose
+  which buffer lines to draw, so it cannot both scroll through history and be
+  panned bodily by an outer scroll view — two scroll views competing for one
+  drag makes the pane unmovable. Its scrolling is off; the outer one pans the
+  whole 142×47 grid. Scrolling *history* should not be a local gesture anyway:
+  the host tracks it per pane (`pane list` carries `scroll.offset_from_bottom`
+  and `max_offset_from_bottom`) and `terminal.scroll` exists as a stdin record,
+  so the honest version asks the host. **Unverified: whether `observe` accepts
+  stdin at all** — the four record types were confirmed against `control`.
+- **A badge in the corner names the grid**, and says "cropped" when the fallback
+  is in use. The pane is deliberately larger than the screen now, and a scroll
+  indicator that appears only once you already know to drag is not an
+  affordance on its own; the indicators are also flashed once when there is
+  something off-screen to find.
+- `BleatUI` has no test target, so the cell arithmetic above is verified on
+  device rather than in a test. `PaneLayout` and its lookup are covered from the
+  captured fixture.
 
-1. Ask for the pane's real size from `pane layout --pane` and let the user pan
-   or rotate — nothing is ever hidden, and landscape gives ~118 of 142 columns.
-2. Fit the full width to the screen: ~2.8pt type. Not viable.
-3. Keep fitting to the phone but label it ("columns 1–53 of 142") so the loss is
-   at least visible.
-4. Phase 3: take over and genuinely resize the pane, accepting that it changes
-   for whoever is at the Mac.
+Not taken: fitting the full width to the screen (~2.8pt type, not viable), or
+keeping the crop and merely labelling it. Phase 3 may add a genuine resize via
+`control`, which changes the pane for whoever is at the Mac — and the better
+answer there is a **separate, phone-shaped session**, since the layout is sized
+to the attached client. Untested: what herdr does when two clients of different
+sizes attach to one session (tmux shrinks to the smallest).
 
-Option 1 was the recommendation. **The Phase 2 gate should not be called met
-until this is settled** — a pane view that hides most of the pane is not the
-thing the gate is asking for.
 - **Frames that arrive before the renderer exists are held, not dropped.** The
   first frame is the full-screen replay, and on an idle pane nothing follows it
   — losing it leaves a blank screen until something changes on the host, which
@@ -1249,6 +1322,14 @@ behaviour when it moves across the seam.
   `working` and `unknown` have been seen live so far.
 - Whether the host ever sends a non-`terminal.frame` record on stdout. Only
   frames have been observed; `TerminalRecord.unknown` covers the rest.
+- **Whether `terminal session observe` accepts stdin at all.** The four record
+  types were verified against `control`. If `terminal.scroll` works on an
+  observer, host-side scrollback is available to the read-only pane view, which
+  is the honest replacement for the local scrolling the sizing work gave up.
+- **A split tab's `pane layout`.** Never captured: `herdr session attach`
+  refuses from inside a herdr pane ("nested herdr is disabled by default"), and
+  creating a split in the live `work` session is out of bounds. The lookup is
+  tested against a layout derived from the real fixture, which is weaker.
 
 Resolved (4 Sept 2026): `terminal.frame` shape and the absence of a cursor
 field; `agent list` needing no join; the four stdin record types; and

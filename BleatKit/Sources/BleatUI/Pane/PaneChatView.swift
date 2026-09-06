@@ -20,6 +20,9 @@ import SwiftUI
 struct PaneChatView: View {
     let phase: TranscriptModel.Phase
     let status: AgentStatus?
+    /// What the load is doing. A bare spinner through four round trips and a
+    /// couple of hundred kilobytes is indistinguishable from a hang.
+    let step: String?
     let capturedAt: Date?
     let reload: () async -> Void
     /// Offered from the empty state. A pane with no transcript — a plain shell,
@@ -54,7 +57,14 @@ struct PaneChatView: View {
     private var status_: some View {
         switch phase {
         case .idle, .loading:
-            ProgressView()
+            VStack(spacing: 10) {
+                ProgressView()
+                if let step {
+                    Text(step)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
         case .loaded:
             EmptyView()
         // Its own case, and worded as a fact rather than a failure: a plain

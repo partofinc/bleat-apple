@@ -1,22 +1,21 @@
 import SwiftUI
 
-/// The size being rendered, and what it is a crop of.
+/// The size of the grid being rendered, in the corner of the pane.
 ///
-/// The pane is asked for at this phone's width now, and `observe --cols` crops
-/// rather than reflows — re-verified 6 Sept 2026 with a line of `A`x60 + `B`x60
-/// + `C`x54 into a 174-column pane, which at `--cols 60` came back with the B's
-/// and C's simply gone. So on any real pane this screen is showing part of one,
-/// and silently cropping is precisely what this whole area of the app was
-/// changed to stop doing.
+/// The whole pane is on screen now — the font is fitted to it rather than the
+/// columns cut — so this is mostly saying how big the thing you are looking at
+/// is, and why the type is that small.
 ///
-/// Hence "53×20 of 142×47" rather than a bare size: the second number is the
-/// only thing that tells the user something is missing, and how much.
+/// It still has to say when it is *not* showing everything. A host that will not
+/// report a layout leaves the stream sized to the phone, and `observe --cols`
+/// crops rather than reflows, so that case really does hide output.
 struct GridBadge: View {
     let grid: TerminalGrid
-    /// The pane's real grid, when the host would say. `nil` on a host that will
-    /// not report a layout — then there is no honest claim to make about what
-    /// is hidden, so the badge says only what it is showing.
-    let paneGrid: TerminalGrid?
+    /// True when this is the phone's guess rather than the pane's real grid,
+    /// because the host would not report a layout. That is the only case left
+    /// where something is actually hidden: normally the whole pane is on
+    /// screen, small, and the badge is just telling you how big it is.
+    let isCropped: Bool
 
     var body: some View {
         Text(label)
@@ -32,22 +31,14 @@ struct GridBadge: View {
             .accessibilityLabel(accessibilityLabel)
     }
 
-    private var isCropped: Bool {
-        guard let paneGrid else { return false }
-        return grid.cols < paneGrid.cols || grid.rows < paneGrid.rows
-    }
-
     private var label: String {
-        guard isCropped, let paneGrid else { return "\(grid.cols)×\(grid.rows)" }
-        return "\(grid.cols)×\(grid.rows) of \(paneGrid.cols)×\(paneGrid.rows)"
+        isCropped ? "\(grid.cols)×\(grid.rows) cropped" : "\(grid.cols)×\(grid.rows)"
     }
 
     private var accessibilityLabel: String {
-        guard isCropped, let paneGrid else {
-            return "\(grid.cols) columns by \(grid.rows) rows, the whole pane"
-        }
-        return "Showing \(grid.cols) columns by \(grid.rows) rows "
-            + "of a pane that is \(paneGrid.cols) by \(paneGrid.rows). "
-            + "The rest is cut off; rotate for more."
+        isCropped
+            ? "\(grid.cols) columns by \(grid.rows) rows, cropped to this screen "
+                + "because the host did not report the pane's size"
+            : "\(grid.cols) columns by \(grid.rows) rows, the whole pane. Pinch to zoom."
     }
 }

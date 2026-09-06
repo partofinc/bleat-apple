@@ -82,6 +82,7 @@ struct PaneView: View {
                 PaneChatView(
                     phase: transcript.phase,
                     status: transcript.status,
+                    step: transcript.step,
                     capturedAt: transcript.capturedAt,
                     reload: { await transcript.load(for: peer) },
                     showTerminal: { mode = .terminal }
@@ -134,7 +135,10 @@ struct PaneView: View {
                 await transcript.follow(for: peer)
             }
         }
-        .onDisappear { Task { await model.close() } }
+        .onDisappear {
+            transcript.stop()
+            Task { await model.close() }
+        }
     }
 
     private func load() async {

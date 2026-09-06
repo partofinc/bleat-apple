@@ -2,24 +2,24 @@
 import SwiftTerm
 import UIKit
 
-/// Hosts SwiftTerm's `TerminalView` at **this phone's** size.
+/// Hosts SwiftTerm's `TerminalView` at the **pane's** size, fitted to the screen
+/// by scaling the font.
 ///
 /// A view controller rather than a bare view for the layout hook: the size of a
 /// terminal cell depends on the font and is only knowable after a layout pass,
 /// and everything here is arithmetic in cells.
 ///
-/// The stream is opened at the size measured here, and re-opened whenever it
-/// changes — which on a phone means every rotation. That costs the crop:
-/// `observe --cols` is a viewport onto the existing buffer rather than a resize,
-/// so a 142-column pane rendered at 53 loses everything to the right of column
-/// 53. `GridBadge` is what stops that being silent. It cannot, however, cost
-/// anyone at the Mac anything: a pane's grid belongs to the session and no
-/// stream client can move it (verified 6 Sept 2026).
+/// **Nothing is cut, and that is the point.** Asking the host for fewer columns
+/// does not reflow the pane, it crops it — re-verified 6 Sept 2026, a line of
+/// `A`x60 + `B`x60 + `C`x54 into a 174-column pane observed at `--cols 60` came
+/// back with the B's and C's simply gone. So the full grid is always requested
+/// and the type is what gives: the font is sized so the pane's whole width spans
+/// the screen.
 ///
-/// The scroll view is kept even though the terminal now fits. Rounding can
-/// leave it a fraction over, and a pane whose host reports no layout is still
-/// sized from the same measurement — there is nothing to be gained by removing
-/// the one thing that would rescue either case.
+/// That is an honest trade rather than a free win. 142 columns across a 393pt
+/// iPhone is 2.77pt per cell, which is too small to read — so fit is the
+/// *starting* point and a pinch takes it back up, at which point the scroll view
+/// earns its keep. Rotation re-fits, unless the user has already chosen a size.
 final class PaneTerminalController: UIViewController {
     /// Called with what the phone can show, whenever that changes. It is the
     /// **fallback** size — used only when the host will not report a layout —
@@ -58,10 +58,40 @@ final class PaneTerminalController: UIViewController {
     private var announced = false
     private var flashed = false
 
+    /// Point size of the terminal font.
+    ///
+    /// **This is what stops the pane being cut.** The grid is the pane's, which
+    /// is 142 columns on the dev Mac, and no client can make the host send
+    /// fewer without losing the difference — `--cols` crops. So the columns stay
+    /// and the type shrinks: the size is chosen so the whole grid spans the
+    /// screen. On a 393pt-wide iPhone that is 393/142 = 2.77pt per cell, which
+    /// is honestly too small to read — hence the pinch. Fit is the starting
+    /// point, not the only one.
+    /// Whether the user has pinched. Once they have, rotating must not throw
+    /// their chosen size away.
+    private var fontSizeIsChosen = false
+
+    private enum FontSize {
+        /// Below this, glyphs stop being glyphs — at 3x, 4pt type is about
+        /// twelve device pixels tall. Fit is still allowed to go here, because
+        /// seeing the *shape* of a full-width pane is worth something even
+        /// unread, and the pinch is right there.
+        static let min: CGFloat = 3
+        static let max: CGFloat = 24
+        /// SwiftTerm's own default, and the ceiling for fitting: a narrow pane
+        /// should not be blown up to fill the screen.
+        static let natural: CGFloat = UIFont.systemFontSize
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         terminalView.terminalDelegate = self
         terminalView.isScrollEnabled = false
+        // Pinch changes the font rather than zooming the layer. Scaling a
+        // rasterised terminal blurs it; re-rendering at the new size keeps every
+        // glyph sharp, and it is the same code path the fit uses.
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
+        scrollView.addGestureRecognizer(pinch)
         scrollView.addSubview(terminalView)
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = true
@@ -91,9 +121,13 @@ final class PaneTerminalController: UIViewController {
         // a stray intermediate size scrambles the screen with nothing left to
         // repaint it. No bootstrap pass is needed for the measurement either:
         // `cellDimension` comes from the font at init, not from the frame.
-        guard let cell = cellSize(),
-              scrollView.bounds.width > 0, scrollView.bounds.height > 0
-        else { return }
+        guard scrollView.bounds.width > 0, scrollView.bounds.height > 0 else { return }
+
+        // Fit before measuring: the cell size *is* the font, so choosing the
+        // font first is what makes the arithmetic below land on the screen.
+        applyFontIfNeeded()
+
+        guard let cell = cellSize() else { return }
 
         let viewport = TerminalGrid(
             cols: Int(scrollView.bounds.width / cell.width),
@@ -108,6 +142,46 @@ final class PaneTerminalController: UIViewController {
             onReady?(terminalView)
         }
         report(viewport)
+    }
+
+    /// Sets the font so the pane's full width spans the screen.
+    ///
+    /// Cell width is linear in point size for a monospaced face, so one
+    /// measurement at the current size gives the scale factor for any other. It
+    /// is clamped at the top to SwiftTerm's natural size — a 40-column pane
+    /// should not be blown up to fill a phone — and at the bottom only by what
+    /// is still a glyph.
+    private func applyFontIfNeeded() {
+        guard !fontSizeIsChosen, let grid, grid.cols > 0 else { return }
+        guard let cell = cellSize(), cell.width > 0 else { return }
+
+        let current = terminalView.font.pointSize
+        let wanted = current * (scrollView.bounds.width / (cell.width * CGFloat(grid.cols)))
+        let clamped = min(FontSize.natural, max(FontSize.min, wanted))
+        setFontSize(clamped)
+    }
+
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        switch gesture.state {
+        case .began, .changed:
+            fontSizeIsChosen = true
+            setFontSize(terminalView.font.pointSize * gesture.scale)
+            gesture.scale = 1
+        default:
+            break
+        }
+    }
+
+    /// Applies a size and re-lays out, if it actually differs.
+    ///
+    /// Guarded on a real change because setting `font` calls SwiftTerm's
+    /// `resetFont`, which reflows the buffer — and `viewDidLayoutSubviews` runs
+    /// often enough that an unguarded write would reflow on every pass.
+    private func setFontSize(_ size: CGFloat) {
+        let size = min(FontSize.max, max(FontSize.min, size))
+        guard abs(size - terminalView.font.pointSize) > 0.01 else { return }
+        terminalView.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        view.setNeedsLayout()
     }
 
     /// One cell, in points.

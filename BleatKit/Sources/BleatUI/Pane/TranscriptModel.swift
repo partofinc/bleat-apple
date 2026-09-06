@@ -28,6 +28,23 @@ final class TranscriptModel {
     /// Shown at the foot of the chat, and it is also what decides whether to
     /// keep following: an agent that is `working` will have more to say.
     private(set) var status: AgentStatus?
+    /// What the load is doing, for the waiting screen.
+    ///
+    /// Four round trips — dial, `agent get`, open a shell, read the tail — and
+    /// the last one moves a couple of hundred kilobytes. A bare spinner for
+    /// several seconds looks identical to a hang, and the first thing anyone
+    /// does about a hang is tap something else.
+    private(set) var step: String?
+
+    /// The load, owned by the model rather than by a `task` modifier.
+    ///
+    /// **A view cannot be trusted to hold this.** `ConnectionStore.endpoint` is
+    /// observable and publishes the moment a dial lands, which re-renders the
+    /// screens above this one — and a `.task` cancelled by that churn leaves the
+    /// phase on `.loading` with nothing running and no error, which reads
+    /// exactly like a chat that never loads until you touch something else.
+    /// Owned here, the work survives the churn and re-entrant callers join it.
+    private var loadTask: Task<Void, Never>?
 
     private let connections: ConnectionStore
     private let session: String?
@@ -47,13 +64,34 @@ final class TranscriptModel {
         return []
     }
 
+    /// Loads, joining a load already in flight rather than starting a second.
     func load(for peer: PairedPeer) async {
+        if let loadTask {
+            await loadTask.value
+            return
+        }
+        let task = Task { await performLoad(for: peer) }
+        loadTask = task
+        await task.value
+        if loadTask == task { loadTask = nil }
+    }
+
+    /// Stops following and abandons any load. Called when the screen goes away.
+    func stop() {
+        loadTask?.cancel()
+        loadTask = nil
+    }
+
+    private func performLoad(for peer: PairedPeer) async {
         generation += 1
         let generation = generation
         if entries.isEmpty { phase = .loading }
+        step = "Connecting…"
+        defer { step = nil }
 
         do {
             let client = try await connections.client(for: peer, session: session)
+            step = "Finding the conversation…"
             let agent = try await client.agent(target: target)
             status = agent.agentStatus
 
@@ -79,6 +117,7 @@ final class TranscriptModel {
             // Deliberately not `client`: this is a file the agent wrote, not
             // anything herdr can be asked about.
             let shell = try await connections.shell(for: peer)
+            step = "Reading it…"
             let output = try await shell.run(shell: command)
             guard generation == self.generation else { return }
 

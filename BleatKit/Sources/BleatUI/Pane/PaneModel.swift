@@ -39,16 +39,33 @@ final class PaneModel {
     /// anything is being cut off.
     private(set) var paneGrid: TerminalGrid?
 
+    /// Whether the pane's size on the host has come apart from its pty.
+    ///
+    /// **This is the thing that actually cuts the text, and nothing in the app
+    /// can fix it.** herdr reports a pane's layout rect, but the program inside
+    /// writes at the width of its *pty* — and those diverge the moment someone
+    /// attaches to the session from the Mac. Detaching restores the rect and
+    /// leaves the pty where it was, so the buffer holds lines wrapped far wider
+    /// than the pane claims to be, and every `observe` is a crop of them.
+    ///
+    /// `scroll.viewport_rows` follows the pty while the rect follows the
+    /// layout, so the two disagreeing is the signal. Measured on the phone
+    /// session: rect 48 rows, `viewport_rows` 44, pty 44x142, content 142 wide.
+    private(set) var paneIsStale = false
+
     /// Whether output is being cut off horizontally.
     ///
     /// `observe --cols` crops rather than reflows, so asking for fewer columns
-    /// than the pane has loses everything to the right. Rows are not counted:
-    /// asking for fewer keeps the *bottom* of the pane, which is where the
-    /// prompt and the newest output are, and is the right answer rather than a
-    /// loss.
+    /// than the pane holds loses everything to the right. Rows are not counted:
+    /// asking for fewer keeps the *bottom*, where the prompt and newest output
+    /// are, which is the right answer rather than a loss.
+    ///
+    /// The comparison allows the one column herdr reserves of the rect, or a
+    /// pane rendered at exactly its own size would always claim to be cropped.
     var isCropped: Bool {
+        if paneIsStale { return true }
         guard let grid, let paneGrid else { return false }
-        return grid.cols < paneGrid.cols
+        return grid.cols < paneGrid.cols - 1
     }
 
     private let connections: ConnectionStore
@@ -224,6 +241,13 @@ final class PaneModel {
     private func paneSize(from client: HerdrClient) async throws -> TerminalGrid? {
         do {
             let layout = try await client.paneLayout(target: target)
+            // Asked for alongside, because the rect alone cannot say whether it
+            // is still true. See `paneIsStale`.
+            if let rect = layout.rect(ofPane: target),
+               let rows = try? await client.panes()
+                   .first(where: { $0.paneID == target })?.scroll?.viewportRows {
+                paneIsStale = rows != rect.height
+            }
             // A tab that does not contain this pane. A sibling's rect would
             // make the badge claim a crop that is not happening.
             return layout.rect(ofPane: target)

@@ -1215,6 +1215,32 @@ not; the session keeps the last size it was given until it is restarted. So a
 phone-shaped session is one to leave headless, and `phone-session.sh` is how it
 is put back if something attaches to it.
 
+**A pane's rect and its pty can disagree, and that is what "the text is cut"
+looks like.** Attaching from the Mac resizes the pty; detaching restores the
+layout rect and leaves the pty where it was. Measured: `pane layout` reported
+48 rows by 54 columns while `stty` on the agent's own tty said 44 by 142. Bleat
+then asks for 54 and herdr crops genuinely-142-wide output — faithfully, and
+with nothing on the phone able to explain it. Two ways to see it:
+
+- `pane list`'s `scroll.viewport_rows` follows the **pty**, `pane layout`'s rect
+  follows the **layout**. The two disagreeing is the signal.
+- `stty -f /dev/<tty> size` against the pid from `pane process-info` is ground
+  truth.
+
+**The pty can be set directly, and that is the fix.** `stty -f /dev/<tty> rows R
+cols C` on a herdr pane works and the program inside redraws — verified by
+desyncing to 44x142 and recovering. **herdr reserves one column of the rect**,
+so the pty is `rect.width - 1`: a 54-column rect is a 53-column pty. Measure it
+rather than assuming.
+
+**Do not attach the phone session from the Mac; prompt it instead.** `herdr
+agent prompt <target> <text> --wait` submits over the socket API with no client
+ever attaching, so the geometry is never disturbed. Verified: the pty stayed at
+48x53 across a prompt, and the turn produced a transcript for chat mode to read.
+
+`~/.config/herdr/phone-session.sh` wraps all of it — `start` (idempotent: server,
+workspace, agent, then a sync), `sync`, `watch`, `say TEXT`, `status`.
+
 **Anything spawned from inside a Claude Code pane inherits
 `CLAUDE_CODE_CHILD_SESSION`, and an agent started with it set writes no
 transcript.** The pane says so — "Transcript saving is off — inherited

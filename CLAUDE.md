@@ -1170,6 +1170,43 @@ Three consequences:
   a phone-first setup can set those and every pane really is that size. That is a
   better answer than anything a client can do and needs no code here.
 
+### A phone-shaped session is the real answer, and it is host config (6 Sept 2026)
+
+Since a pane's grid is the session's, the way a phone gets a pane it can read
+without panning is a session that is itself phone-shaped. Set up as `phone` on
+the dev Mac and verified end to end:
+
+```toml
+# ~/.config/herdr/phone.toml   — a separate file; the default config is untouched
+[server]
+headless_cols = 54
+headless_rows = 50
+```
+
+```sh
+HERDR_SESSION=phone HERDR_CONFIG_PATH=~/.config/herdr/phone.toml herdr server
+```
+
+- **54 columns is an iPhone 15 Pro in portrait.** SwiftTerm's default font is
+  `monospacedSystemFont(ofSize: 12)`, whose cell is ~7.2pt wide, and the phone
+  is 393pt across: 393 / 7.2 = 54. So the pane arrives at exactly the width the
+  renderer shows at 100%, with no fitting and no panning.
+- **Below herdr's mobile width threshold the sidebar disappears.** Measured: at
+  `headless_cols = 54` the layout reports `area=54x48+0,2` — `x` is 0 rather
+  than the 26 a wide session spends on a sidebar, so every column reaches the
+  pane. Two rows go to chrome, leaving **54x48**. Do not subtract a sidebar when
+  choosing these numbers; check the layout instead, because the threshold moves
+  the answer.
+- **Nothing new is paired.** Bleat pairs to a *host*, and `session list`
+  enumerates every session on it, so a new session appears in the app's session
+  list by itself — green dot, one tap, no QR.
+- It is started with `nohup` and therefore does not survive a reboot. A login
+  item or LaunchAgent is what makes it permanent; deliberately not installed.
+
+This is what the pane view cannot do for itself: real reflow at a readable size,
+nothing cropped, no panning. `PaneTerminalController`'s font fitting remains the
+answer for the sessions a phone did not get to choose the shape of.
+
 **The crop was re-verified in the same controlled session**, since it is the fact
 the whole design rests on. A single line of `A`x60 + `B`x60 + `C`x54 printed into
 a 174-column pane, read by two observers at once:

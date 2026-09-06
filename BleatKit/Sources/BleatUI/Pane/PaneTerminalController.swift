@@ -35,14 +35,20 @@ final class PaneTerminalController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         terminalView.terminalDelegate = self
-        // **Scrollback, natively.** `TerminalView` is itself a `UIScrollView`
-        // and keeps its own buffer; this was off while an outer scroll view
-        // panned a terminal wider than the screen, because two scroll views
-        // competing for one drag make a pane unmovable. There is no outer one
-        // now, so this is simply how scrolling back works — and it is the only
-        // scrollback available: `observe` ignores `terminal.scroll`, verified
-        // 6 Sept 2026 by sending one and getting a single frame and no reply,
-        // so the host cannot be asked to scroll on a reader's behalf.
+        // **There is no scrollback here, and there cannot be.** Left on
+        // because it costs nothing and a program that does scroll would then
+        // work — but an `observe` frame never scrolls the terminal, so nothing
+        // is ever pushed into `TerminalView`'s buffer. Measured 6 Sept 2026: a
+        // frame is 3.6KB of absolute cursor positioning (`ESC[19;3H`) and SGR
+        // colour, with **zero newlines and zero carriage returns**. Lines are
+        // painted in place; none scroll off.
+        //
+        // Asking the host to scroll instead does not work either: `observe`
+        // ignores `terminal.scroll` — sent one, got a single frame and nothing
+        // on stderr, not even an "input ignored".
+        //
+        // So a pane's history is reachable only through `pane read`, which is
+        // what the reader is. The terminal shows the live screen.
         terminalView.isScrollEnabled = true
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's

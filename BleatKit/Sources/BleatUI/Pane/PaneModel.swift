@@ -157,14 +157,28 @@ final class PaneModel {
             // badge can say when it could not be.
             let pane = try await paneSize(from: client)
             let fit = pane.flatMap { PtyResize.target(viewport: size, pane: $0) }
+
+            // **The stream is opened before the pty is resized, and the order is
+            // the whole point.** `stty` raises `SIGWINCH` and the program
+            // repaints on its own schedule. Resizing first meant racing that
+            // repaint: `observe`'s opening frame is the only full redraw it ever
+            // sends, so catching the old screen read at the new width baked the
+            // corruption in permanently — text at the wrong columns, fragments
+            // down the edge. A quarter-second sleep was a guess at how long a
+            // repaint takes, and on a rotation with a lot to redraw it was the
+            // wrong guess.
+            //
+            // Opened first, the repaint arrives as ordinary frames on a stream
+            // that is already listening, and fixes the screen the moment it
+            // happens. The cost is that the first frame may be briefly the old
+            // shape; the benefit is that it cannot be the last word.
+            let opened = try await client.observe(
+                target, cols: size.cols, rows: size.rows
+            )
             var resized = false
             if let fit, fit == size {
                 resized = await resizePty(to: size, on: peer, client: client)
             }
-
-            let opened = try await client.observe(
-                target, cols: size.cols, rows: size.rows
-            )
             // A reopen cancelled this reader while the channel was opening. It
             // is a live `herdr terminal session observe` on the host and
             // nothing else holds it, so installing it now would orphan it — or
@@ -233,14 +247,6 @@ final class PaneModel {
             // The plain-shell seam, not herdr: there is no herdr command that
             // sets a pane's size, which is the whole reason this exists.
             _ = try await connections.shell(for: peer).run(shell: command)
-            // **The redraw is not instantaneous.** `stty` raises `SIGWINCH` and
-            // the program repaints on its own schedule; opening the stream in
-            // that window captures the old buffer read at the new width, which
-            // is the corrupted screen this whole path exists to avoid. A full
-            // redraw arrives only when a stream opens, so being early is
-            // permanent. A quarter second is far longer than a repaint and far
-            // shorter than anyone notices.
-            try? await Task.sleep(for: .milliseconds(250))
             return true
         } catch {
             return false

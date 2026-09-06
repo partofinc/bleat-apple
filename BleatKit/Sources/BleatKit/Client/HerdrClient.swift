@@ -94,14 +94,6 @@ public struct HerdrClient: Sendable {
         return result.agent
     }
 
-    /// What is running in a pane, so its pty can be found and resized.
-    public func paneProcessInfo(target: String) async throws -> PaneProcessInfo {
-        let result: PaneProcessInfoResult = try await enveloped(
-            ["pane", "process-info", "--pane", target]
-        )
-        return result.processInfo
-    }
-
     /// A pane's recent output as plain text, for the reader.
     ///
     /// Unlike everything else on this client the payload is **not JSON** and

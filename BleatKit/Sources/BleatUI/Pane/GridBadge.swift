@@ -12,9 +12,6 @@ import SwiftUI
 /// crops rather than reflows, so that case really does hide output.
 struct GridBadge: View {
     let grid: TerminalGrid
-    /// Whether Bleat resized the pane's pty to this. Said out loud because it
-    /// is a write to a running program, and the person at the Mac sees it too.
-    let didResize: Bool
     /// True when this is the phone's guess rather than the pane's real grid,
     /// because the host would not report a layout. That is the only case left
     /// where something is actually hidden: normally the whole pane is on
@@ -37,16 +34,13 @@ struct GridBadge: View {
 
     private var label: String {
         let size = "\(grid.cols)×\(grid.rows)"
-        if isCropped { return "\(size) cropped" }
-        return didResize ? "\(size) fitted" : size
+        return isCropped ? "\(size) cropped" : size
     }
 
     private var accessibilityLabel: String {
         isCropped
             ? "\(grid.cols) columns by \(grid.rows) rows, cropped to this screen "
                 + "because the host did not report the pane's size"
-            : didResize
-                ? "\(grid.cols) columns by \(grid.rows) rows. Bleat resized the pane to fit this screen."
-                : "\(grid.cols) columns by \(grid.rows) rows, the whole pane. Pinch to zoom."
+            : "\(grid.cols) columns by \(grid.rows) rows."
     }
 }

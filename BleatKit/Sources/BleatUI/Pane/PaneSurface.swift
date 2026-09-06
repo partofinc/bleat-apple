@@ -15,7 +15,7 @@ struct PaneSurface: View {
             .ignoresSafeArea(.container, edges: .bottom)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
-                    GridBadge(grid: grid, didResize: model.didResizePane, isCropped: model.isCropped)
+                    GridBadge(grid: grid, isCropped: model.isCropped)
                 }
             }
             .overlay {

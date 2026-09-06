@@ -82,6 +82,17 @@ let package = Package(
             dependencies: ["BleatProcess", "BleatKit"],
             swiftSettings: sharedSwiftSettings
         ),
+        // **iOS-only, and it is the pane geometry it exists for.** The cell
+        // arithmetic here has until now been verified by looking at a phone,
+        // which is how several sizing bugs survived a green test run. It needs
+        // a simulator destination:
+        //   xcodebuild test -scheme bleat-Package \
+        //     -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+        .testTarget(
+            name: "BleatUITests",
+            dependencies: ["BleatUI", "BleatKit"],
+            swiftSettings: sharedSwiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
         .testTarget(
             name: "BleatKitTests",
             dependencies: ["BleatKit"],

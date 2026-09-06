@@ -79,6 +79,11 @@ final class PaneTerminalController: UIViewController {
         }
     }
 
+    /// Read by `BleatUITests` to check the terminal really fills its view —
+    /// the thing that has to be true and was only ever eyeballed.
+    var terminalFrameForTesting: CGSize { terminalView.frame.size }
+    var fontSizeForTesting: CGFloat { terminalView.font.pointSize }
+
     /// Deduplicated, because the layout pass and the delegate report the same
     /// change and either may come first.
     private func report(_ grid: TerminalGrid) {

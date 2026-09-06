@@ -1202,6 +1202,29 @@ HERDR_SESSION=phone HERDR_CONFIG_PATH=~/.config/herdr/phone.toml herdr server
   list by itself — green dot, one tap, no QR.
 - It is started with `nohup` and therefore does not survive a reboot. A login
   item or LaunchAgent is what makes it permanent; deliberately not installed.
+  `~/.config/herdr/phone-session.sh` is the start command, and it exists because
+  of the next two entries rather than for convenience.
+
+**`headless_cols`/`headless_rows` is the size a session *starts* at, not one it
+keeps.** Attaching a TUI from the Mac overwrites the session geometry with that
+window's, and **it does not revert on detach** — measured 6 Sept 2026: a 54x48
+pane came back `142x45` with the 26-column sidebar restored, and stayed there
+after the Mac client left. The earlier wording here ("the attached TUI's window
+when one is attached and headless when none is") implied it reverts. It does
+not; the session keeps the last size it was given until it is restarted. So a
+phone-shaped session is one to leave headless, and `phone-session.sh` is how it
+is put back if something attaches to it.
+
+**Anything spawned from inside a Claude Code pane inherits
+`CLAUDE_CODE_CHILD_SESSION`, and an agent started with it set writes no
+transcript.** The pane says so — "Transcript saving is off — inherited
+CLAUDE_CODE_CHILD_SESSION marker" — which means chat mode has nothing to read,
+for a reason nothing in Bleat could diagnose. A herdr server passes its whole
+environment to every pane it spawns, so the marker has to be stripped at the
+server, not at the agent. Ten `CLAUDE*` variables are in scope in such a pane;
+`phone-session.sh` unsets all of them alongside `HERDR_*`. Verified after: `echo
+${CLAUDE_CODE_CHILD_SESSION:-none}` in the pane prints `none`, and the agent
+starts with no warning.
 
 This is what the pane view cannot do for itself: real reflow at a readable size,
 nothing cropped, no panning. `PaneTerminalController`'s font fitting remains the

@@ -113,11 +113,17 @@ final class PaneModel {
     ///   screen.
     func open(viewport: TerminalGrid) {
         guard viewport.isUsable else { return }
+        let previous = self.viewport
         self.viewport = viewport
         guard opened != nil else { return start() }
-        // Rotation. Only a stream sized to the phone is affected by one; one
-        // sized to the pane does not care how much of it is on screen.
-        if isCropped, opened != viewport { start() }
+        // **Rotation reopens, even though the stream's size has not changed.**
+        // The size asked for is the pane's and the pane does not care which way
+        // the phone is held — but the terminal has just been re-fitted to a new
+        // screen, and changing the font makes SwiftTerm reflow its buffer to do
+        // it. `observe` sends a full redraw only when it opens, so without this
+        // the screen keeps whatever the reflow made of it: text cut at the old
+        // width, with nothing ever arriving to repair it. Found on device.
+        if previous != viewport { start() }
     }
 
     /// Opens again.

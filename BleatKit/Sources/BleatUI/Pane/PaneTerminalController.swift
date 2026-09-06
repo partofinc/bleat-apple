@@ -250,14 +250,26 @@ final class PaneTerminalController: UIViewController {
         }
     }
 
-    /// Swaps the font and re-measures immediately.
+    /// Swaps the font, keeping the column count fixed, and re-measures.
+    ///
+    /// **The frame is corrected in the same breath, and that is the whole
+    /// point.** `TerminalView` derives its columns from `bounds.width /
+    /// cellWidth`, so a new font against the old frame is a different number of
+    /// columns — and SwiftTerm reflows its buffer whenever that changes. An
+    /// intermediate reflow at a width nobody asked for cuts the text, and
+    /// `observe` sends a full redraw only when the stream opens, so nothing
+    /// repairs it. Setting both together means the column count never moves.
     ///
     /// `layoutIfNeeded` on the terminal rather than `setNeedsLayout` on the
     /// controller: SwiftTerm recomputes `cellDimension` in its own
-    /// `layoutSubviews`, so the next `cellSize()` would otherwise still report
-    /// the old cell and every caller here measures right after setting.
+    /// `layoutSubviews`, and every caller here measures right afterwards.
     private func applyFont(ofSize size: CGFloat) {
         terminalView.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        // `cellDimension` is updated synchronously by the setter's `resetFont`,
+        // so the new cell is already measurable here.
+        if let grid, let cell = cellSize() {
+            terminalView.frame = CGRect(origin: .zero, size: frameSize(for: grid, cell: cell))
+        }
         terminalView.layoutIfNeeded()
     }
 
@@ -291,10 +303,7 @@ final class PaneTerminalController: UIViewController {
     /// less than a cell, so it can neither lose a column nor gain one — and the
     /// sliver is painted in the terminal's own background.
     private func resizeTerminal(to grid: TerminalGrid, cell: CGSize) {
-        let size = CGSize(
-            width: (cell.width * CGFloat(grid.cols)).rounded(.up) + 0.5,
-            height: (cell.height * CGFloat(grid.rows)).rounded(.up) + 0.5
-        )
+        let size = frameSize(for: grid, cell: cell)
         if terminalView.frame.size != size {
             terminalView.frame = CGRect(origin: .zero, size: size)
             terminalView.layoutIfNeeded()
@@ -316,6 +325,20 @@ final class PaneTerminalController: UIViewController {
             flashed = true
             scrollView.flashScrollIndicators()
         }
+    }
+
+    /// The frame that yields exactly `grid` columns and rows.
+    ///
+    /// Landing exactly on `cols * cellWidth` would put `TerminalView`'s own
+    /// `Int(width / cellWidth)` on a boundary where an error of one ulp costs a
+    /// whole column, and a terminal one column narrower than the stream feeding
+    /// it wraps every line. Rounding up and adding half a point clears the
+    /// boundary by far more than any float error and far less than a cell.
+    private func frameSize(for grid: TerminalGrid, cell: CGSize) -> CGSize {
+        CGSize(
+            width: (cell.width * CGFloat(grid.cols)).rounded(.up) + 0.5,
+            height: (cell.height * CGFloat(grid.rows)).rounded(.up) + 0.5
+        )
     }
 
     /// Deduplicated, because both the layout pass and the delegate report the

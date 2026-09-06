@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+import BleatKit
 import SwiftUI
 import SwiftTerm
 

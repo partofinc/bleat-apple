@@ -186,12 +186,14 @@ final class PaneModel {
             }
             let pane = try await paneSize(from: client)
             // **Make the pane fit the phone, rather than the phone cope.**
-            // Only when it does not already fit: widening someone's pane
-            // because a phone happens to be in landscape would be gratuitous,
-            // and a session that is already phone-shaped must be left alone.
-            let shrink = pane.map { viewport.cols < $0.cols || viewport.rows < $0.rows } ?? false
-            let resized = shrink ? await resizePty(to: viewport, on: peer, client: client) : false
-            let size = resized ? viewport : (pane ?? viewport)
+            // `PtyResize.target` decides whether and to what — it refuses to
+            // widen, which is not a nicety: a pty wider than herdr's own pane
+            // buffer makes the program emit lines herdr then wraps, and the
+            // result is corruption rather than a crop.
+            let fit = pane.flatMap { PtyResize.target(viewport: viewport, pane: $0) }
+            var resized = false
+            if let fit { resized = await resizePty(to: fit, on: peer, client: client) }
+            let size = resized ? (fit ?? viewport) : (pane ?? viewport)
 
             let opened = try await client.observe(
                 target, cols: size.cols, rows: size.rows
@@ -264,6 +266,14 @@ final class PaneModel {
             // The plain-shell seam, not herdr: there is no herdr command that
             // sets a pane's size, which is the whole reason this exists.
             _ = try await connections.shell(for: peer).run(shell: command)
+            // **The redraw is not instantaneous.** `stty` raises `SIGWINCH` and
+            // the program repaints on its own schedule; opening the stream in
+            // that window captures the old buffer read at the new width, which
+            // is the corrupted screen this whole path exists to avoid. A full
+            // redraw arrives only when a stream opens, so being early is
+            // permanent. A quarter second is far longer than a repaint and far
+            // shorter than anyone notices.
+            try? await Task.sleep(for: .milliseconds(250))
             return true
         } catch {
             return false

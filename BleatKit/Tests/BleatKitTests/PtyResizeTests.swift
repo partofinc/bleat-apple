@@ -39,6 +39,43 @@ struct PtyResizeTests {
         #expect(PtyResize.command(pid: pid, cols: cols, rows: rows) == nil)
     }
 
+    /// **Never wider than herdr's own pane buffer.** herdr renders the pane at
+    /// its rect and the program writes into that buffer, so a wider pty makes
+    /// the program emit lines herdr then wraps — corruption, not a crop:
+    /// characters in the wrong columns and one-letter fragments down the far
+    /// edge. Seen on device in landscape, when a phone that could show 100
+    /// columns asked a 54-column pane for 100.
+    @Test("it shrinks to fit and never grows")
+    func neverGrows() {
+        let pane = TerminalGrid(cols: 54, rows: 48)
+        // Portrait: narrower, so it fits — minus the column herdr keeps.
+        #expect(PtyResize.target(viewport: TerminalGrid(cols: 53, rows: 49), pane: pane)
+                == TerminalGrid(cols: 53, rows: 48))
+        // Landscape on a narrow pane: wider than the pane, so leave it alone.
+        #expect(PtyResize.target(viewport: TerminalGrid(cols: 100, rows: 21), pane: pane)
+                == TerminalGrid(cols: 53, rows: 21))
+        // Wider *and* taller: nothing to do at all.
+        #expect(PtyResize.target(viewport: TerminalGrid(cols: 100, rows: 60), pane: pane) == nil)
+    }
+
+    /// A session already the right shape must not be touched.
+    @Test("a pane that already fits is left alone")
+    func leavesAFittingPaneAlone() {
+        let pane = TerminalGrid(cols: 54, rows: 48)
+        #expect(PtyResize.target(viewport: TerminalGrid(cols: 54, rows: 48), pane: pane) == nil)
+        #expect(PtyResize.target(viewport: TerminalGrid(cols: 80, rows: 50), pane: pane) == nil)
+    }
+
+    /// One column of the rect belongs to herdr — measured, not assumed: a
+    /// 54-column rect is a 53-column pty.
+    @Test("herdr's reserved column is accounted for")
+    func reservesAColumn() {
+        let fit = PtyResize.target(
+            viewport: TerminalGrid(cols: 200, rows: 10), pane: TerminalGrid(cols: 54, rows: 48)
+        )
+        #expect(fit?.cols == 53)
+    }
+
     /// `pane process-info` nests one level deeper than the other commands, and
     /// falls back to the shell when nothing is running in front of it — a plain
     /// pane still has a pty worth sizing.

@@ -1,3 +1,4 @@
+import BleatKit
 import SwiftUI
 
 /// The terminal itself, with whatever needs saying over it.

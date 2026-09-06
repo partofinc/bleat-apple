@@ -15,6 +15,36 @@
 /// never to widen one that already does — and why it is never fatal: every
 /// failure falls back to reading the pane at whatever size it already has.
 public enum PtyResize {
+    /// The size to set a pane's pty to, or `nil` when it should be left alone.
+    ///
+    /// **The pty must never be wider than herdr's own pane buffer.** herdr
+    /// renders the pane at its layout rect and the program writes into that
+    /// buffer, so a pty wider than the rect makes the program emit lines herdr
+    /// then wraps — and the result is not a crop but genuine corruption:
+    /// characters landing in the wrong columns, one-letter fragments down the
+    /// far edge. Seen on device, in landscape, when a phone that could show 100
+    /// columns asked a 54-column pane for 100.
+    ///
+    /// Narrower is safe, and is the whole point: the program wraps its own
+    /// output to the phone's width, and `observe` at that width loses nothing
+    /// because there is nothing beyond it. So the rule is one-directional —
+    /// shrink to fit, never grow.
+    ///
+    /// One column of the rect belongs to herdr, measured rather than assumed: a
+    /// 54-column rect is a 53-column pty.
+    /// - Returns: `nil` when the pane already fits, which is when it must not be
+    ///   touched — a session that is already phone-shaped, or a phone in
+    ///   landscape looking at a narrow pane.
+    public static func target(viewport: TerminalGrid, pane: TerminalGrid) -> TerminalGrid? {
+        guard viewport.isUsable, pane.isUsable else { return nil }
+        guard viewport.cols < pane.cols || viewport.rows < pane.rows else { return nil }
+        let fit = TerminalGrid(
+            cols: min(viewport.cols, pane.cols - 1),
+            rows: min(viewport.rows, pane.rows)
+        )
+        return fit.isUsable ? fit : nil
+    }
+
     /// - Parameters:
     ///   - pid: From `pane process-info`. Interpolated into a command the host
     ///     will run, so it is checked rather than trusted — it arrives as JSON

@@ -1126,9 +1126,122 @@ panning has to happen on the client.
 
 **This is not a herdr limitation.** A pane is one pty with one screen buffer of
 a single width, and the program inside wrapped its output to it. Any client that
-wants different wrapping has to resize the pty, which resizes it for whoever is
-at the Mac too — `control` can do that via `terminal.resize`, and Phase 3 will
-have to decide whether it may.
+wants different wrapping would have to resize the pty — and no client of this API
+can. See below.
+
+### A pane's size belongs to the session. No stream client can change it (verified 6 Sept 2026)
+
+An earlier version of this file said a client "has to resize the pty, which
+resizes it for whoever is at the Mac too — `control` can do that via
+`terminal.resize`, and Phase 3 will have to decide whether it may." **The second
+half was false and is withdrawn.** It was reasoning, not measurement. Measured in
+an isolated headless session, against a pane whose rect was 94x39:
+
+| what was attached | pane rect after |
+|---|---|
+| nothing (headless) | 94x39 |
+| `observe --cols 60 --rows 20` | 94x39 |
+| `control --cols 60 --rows 20 --takeover` | 94x39 |
+| `{"type":"terminal.resize","cols":60,"rows":20}` on stdin | 94x39 |
+
+Nothing moved it, and the resize record was *accepted* — no `input ignored` on
+stderr. What it did do is visible in the frames that one client received:
+`120x40 full=true` on attach, then `60x20 full=true` after the record. So
+`--cols`, `--rows` and `terminal.resize` are all **one client's viewport** and
+nothing else.
+
+**The geometry comes from the session's terminal size**, which is the attached
+TUI's window when one is attached and `server.headless_cols` /
+`server.headless_rows` when none is. Proved by restarting the same server under
+`headless_cols = 200, headless_rows = 60`: the pane became 174x59 — 200 minus the
+26-column sidebar, 60 minus the tab-bar row. Every pane in a session shares it;
+on the dev Mac all seven workspaces report `area=142x47+26,1`.
+
+Three consequences:
+
+- **Bleat cannot disturb the Mac through this API, at all.** The Phase 3 question
+  this file used to record — whether Bleat "may" resize someone's pane — does not
+  exist. Nothing about the pane view needs to be defensive about it.
+- **Resizing the Mac's window does change the pane**, because that is the session
+  geometry moving. Bleat sees the new rect on its next `pane layout`; its own
+  `--cols` never enters into it.
+- **A phone-shaped host is a config change, not a client feature.** A herdr
+  running headless sits at `headless_cols`/`headless_rows` (120x40 by default), so
+  a phone-first setup can set those and every pane really is that size. That is a
+  better answer than anything a client can do and needs no code here.
+
+### The phone session, and what a client may change (6 Sept 2026)
+
+A pane's grid belongs to the session, so a phone that wants a readable pane needs
+either a session shaped for it or a way to change the pane. Both exist, and they
+are different mechanisms — several wrong turns here came from conflating them.
+
+**A stream client cannot change a pane's grid.** `observe --cols/--rows`,
+`control` and a `terminal.resize` record are all per-client viewports; measured
+above.
+
+**The pty behind a pane can be resized from outside, and that is what reflows
+it.** The program writes at the width of its own pty, and `stty` on that tty
+raises `SIGWINCH` and makes it repaint. Verified on a clean pane: 53 columns
+grown to 100 came back genuinely wrapped at 100, and shrunk to 40 likewise.
+herdr's layout rect is **not** a ceiling — growing past it is fine. The tty comes
+from `pane process-info` → pid → `ps -o tty=`. This is the only write Bleat makes
+to a running program, and it is best effort: no tty, no permission or an older
+herdr all fall back to reading the pane at the size it has.
+
+**`herdr agent start` sizes the new agent from the *calling client's* pane.** An
+agent started from inside a 142-column herdr pane came up with a 142-column pty
+however narrow the target session was, because `HERDR_PANE_ID`/`HERDR_TAB_ID`/
+`HERDR_WORKSPACE_ID`/`HERDR_ENV` were in scope. **This is worth knowing because
+it looks exactly like something else going wrong**: it produced panes whose
+content was wrapped far wider than the session, which was misread for most of a
+day as attaching-from-the-Mac corrupting the pane, and led to a working feature
+being removed and restored. Strip those variables — `phone-session.sh` does.
+
+**A headless session renders a pane's bottom chrome differently from an attached
+one.** Compared at the same moment: the `work` session, with a client attached,
+shows a pane's input box as four rows — border, prompt, border, status. The
+headless `phone` session shows four blank rows and one row with the border and
+status composited together. Reproduced with a fresh agent, no `--resume`, no
+contention, the pty matching the rect, at both 53 and 80 columns, and `pane read`
+agrees with `observe` — so it is not a stream artifact, a width, or a race.
+**Unconfirmed:** attaching a client was not successfully tested, so "attaching
+fixes it" is an inference from that comparison rather than a demonstration. Bleat
+renders the pane faithfully either way; this is a herdr question.
+
+**Setup.** `~/.config/herdr/phone.toml` (a separate file; the default config is
+untouched) sets `headless_cols`/`headless_rows`, and
+`~/.config/herdr/phone-session.sh` is `start` (idempotent — server, workspace,
+agent), `sync`, `watch`, `say TEXT`, `status`. `say` uses `herdr agent prompt`,
+which submits over the socket API with no client attaching.
+
+**Two things that bite when starting agents this way.** Anything spawned from
+inside a Claude Code pane inherits `CLAUDE_CODE_CHILD_SESSION`, and an agent
+started with it set writes **no transcript** — the pane says "Transcript saving
+is off", and chat mode then has nothing to read. A herdr server passes its
+environment to every pane it spawns, so it must be stripped at the server. And
+`--resume <id>` in a pane whose session another Claude Code already holds works,
+but that process reports it cannot take Remote Control.
+
+**The crop was re-verified in the same controlled session**, since it is the fact
+the whole design rests on. A single line of `A`x60 + `B`x60 + `C`x54 printed into
+a 174-column pane, read by two observers at once:
+
+| client asks | A | B | C |
+|---|---|---|---|
+| `--cols 174` | 60 | 60 | 54 |
+| `--cols 60` | 60 | **0** | **0** |
+
+The B's and C's are **gone, not wrapped onto a second line**. `--cols` crops. It
+has never reflowed and cannot.
+
+Two escape hatches found while probing, both worth knowing:
+`experimental.allow_nested = true` in the config is what lifts the "nested herdr
+is disabled by default" guard that has blocked scratch sessions from inside a
+herdr pane, and `HERDR_CONFIG_PATH` lets a probe run on its own config without
+touching the user's. Together with `HERDR_SESSION` and an unset
+`HERDR_SOCKET_PATH`, that is how to get a disposable session to measure in —
+`herdr server` with no subcommand runs one headless.
 
 **What the app does now (option 1 of the four that were weighed).** It asks
 `pane layout --pane <target>` for the pane's real grid, opens the stream at
@@ -1195,9 +1308,13 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   drag makes the pane unmovable. Its scrolling is off; the outer one pans the
   whole 142×47 grid. Scrolling *history* should not be a local gesture anyway:
   the host tracks it per pane (`pane list` carries `scroll.offset_from_bottom`
-  and `max_offset_from_bottom`) and `terminal.scroll` exists as a stdin record,
-  so the honest version asks the host. **Unverified: whether `observe` accepts
-  stdin at all** — the four record types were confirmed against `control`.
+  and `max_offset_from_bottom`) and `terminal.scroll` exists as a stdin record.
+  **Resolved: `observe` ignores it** — sending one returns a single frame and
+  nothing on stderr, not even the "input ignored" a bad record earns on
+  `control`. Local scrollback is no answer either: an `observe` frame is
+  absolute cursor positioning and SGR colour with **zero newlines**, so nothing
+  ever scrolls off into `TerminalView`'s buffer. A pane's history is reachable
+  only through `pane read`, which is what the reader mode is.
 - **A badge in the corner names the grid**, and says "cropped" when the fallback
   is in use. The pane is deliberately larger than the screen now, and a scroll
   indicator that appears only once you already know to drag is not an
@@ -1208,11 +1325,14 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   captured fixture.
 
 Not taken: fitting the full width to the screen (~2.8pt type, not viable), or
-keeping the crop and merely labelling it. Phase 3 may add a genuine resize via
-`control`, which changes the pane for whoever is at the Mac — and the better
-answer there is a **separate, phone-shaped session**, since the layout is sized
-to the attached client. Untested: what herdr does when two clients of different
-sizes attach to one session (tmux shrinks to the smallest).
+keeping the crop and merely labelling it. A genuine resize via `control` is not
+on the table either — it does not exist, per the section above. The phone-shaped
+answer is a session whose *own* geometry is phone-shaped, set by
+`server.headless_cols`/`headless_rows` on the host.
+
+Resolved by the same probe: two clients of different sizes attaching to one
+session do **not** fight, and nothing shrinks to the smallest as tmux would.
+Each gets its own cropped or padded viewport onto one unchanged grid.
 
 - **Frames that arrive before the renderer exists are held, not dropped.** The
   first frame is the full-screen replay, and on an idle pane nothing follows it
@@ -1316,20 +1436,21 @@ behaviour when it moves across the seam.
 
 ## Open questions (resolve against the live host, then delete)
 
-- Does `agent prompt --wait` return a JSON result on completion, and what is
-  the timeout behavior?
 - Capturing a `blocked` and a `done` agent row into `Fixtures/`. Only `idle`,
   `working` and `unknown` have been seen live so far.
 - Whether the host ever sends a non-`terminal.frame` record on stdout. Only
   frames have been observed; `TerminalRecord.unknown` covers the rest.
-- **Whether `terminal session observe` accepts stdin at all.** The four record
-  types were verified against `control`. If `terminal.scroll` works on an
-  observer, host-side scrollback is available to the read-only pane view, which
-  is the honest replacement for the local scrolling the sizing work gave up.
 - **A split tab's `pane layout`.** Never captured: `herdr session attach`
   refuses from inside a herdr pane ("nested herdr is disabled by default"), and
   creating a split in the live `work` session is out of bounds. The lookup is
   tested against a layout derived from the real fixture, which is weaker.
+
+Resolved (6 Sept 2026): `observe` ignores `terminal.scroll`, so there is no
+host-side scrollback for a reader; and `agent prompt --wait` is documented on the
+host — an already-**blocked** agent is rejected with `agent_blocked` *before any
+input is sent*, a non-working agent needs an observed state change within 5000ms
+or returns `agent_prompt_stalled`, and it does not track turns, so an agent that
+was already working may match on that turn's completion.
 
 Resolved (4 Sept 2026): `terminal.frame` shape and the absence of a cursor
 field; `agent list` needing no join; the four stdin record types; and

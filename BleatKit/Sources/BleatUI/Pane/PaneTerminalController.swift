@@ -1,196 +1,124 @@
 #if canImport(UIKit)
+import BleatKit
 import SwiftTerm
 import UIKit
 
-/// Hosts SwiftTerm's `TerminalView` at the **pane's** size and lets the user
-/// pan around it.
+/// Hosts SwiftTerm's `TerminalView`, filling the screen.
 ///
-/// A view controller rather than a bare view for the layout hook: the size of a
-/// terminal cell depends on the font and is only knowable after a layout pass,
-/// and everything here is arithmetic in cells.
+/// **It sizes itself, and that is the whole design.** `TerminalView` derives its
+/// columns and rows from its own bounds, so a terminal that fills the screen is
+/// by definition the number of cells this phone can show at a readable size.
+/// That number is reported upwards, the host is asked to make the pane's pty
+/// exactly that, and the stream is opened at it — so every size in the system is
+/// the same one and there is nothing to reconcile.
 ///
-/// The pane's grid comes from the host (`pane layout`), not from this screen.
-/// Sizing the terminal to the phone instead is what made the pane arrive
-/// cropped: `observe --cols` is a viewport onto the existing buffer rather than
-/// a resize, so a 142-column pane rendered at 53 loses 63% of every line with
-/// nothing on screen to say so.
+/// Everything that used to live here — fitting a font to a grid, an outer scroll
+/// view to pan a terminal wider than the screen, a pinch multiplier, a cache key
+/// to stop the fit looping — existed to cope with a pane whose width was not
+/// this phone's. Resizing the pty removed the problem rather than managing it.
+///
+/// A view controller rather than a bare view for the layout hook: the size is
+/// only knowable after a layout pass.
 final class PaneTerminalController: UIViewController {
-    /// Called with what the phone can show, whenever that changes. It is the
-    /// **fallback** size — used only when the host will not report a layout —
-    /// and the first call is what starts the stream.
-    var onViewport: ((TerminalGrid) -> Void)?
+    /// The grid the terminal is showing, whenever it changes. Both "what to ask
+    /// the host for" and "what the stream is being rendered at" — they are the
+    /// same number now, which is why there is one callback instead of two.
+    var onSize: ((TerminalGrid) -> Void)?
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
-    /// Called with the grid the terminal is now actually rendering at.
-    ///
-    /// Frames are only safe to feed once this matches what the stream was
-    /// opened at: they carry absolute cursor positioning, so a frame written
-    /// for 142 columns into a 53-column terminal wraps every line, and the
-    /// stream sends a full redraw only when it opens — nothing would repair it.
-    var onGridApplied: ((TerminalGrid) -> Void)?
-
-    /// The pane's grid. Set from SwiftUI once the host has reported it; until
-    /// then the terminal is sized to the screen so a cell can be measured.
-    var grid: TerminalGrid? {
-        didSet {
-            // `isViewLoaded` so setting this from `makeUIViewController` does
-            // not force the view into existence early, before SwiftUI has put
-            // the controller anywhere.
-            guard grid != oldValue, isViewLoaded else { return }
-            view.setNeedsLayout()
-        }
-    }
 
     /// Read-only: it renders, and it will not take the keyboard.
     private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
-    /// Owns panning, because the terminal is deliberately larger than the
-    /// screen. `TerminalView` is itself a `UIScrollView`, so its own scrolling
-    /// is turned off rather than nested inside this one — two scroll views
-    /// competing for the same drag is how a pane becomes impossible to move.
-    private let scrollView = UIScrollView()
     private var reported: TerminalGrid?
     private var announced = false
-    private var flashed = false
+    /// Whether this terminal is the one on screen.
+    ///
+    /// It stays mounted while the chat or reader is showing, so that switching
+    /// back is instant — but a hidden view still lays out, and reporting a size
+    /// from one would reopen a stream and `stty` someone's Mac for a view
+    /// nobody is looking at.
+    var isActive = true {
+        didSet { if isActive, isActive != oldValue { view.setNeedsLayout() } }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         terminalView.terminalDelegate = self
-        terminalView.isScrollEnabled = false
-        scrollView.addSubview(terminalView)
-        scrollView.showsHorizontalScrollIndicator = true
-        scrollView.showsVerticalScrollIndicator = true
-        // The sliver of slack below, and any area the pane does not cover,
-        // should look like the terminal rather than like a gap in it. A 47-row
-        // pane leaves ~50pt bare under a portrait iPhone, plus the whole
-        // rubber-band overscroll region.
+        // **There is no scrollback here, and there cannot be.** Left on
+        // because it costs nothing and a program that does scroll would then
+        // work — but an `observe` frame never scrolls the terminal, so nothing
+        // is ever pushed into `TerminalView`'s buffer. Measured 6 Sept 2026: a
+        // frame is 3.6KB of absolute cursor positioning (`ESC[19;3H`) and SGR
+        // colour, with **zero newlines and zero carriage returns**. Lines are
+        // painted in place; none scroll off.
         //
+        // Asking the host to scroll instead does not work either: `observe`
+        // ignores `terminal.scroll` — sent one, got a single frame and nothing
+        // on stderr, not even an "input ignored".
+        //
+        // So a pane's history is reachable only through `pane read`, which is
+        // what the reader is. The terminal shows the live screen.
+        terminalView.isScrollEnabled = true
+
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and
-        // then sets that property to `UIColor.clear`, so asking the obvious
-        // thing paints a transparent band — white under a black terminal in
-        // light mode.
-        let background = terminalView.layer.backgroundColor.map(UIColor.init(cgColor:))
-        scrollView.backgroundColor = background
-        view.backgroundColor = background
-        view.addSubview(scrollView)
+        // sets that property to `UIColor.clear`, so asking the obvious thing
+        // paints a transparent band — white under a black terminal in light
+        // mode.
+        view.backgroundColor = terminalView.layer.backgroundColor.map(UIColor.init(cgColor:))
+        view.addSubview(terminalView)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        scrollView.frame = view.bounds
+        guard view.bounds.width > 0, view.bounds.height > 0 else { return }
+        terminalView.frame = view.bounds
+        // `TerminalView` recomputes its cols and rows in its own
+        // `layoutSubviews`, which runs *after* this method — so without forcing
+        // it, the size read below is `TerminalOptions`' default 80x25, a size
+        // the view cannot show and the host would be asked for anyway.
+        terminalView.layoutIfNeeded()
 
-        // **The terminal is never sized to the screen and then to the grid in
-        // one pass.** `TerminalView` reflows its buffer on every size change,
-        // and the `observe` stream sends a full redraw only when it opens — so
-        // a stray intermediate size scrambles the screen with nothing left to
-        // repaint it. No bootstrap pass is needed for the measurement either:
-        // `cellDimension` comes from the font at init, not from the frame.
-        guard let cell = cellSize(),
-              scrollView.bounds.width > 0, scrollView.bounds.height > 0
-        else { return }
-
-        let viewport = TerminalGrid(
-            cols: Int(scrollView.bounds.width / cell.width),
-            rows: Int(scrollView.bounds.height / cell.height)
-        )
-        let applied = grid ?? viewport
-        resizeTerminal(to: applied, cell: cell)
-        onGridApplied?(applied)
+        let terminal = terminalView.getTerminal()
+        if isActive { report(TerminalGrid(cols: terminal.cols, rows: terminal.rows)) }
 
         if !announced {
             announced = true
             onReady?(terminalView)
         }
-        report(viewport)
     }
 
-    /// One cell, in points.
-    ///
-    /// Derived rather than read: SwiftTerm keeps `cellDimension` internal, but
-    /// `getOptimalFrameSize()` is public and returns exactly
-    /// `cellDimension × (cols, rows)`, so dividing by the terminal's own size
-    /// recovers it without guessing at a font metric.
-    private func cellSize() -> CGSize? {
-        let terminal = terminalView.getTerminal()
-        let optimal = terminalView.getOptimalFrameSize()
-        guard terminal.cols > 0, terminal.rows > 0,
-              optimal.width > 0, optimal.height > 0
-        else { return nil }
-        return CGSize(
-            width: optimal.width / CGFloat(terminal.cols),
-            height: optimal.height / CGFloat(terminal.rows)
-        )
-    }
+    /// Read by `BleatUITests` to check the terminal really fills its view —
+    /// the thing that has to be true and was only ever eyeballed.
+    var terminalFrameForTesting: CGSize { terminalView.frame.size }
+    var fontSizeForTesting: CGFloat { terminalView.font.pointSize }
 
-    /// Makes the terminal exactly `grid` cells, whatever the screen is.
-    ///
-    /// `TerminalView` derives its size from its own bounds — `Int(width /
-    /// cellWidth)` — and there is no public setter, so the frame is the only
-    /// way to ask for a number of columns. Landing exactly on `cols * cellWidth`
-    /// would put that division on a boundary where an error of one ulp costs a
-    /// whole column, and a terminal one column narrower than the stream it is
-    /// being fed wraps every single line. Rounding up and adding half a point
-    /// clears the boundary by far more than any floating-point error and by far
-    /// less than a cell, so it can neither lose a column nor gain one — and the
-    /// sliver is painted in the terminal's own background.
-    private func resizeTerminal(to grid: TerminalGrid, cell: CGSize) {
-        let size = CGSize(
-            width: (cell.width * CGFloat(grid.cols)).rounded(.up) + 0.5,
-            height: (cell.height * CGFloat(grid.rows)).rounded(.up) + 0.5
-        )
-        if terminalView.frame.size != size {
-            terminalView.frame = CGRect(origin: .zero, size: size)
-            terminalView.layoutIfNeeded()
-        }
-        scrollView.contentSize = size
-
-        // Shown once, when there is something off-screen to find. The pane is
-        // wider than the phone by design now, and a scroll indicator that only
-        // appears once you already know to drag is not an affordance.
-        //
-        // Two guards, and both were needed. Only after the **pane's** grid is
-        // in: the pre-grid pass renders the viewport, which has nothing to pan
-        // to, and spending the one flash there suppresses it forever. And a
-        // tolerance wider than the padding added above: a viewport-sized
-        // terminal is up to 1.5pt larger than the bounds it was derived from,
-        // which would otherwise read as "there is more over there".
-        let slack: CGFloat = 2
-        let overflows = size.width > scrollView.bounds.width + slack
-            || size.height > scrollView.bounds.height + slack
-        if !flashed, self.grid != nil, overflows {
-            flashed = true
-            scrollView.flashScrollIndicators()
-        }
-    }
-
-    /// Deduplicated, because both the layout pass and the delegate report the
-    /// same change and either may come first.
+    /// Deduplicated, because the layout pass and the delegate report the same
+    /// change and either may come first.
     private func report(_ grid: TerminalGrid) {
         guard grid.isUsable, reported != grid else { return }
         reported = grid
-        onViewport?(grid)
+        onSize?(grid)
     }
 }
 
 /// Every method is a no-op, and that is the point: this is an observer.
 ///
 /// The protocol has no default implementations, so each one has to be written
-/// out. Two are worth saying out loud — `send` is where keystrokes would go and
-/// there is nowhere to send them until Phase 3, and `clipboardRead` returning
-/// nil means the remote cannot reach into this device's pasteboard.
+/// out. Three are refusals rather than omissions — see `send`, `clipboardCopy`
+/// and `requestOpenLink`.
 extension PaneTerminalController: TerminalViewDelegate {
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        // Not the remote asking for 132 columns, whatever the protocol's own
-        // documentation suggests: SwiftTerm fires this from `processSizeChange`
-        // when the *view's* geometry changes what fits.
+        // **Not reported directly, because this is not only the view's
+        // geometry.** SwiftTerm fires it from `processSizeChange`, but also on
+        // DECCOLM — `ESC[?3h`/`ESC[?3l` — once a pane has sent `ESC[?40h` to
+        // allow 80/132 switching. Bytes printed inside the remote pane could
+        // then drive a stream reopen *and* an `stty` against the user's Mac,
+        // which is remote content reaching a host write.
         //
-        // It is only the viewport while the terminal is still screen-sized.
-        // Once the grid is applied the terminal *is* the pane, and its cols are
-        // the pane's — reporting those as "what the phone can show" would make
-        // the fallback, on a host that never reported a layout, hold whatever
-        // this screen last happened to render.
-        guard grid == nil else { return }
-        report(TerminalGrid(cols: newCols, rows: newRows))
+        // Asking for a layout pass instead re-derives the size from this view's
+        // own bounds, so the answer can only ever come from the phone.
+        view.setNeedsLayout()
     }
 
     func setTerminalTitle(source: TerminalView, title: String) {

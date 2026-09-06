@@ -1,3 +1,4 @@
+import BleatKit
 import SwiftUI
 
 /// The terminal itself, with whatever needs saying over it.
@@ -7,11 +8,16 @@ import SwiftUI
 /// app does not exist yet.
 struct PaneSurface: View {
     let model: PaneModel
+    let isActive: Bool
 
     var body: some View {
         #if canImport(UIKit)
-        TerminalHost(model: model, grid: model.grid)
-            .ignoresSafeArea(.container, edges: .bottom)
+        // **The safe area is respected, deliberately.** Extending under it
+        // looked tidier — the terminal's black reaching the bottom of the glass
+        // — but the pane's last row is its input line, and the home indicator
+        // sits on top of it. A terminal's bottom row is the one that matters
+        // most; there is nothing to gain by hiding it.
+        TerminalHost(model: model, isActive: isActive)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

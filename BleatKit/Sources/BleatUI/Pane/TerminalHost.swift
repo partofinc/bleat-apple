@@ -6,11 +6,6 @@ import SwiftTerm
 /// SwiftTerm's terminal, as a SwiftUI view.
 struct TerminalHost: UIViewControllerRepresentable {
     let model: PaneModel
-    /// Passed in from the view body rather than read off the model in
-    /// `updateUIViewController`, so SwiftUI actually observes it: a
-    /// representable's update runs when its *parent* re-renders, and a
-    /// dependency read only inside `updateUIViewController` never triggers one.
-    let grid: TerminalGrid?
 
     func makeUIViewController(context: Context) -> PaneTerminalController {
         let controller = PaneTerminalController()
@@ -22,24 +17,14 @@ struct TerminalHost: UIViewControllerRepresentable {
                 terminal?.feed(byteArray: ArraySlice(data))
             }
         }
-        controller.onViewport = { [model] viewport in
-            // The fallback size, and the thing that starts the stream. What the
-            // host is asked to render at is the *pane's* grid wherever it will
-            // report one — see `PaneModel.open`.
-            model.open(viewport: viewport)
+        controller.onSize = { [model] grid in
+            // The terminal has sized itself to the screen. That is what the
+            // host is asked to make the pane, and what the stream is opened at.
+            model.show(grid)
         }
-        controller.onGridApplied = { [model] applied in
-            // Frames are held until this arrives: SwiftUI publishes the grid an
-            // async hop before the view resizes to it, and the first frame lands
-            // in that window.
-            model.gridApplied(applied)
-        }
-        controller.grid = grid
         return controller
     }
 
-    func updateUIViewController(_ controller: PaneTerminalController, context: Context) {
-        controller.grid = grid
-    }
+    func updateUIViewController(_ controller: PaneTerminalController, context: Context) {}
 }
 #endif

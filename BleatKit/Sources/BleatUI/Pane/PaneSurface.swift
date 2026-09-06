@@ -11,7 +11,7 @@ struct PaneSurface: View {
 
     var body: some View {
         #if canImport(UIKit)
-        TerminalHost(model: model, grid: model.grid)
+        TerminalHost(model: model)
             .ignoresSafeArea(.container, edges: .bottom)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {

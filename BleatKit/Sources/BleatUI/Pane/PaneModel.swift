@@ -27,30 +27,29 @@ final class PaneModel {
     }
 
     private(set) var phase: Phase = .opening
-    /// The grid the stream was opened at — the **pane's own**, wherever the
-    /// host will report it.
+    /// The grid everything agrees on: what the terminal shows, what the pane's
+    /// pty was set to, and what the stream was opened at.
     ///
-    /// Asking for less crops, and asking for the phone's width cropped a lot:
-    /// re-verified 6 Sept 2026, a line of `A`x60 + `B`x60 + `C`x54 into a
-    /// 174-column pane observed at `--cols 60` came back with 60 A's and no B's
-    /// or C's — gone, not wrapped. So the full grid is asked for and the
-    /// *rendering* is what adapts: `PaneTerminalController` scales the font
-    /// until that many columns fit the screen. Nothing is hidden; how legible
-    /// it is becomes a pinch.
+    /// One number rather than three. The terminal sizes itself to the screen,
+    /// the host is asked to make the pty exactly that, and `observe` is opened
+    /// at it — so there is no grid to reconcile against another and no window
+    /// in which they differ.
     private(set) var grid: TerminalGrid?
-    /// The pane's real grid, when the host would say. Equal to `grid` in the
-    /// normal case, and `nil` on a host that will not report a layout — which
-    /// is the one case where `grid` is this phone's guess and really is a crop.
+    /// The pane's own grid, when the host would say. Only used to tell whether
+    /// anything is being cut off.
     private(set) var paneGrid: TerminalGrid?
-
-    /// True only when the host would not report a layout, so the stream had to
-    /// be opened at this phone's size and is therefore cropped to it.
-    var isCropped: Bool { paneGrid == nil }
-    /// Whether Bleat resized the pane's pty to fit this screen.
-    ///
-    /// Worth surfacing: it is the one write this screen makes to a running
-    /// program, and it changes the width for whoever is at the Mac as well.
+    /// Whether the pane's pty was successfully shrunk to `grid`.
     private(set) var didResizePane = false
+
+    /// Whether output is being cut off.
+    ///
+    /// Only when the resize did not happen and the pane is wider than the
+    /// screen: `observe --cols` crops rather than reflows, so that is the one
+    /// case where the host is sending less than the pane holds.
+    var isCropped: Bool {
+        guard !didResizePane, let grid, let paneGrid else { return false }
+        return grid.cols < paneGrid.cols || grid.rows < paneGrid.rows
+    }
 
     private let connections: ConnectionStore
     private let peer: PairedPeer
@@ -72,15 +71,6 @@ final class PaneModel {
     /// However much of the pane this phone can show. Now the size that is asked
     /// for, rather than a fallback.
     private var viewport: TerminalGrid?
-    /// The grid the terminal view is actually rendering at, as it reports it.
-    ///
-    /// Frames are held until this matches what the stream was opened at. They
-    /// carry absolute cursor positioning, so a frame written for 142 columns
-    /// fed to a 53-column terminal wraps every line — and `observe` sends a
-    /// full redraw only when it opens, so nothing would ever repair it. The
-    /// view resizes an async hop after `grid` is published, which is exactly
-    /// the window the first frame arrives in.
-    private var applied: TerminalGrid?
 
     init(connections: ConnectionStore, peer: PairedPeer, session: String?, target: String) {
         self.connections = connections
@@ -95,40 +85,18 @@ final class PaneModel {
         flush()
     }
 
-    /// The size the terminal view is now rendering at.
-    func gridApplied(_ grid: TerminalGrid) {
-        applied = grid
-        flush()
-    }
-
-    /// Opens the stream at the pane's own size, or this phone's if the host
-    /// will not say what that is.
+    /// The terminal is now this size: match the host to it.
     ///
-    /// **Asking cannot disturb the Mac.** Verified 6 Sept 2026 against an
-    /// isolated headless session: `observe --cols/--rows`, `control` and a
-    /// `terminal.resize` record all left the pane's rect exactly where it was,
-    /// while the frames *that client* received changed size. A pane's grid
-    /// belongs to the session and no stream client can move it. So there is no
-    /// reason to ask for anything but the whole thing.
-    ///
-    /// - Parameter viewport: What this phone can show at the default font. Only
-    ///   a fallback for the size now — the renderer fits the pane to the screen
-    ///   by scaling type instead — but still what reopens the stream on
-    ///   rotation when the fallback is in use, since that one is cut to this
-    ///   screen.
-    func open(viewport: TerminalGrid) {
-        guard viewport.isUsable else { return }
-        let previous = self.viewport
-        self.viewport = viewport
+    /// Called on first layout and on every rotation. Reopening on a change is
+    /// not optional — `observe` sends a full redraw only when it opens, so a
+    /// stream left running after the terminal changed shape would keep painting
+    /// frames written for the old one, and nothing would ever repair it.
+    func show(_ grid: TerminalGrid) {
+        guard grid.isUsable else { return }
+        let previous = viewport
+        viewport = grid
         guard opened != nil else { return start() }
-        // **Rotation reopens, even though the stream's size has not changed.**
-        // The size asked for is the pane's and the pane does not care which way
-        // the phone is held — but the terminal has just been re-fitted to a new
-        // screen, and changing the font makes SwiftTerm reflow its buffer to do
-        // it. `observe` sends a full redraw only when it opens, so without this
-        // the screen keeps whatever the reflow made of it: text cut at the old
-        // width, with nothing ever arriving to repair it. Found on device.
-        if previous != viewport { start() }
+        if previous != grid { start() }
     }
 
     /// Opens again.
@@ -171,6 +139,7 @@ final class PaneModel {
         opened = nil
         grid = nil
         paneGrid = nil
+        didResizePane = false
         let open = stream
         stream = nil
         await open?.close()
@@ -180,20 +149,18 @@ final class PaneModel {
         phase = .opening
         do {
             let client = try await connections.client(for: peer, session: session)
-            guard let viewport, viewport.isUsable else {
+            guard let size = viewport, size.isUsable else {
                 phase = .failed("Bleat could not work out what size to render \(target) at.")
                 return
             }
+            // The pane's own grid, so the pty can be shrunk to fit and the
+            // badge can say when it could not be.
             let pane = try await paneSize(from: client)
-            // **Make the pane fit the phone, rather than the phone cope.**
-            // `PtyResize.target` decides whether and to what — it refuses to
-            // widen, which is not a nicety: a pty wider than herdr's own pane
-            // buffer makes the program emit lines herdr then wraps, and the
-            // result is corruption rather than a crop.
-            let fit = pane.flatMap { PtyResize.target(viewport: viewport, pane: $0) }
+            let fit = pane.flatMap { PtyResize.target(viewport: size, pane: $0) }
             var resized = false
-            if let fit { resized = await resizePty(to: fit, on: peer, client: client) }
-            let size = resized ? (fit ?? viewport) : (pane ?? viewport)
+            if let fit, fit == size {
+                resized = await resizePty(to: size, on: peer, client: client)
+            }
 
             let opened = try await client.observe(
                 target, cols: size.cols, rows: size.rows
@@ -216,7 +183,7 @@ final class PaneModel {
             }
             self.opened = size
             grid = size
-            paneGrid = resized ? size : pane
+            paneGrid = pane
             didResizePane = resized
             stream = opened
             phase = .live
@@ -305,21 +272,20 @@ final class PaneModel {
         }
     }
 
-    /// Holds a frame until there is somewhere correct to put it.
+    /// Holds a frame until there is a renderer for it.
+    ///
+    /// No size check any more: the stream is opened at the size the terminal
+    /// already reported, so a frame can only ever be the right shape for it. A
+    /// rotation tears the stream down and clears `pending` before the new one
+    /// opens, so a frame written for the old shape cannot survive into the new.
     private func deliver(_ data: Data) {
-        guard let sink, isRenderable else { return pending.append(data) }
+        guard let sink else { return pending.append(data) }
         sink(data)
     }
 
     private func flush() {
-        guard let sink, isRenderable else { return }
+        guard let sink else { return }
         for data in pending { sink(data) }
         pending.removeAll()
-    }
-
-    /// Whether the terminal on screen is the size the stream was opened at.
-    private var isRenderable: Bool {
-        guard let grid else { return true }
-        return applied == grid
     }
 }

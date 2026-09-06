@@ -2,18 +2,24 @@
 import SwiftTerm
 import UIKit
 
-/// Hosts SwiftTerm's `TerminalView` at the **pane's** size and lets the user
-/// pan around it.
+/// Hosts SwiftTerm's `TerminalView` at **this phone's** size.
 ///
 /// A view controller rather than a bare view for the layout hook: the size of a
 /// terminal cell depends on the font and is only knowable after a layout pass,
 /// and everything here is arithmetic in cells.
 ///
-/// The pane's grid comes from the host (`pane layout`), not from this screen.
-/// Sizing the terminal to the phone instead is what made the pane arrive
-/// cropped: `observe --cols` is a viewport onto the existing buffer rather than
-/// a resize, so a 142-column pane rendered at 53 loses 63% of every line with
-/// nothing on screen to say so.
+/// The stream is opened at the size measured here, and re-opened whenever it
+/// changes — which on a phone means every rotation. That costs the crop:
+/// `observe --cols` is a viewport onto the existing buffer rather than a resize,
+/// so a 142-column pane rendered at 53 loses everything to the right of column
+/// 53. `GridBadge` is what stops that being silent. It cannot, however, cost
+/// anyone at the Mac anything: a pane's grid belongs to the session and no
+/// stream client can move it (verified 6 Sept 2026).
+///
+/// The scroll view is kept even though the terminal now fits. Rounding can
+/// leave it a fraction over, and a pane whose host reports no layout is still
+/// sized from the same measurement — there is nothing to be gained by removing
+/// the one thing that would rescue either case.
 final class PaneTerminalController: UIViewController {
     /// Called with what the phone can show, whenever that changes. It is the
     /// **fallback** size — used only when the host will not report a layout —
@@ -43,10 +49,10 @@ final class PaneTerminalController: UIViewController {
 
     /// Read-only: it renders, and it will not take the keyboard.
     private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
-    /// Owns panning, because the terminal is deliberately larger than the
-    /// screen. `TerminalView` is itself a `UIScrollView`, so its own scrolling
-    /// is turned off rather than nested inside this one — two scroll views
-    /// competing for the same drag is how a pane becomes impossible to move.
+    /// Owns any panning that is left. `TerminalView` is itself a
+    /// `UIScrollView`, so its own scrolling is turned off rather than nested
+    /// inside this one — two scroll views competing for the same drag is how a
+    /// pane becomes impossible to move.
     private let scrollView = UIScrollView()
     private var reported: TerminalGrid?
     private var announced = false
@@ -144,16 +150,14 @@ final class PaneTerminalController: UIViewController {
         }
         scrollView.contentSize = size
 
-        // Shown once, when there is something off-screen to find. The pane is
-        // wider than the phone by design now, and a scroll indicator that only
-        // appears once you already know to drag is not an affordance.
+        // Shown once, if there is anything off-screen to find. Normally there
+        // is not — the terminal is sized to this screen — so this rarely fires,
+        // and that is the correct outcome rather than dead code: it is what
+        // covers the rounding case and any future size that does overflow.
         //
-        // Two guards, and both were needed. Only after the **pane's** grid is
-        // in: the pre-grid pass renders the viewport, which has nothing to pan
-        // to, and spending the one flash there suppresses it forever. And a
-        // tolerance wider than the padding added above: a viewport-sized
-        // terminal is up to 1.5pt larger than the bounds it was derived from,
-        // which would otherwise read as "there is more over there".
+        // The tolerance has to be wider than the half-point padding added
+        // above, or a terminal derived from these very bounds reads as "there
+        // is more over there".
         let slack: CGFloat = 2
         let overflows = size.width > scrollView.bounds.width + slack
             || size.height > scrollView.bounds.height + slack

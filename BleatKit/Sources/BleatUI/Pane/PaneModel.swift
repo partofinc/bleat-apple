@@ -27,12 +27,30 @@ final class PaneModel {
     }
 
     private(set) var phase: Phase = .opening
-    /// The grid the host is rendering, once known — the pane's own, not this
-    /// phone's. The terminal view sizes itself to this and the user pans.
+    /// The grid the stream was opened at — **this phone's viewport**.
+    ///
+    /// It used to be the pane's own size, with the user panning a terminal
+    /// larger than the screen. That was to avoid the crop below; it is now a
+    /// deliberate trade the other way, so everything on screen is legible
+    /// without moving it.
     private(set) var grid: TerminalGrid?
-    /// True when `grid` is the phone's size rather than the pane's, so the
-    /// screen can admit it is showing a crop.
-    private(set) var isCropped = false
+    /// The pane's real grid on the host, when the host would say. Not rendered
+    /// at — only used to say how much is being cut off, which is the whole
+    /// reason it is still asked for.
+    private(set) var paneGrid: TerminalGrid?
+
+    /// Whether the host is cutting the pane down to fit this screen.
+    ///
+    /// **`observe --cols` crops. It has never reflowed.** Re-verified 6 Sept
+    /// 2026 in an isolated session: a line of `A`x60 + `B`x60 + `C`x54 printed
+    /// into a 174-column pane and observed at `--cols 60` came back with 60 A's
+    /// and *no* B's or C's — gone, not wrapped onto a second line. So a phone
+    /// asking for its own width is choosing to hide everything to the right of
+    /// it, and the screen has to say so.
+    var isCropped: Bool {
+        guard let grid, let paneGrid else { return false }
+        return grid.cols < paneGrid.cols || grid.rows < paneGrid.rows
+    }
 
     private let connections: ConnectionStore
     private let peer: PairedPeer
@@ -51,14 +69,8 @@ final class PaneModel {
     /// What the stream was opened at, so a layout pass that changes nothing
     /// does not tear it down and rebuild it.
     private var opened: TerminalGrid?
-    /// Whether `opened` came from the phone rather than from the host.
-    ///
-    /// It changes what a rotation means. A stream opened at the **pane's** size
-    /// does not care how much of it is on screen, so rotating must not reopen
-    /// it; one opened at the phone's size is cropped to the phone, so rotating
-    /// is exactly when it should.
-    private var openedFromViewport = false
-    /// However much of the grid this phone can show. Only a fallback.
+    /// However much of the pane this phone can show. Now the size that is asked
+    /// for, rather than a fallback.
     private var viewport: TerminalGrid?
     /// The grid the terminal view is actually rendering at, as it reports it.
     ///
@@ -89,27 +101,26 @@ final class PaneModel {
         flush()
     }
 
-    /// Opens the stream, at the pane's own size wherever the host will say what
-    /// that is.
+    /// Opens the stream at **this phone's** size.
     ///
-    /// **`observe --cols` is a viewport, not a resize.** It crops when narrower
-    /// than the pane and pads when wider, so asking for the phone's width
-    /// silently loses everything to the right of it — measured, a 142-column
-    /// pane asked for 53 comes back cut mid-word. A pane is one pty with one
-    /// screen buffer of one width and the program inside wrapped its output to
-    /// that width, so the only honest thing a read-only client can do is render
-    /// the whole grid and let the user move around it.
+    /// **Asking for a size cannot disturb the Mac.** Verified 6 Sept 2026
+    /// against an isolated headless session: `observe --cols/--rows`,
+    /// `control --cols/--rows --takeover` and a `terminal.resize` record all
+    /// left the pane's rect exactly where it was, while the frames *that client*
+    /// received changed size. A pane's grid belongs to the session — the
+    /// attached TUI's window, or `server.headless_cols`/`headless_rows` when
+    /// headless — and no stream client can move it. So the only cost of asking
+    /// for the phone's width is the crop, which is this phone's business.
     ///
-    /// - Parameter viewport: What this phone can show. Kept as the fallback for
-    ///   a host that will not report a layout, and it is a real fallback rather
-    ///   than a failure: a herdr without `pane layout` should still give a
-    ///   usable — if cropped — pane rather than no pane at all.
+    /// - Parameter viewport: What this phone can show. Every rotation reports a
+    ///   new one and reopens the stream, because the crop is cut to this
+    ///   screen: turning the device is exactly when it should change.
     func open(viewport: TerminalGrid) {
         guard viewport.isUsable else { return }
         self.viewport = viewport
-        guard opened != nil else { return start() }
-        // Rotation. Only a stream sized to the phone is affected by one.
-        if openedFromViewport, opened != viewport { start() }
+        guard let opened else { return start() }
+        // Rotation.
+        if opened != viewport { start() }
     }
 
     /// Opens again.
@@ -151,6 +162,7 @@ final class PaneModel {
         // deduplicating itself into a permanently blank pane.
         opened = nil
         grid = nil
+        paneGrid = nil
         let open = stream
         stream = nil
         await open?.close()
@@ -160,14 +172,16 @@ final class PaneModel {
         phase = .opening
         do {
             let client = try await connections.client(for: peer, session: session)
-            let size = try await size(from: client)
-            guard size.grid.isUsable else {
+            guard let viewport, viewport.isUsable else {
                 phase = .failed("Bleat could not work out what size to render \(target) at.")
                 return
             }
+            // Asked for even though it is not rendered at: it is the only way to
+            // tell the user how much of the pane is being cut off.
+            let pane = try await paneSize(from: client)
 
             let opened = try await client.observe(
-                target, cols: size.grid.cols, rows: size.grid.rows
+                target, cols: viewport.cols, rows: viewport.rows
             )
             // A reopen cancelled this reader while the channel was opening. It
             // is a live `herdr terminal session observe` on the host and
@@ -185,10 +199,9 @@ final class PaneModel {
                 await opened.close()
                 return
             }
-            self.opened = size.grid
-            openedFromViewport = size.fromViewport
-            grid = size.grid
-            isCropped = size.fromViewport
+            self.opened = viewport
+            grid = viewport
+            paneGrid = pane
             stream = opened
             phase = .live
 
@@ -216,31 +229,28 @@ final class PaneModel {
         }
     }
 
-    /// The pane's own grid, or this phone's if the host will not report one.
+    /// The pane's real grid on the host, for the badge. `nil` when the host
+    /// will not say, which is not a failure — the stream opens either way now.
     ///
-    /// `HerdrError` and `DecodingError` fall back; `TransportError` does not.
+    /// `HerdrError` and `DecodingError` give up; `TransportError` does not.
     ///
     /// The first two are both "this host will not tell me the layout" — a herdr
-    /// too old to know `pane layout`, a pane just closed, or a reply whose
-    /// shape has moved — and a cropped pane beats no pane. A `TransportError`
-    /// is a different thing entirely and is left to propagate: swallowing it
-    /// would spend a second opening a stream that cannot open either, and
-    /// report the wrong cause when it failed.
-    private func size(from client: HerdrClient) async throws -> (grid: TerminalGrid, fromViewport: Bool) {
-        let fallback = viewport ?? TerminalGrid(cols: 0, rows: 0)
+    /// too old to know `pane layout`, a pane just closed, or a reply whose shape
+    /// has moved — and losing the badge is not worth losing the pane. A
+    /// `TransportError` is a different thing and is left to propagate:
+    /// swallowing it would spend a second opening a stream that cannot open
+    /// either, and report the wrong cause when it failed.
+    private func paneSize(from client: HerdrClient) async throws -> TerminalGrid? {
         do {
             let layout = try await client.paneLayout(target: target)
-            guard let rect = layout.rect(ofPane: target) else {
-                // The tab exists and does not contain this pane. Rendering at a
-                // sibling's width would wrap every line, so the phone's own
-                // size is the better wrong answer.
-                return (fallback, true)
-            }
-            return (TerminalGrid(cols: rect.width, rows: rect.height), false)
+            // A tab that does not contain this pane. A sibling's rect would
+            // make the badge claim a crop that is not happening.
+            return layout.rect(ofPane: target)
+                .map { TerminalGrid(cols: $0.width, rows: $0.height) }
         } catch is HerdrError {
-            return (fallback, true)
+            return nil
         } catch is DecodingError {
-            return (fallback, true)
+            return nil
         }
     }
 

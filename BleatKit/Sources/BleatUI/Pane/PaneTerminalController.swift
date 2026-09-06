@@ -16,10 +16,14 @@ import UIKit
 /// and the type is what gives: the font is sized so the pane's whole width spans
 /// the screen.
 ///
-/// That is an honest trade rather than a free win. 142 columns across a 393pt
-/// iPhone is 2.77pt per cell, which is too small to read — so fit is the
-/// *starting* point and a pinch takes it back up, at which point the scroll view
-/// earns its keep. Rotation re-fits, unless the user has already chosen a size.
+/// The fit takes both axes and the smaller scale wins, but it stops at a
+/// readable floor rather than shrinking without limit. The arithmetic decides
+/// what that means per orientation: 142 columns across a 393pt portrait iPhone
+/// wants 2.77pt cells — about 4.6pt type, the whole pane and none of it legible
+/// — so portrait settles at the floor and pans. Landscape's 852pt over the same
+/// 142 columns is 6pt cells, around 10pt type, which fits entirely and reads
+/// fine. Pinch overrides either, down to a size only a shape is visible at, and
+/// rotation re-fits unless the user has already chosen.
 final class PaneTerminalController: UIViewController {
     /// Called with what the phone can show, whenever that changes. It is the
     /// **fallback** size — used only when the host will not report a layout —
@@ -81,24 +85,40 @@ final class PaneTerminalController: UIViewController {
 
     private struct FitKey: Equatable {
         let cols: Int
-        /// Rounded, because a bounds width that jitters by a hundredth of a
-        /// point would otherwise invalidate the fit on every layout pass and
-        /// re-run the measurement loop forever.
+        let rows: Int
+        /// Rounded, because bounds that jitter by a hundredth of a point would
+        /// otherwise invalidate the fit on every layout pass and re-run the
+        /// measurement loop forever.
         let width: CGFloat
+        let height: CGFloat
 
-        init(cols: Int, width: CGFloat) {
+        init(cols: Int, rows: Int, size: CGSize) {
             self.cols = cols
-            self.width = (width * 2).rounded() / 2
+            self.rows = rows
+            self.width = (size.width * 2).rounded() / 2
+            self.height = (size.height * 2).rounded() / 2
         }
     }
 
     private enum FontSize {
-        /// Below this, glyphs stop being glyphs — at 3x, 4pt type is about
-        /// twelve device pixels tall. Fit is still allowed to go here, because
-        /// seeing the *shape* of a full-width pane is worth something even
-        /// unread, and the pinch is right there.
+        /// The floor for a *pinch*. Below this glyphs stop being glyphs, but
+        /// someone deliberately zooming out to see the shape of a pane may go
+        /// there.
         static let min: CGFloat = 3
         static let max: CGFloat = 24
+        /// The floor for the automatic fit, which is a different question:
+        /// what is worth *opening* at.
+        ///
+        /// Fitting 142 columns into a 393pt portrait iPhone needs 2.77pt cells,
+        /// about 4.6pt type — the whole pane, and none of it readable. Landscape
+        /// is the opposite: 852pt over 142 columns is 6pt cells, around 10pt
+        /// type, which fits entirely and reads fine. So the fit is allowed to
+        /// shrink until it either fits or reaches this, and portrait lands here
+        /// and pans while landscape genuinely fits.
+        ///
+        /// Opening unreadable was the wrong default: nothing is lost by panning,
+        /// and everything is lost by not being able to read it.
+        static let readable: CGFloat = 9
     }
 
     override func viewDidLoad() {
@@ -178,11 +198,17 @@ final class PaneTerminalController: UIViewController {
     /// So: a bounded number of measure-and-adjust steps here, no relayout
     /// request, and a cache key so a settled fit is never recomputed. The key is
     /// what makes the whole thing idempotent — `viewDidLayoutSubviews` runs
-    /// often, and the only safe number of font changes per (grid, width) is one.
+    /// often, and the only safe number of font changes per (grid, size) is one.
+    ///
+    /// **Both dimensions are fitted, and the smaller scale wins.** Width is
+    /// nearly always the binding one on a phone — 47 rows of a 142-column pane
+    /// need a third of the type height that the columns need of the width — but
+    /// a short wide pane exists and fitting only one axis would overflow the
+    /// other with nothing said about it.
     private func fitFontIfNeeded() {
-        guard !fontSizeIsChosen, let grid, grid.cols > 0 else { return }
-        let available = scrollView.bounds.width
-        let key = FitKey(cols: grid.cols, width: available)
+        guard !fontSizeIsChosen, let grid, grid.cols > 0, grid.rows > 0 else { return }
+        let available = scrollView.bounds.size
+        let key = FitKey(cols: grid.cols, rows: grid.rows, size: available)
         guard fitted != key else { return }
         fitted = key
 
@@ -190,12 +216,15 @@ final class PaneTerminalController: UIViewController {
         // within a fraction of a point on the second. The bound exists for the
         // quantised case, where it stops rather than settles.
         for _ in 0..<4 {
-            guard let cell = cellSize(), cell.width > 0 else { return }
-            let spanned = cell.width * CGFloat(grid.cols)
-            guard abs(spanned - available) > 0.5 else { return }
+            guard let cell = cellSize(), cell.width > 0, cell.height > 0 else { return }
+            let scale = min(
+                available.width / (cell.width * CGFloat(grid.cols)),
+                available.height / (cell.height * CGFloat(grid.rows))
+            )
+            guard abs(scale - 1) > 0.005 else { return }
 
-            let wanted = terminalView.font.pointSize * (available / spanned)
-            let clamped = min(naturalFontSize, max(FontSize.min, wanted))
+            let wanted = terminalView.font.pointSize * scale
+            let clamped = min(naturalFontSize, max(FontSize.readable, wanted))
             // Clamped against its own current value, not the raw want: at the
             // ceiling or the floor the correction never shrinks, and without
             // this the loop would spend all four steps asking for the same size.

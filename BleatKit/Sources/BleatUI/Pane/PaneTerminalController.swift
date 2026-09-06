@@ -71,9 +71,15 @@ final class PaneTerminalController: UIViewController {
     /// screen. On a 393pt-wide iPhone that is 393/142 = 2.77pt per cell, which
     /// is honestly too small to read — hence the pinch. Fit is the starting
     /// point, not the only one.
-    /// Whether the user has pinched. Once they have, rotating must not throw
-    /// their chosen size away.
-    private var fontSizeIsChosen = false
+    /// The user's pinch, as a multiple of the fitted size rather than an
+    /// absolute one.
+    ///
+    /// **A multiplier is what lets rotation keep working.** The first version
+    /// stored "the user has chosen a size" and stopped fitting for good — so
+    /// after a single pinch the terminal never adapted to an orientation change
+    /// again, which is most of what a phone does. Kept relative, the fit is
+    /// recomputed for the new screen and the user's zoom rides on top of it.
+    private var zoom: CGFloat = 1
     /// SwiftTerm's own starting size, captured in `viewDidLoad` before anything
     /// changes it — not lazily, or its value would depend on whether the fit had
     /// already run. The ceiling for fitting: a 40-column pane should not be
@@ -86,15 +92,17 @@ final class PaneTerminalController: UIViewController {
     private struct FitKey: Equatable {
         let cols: Int
         let rows: Int
+        let zoom: CGFloat
         /// Rounded, because bounds that jitter by a hundredth of a point would
         /// otherwise invalidate the fit on every layout pass and re-run the
         /// measurement loop forever.
         let width: CGFloat
         let height: CGFloat
 
-        init(cols: Int, rows: Int, size: CGSize) {
+        init(cols: Int, rows: Int, size: CGSize, zoom: CGFloat) {
             self.cols = cols
             self.rows = rows
+            self.zoom = zoom
             self.width = (size.width * 2).rounded() / 2
             self.height = (size.height * 2).rounded() / 2
         }
@@ -206,44 +214,47 @@ final class PaneTerminalController: UIViewController {
     /// a short wide pane exists and fitting only one axis would overflow the
     /// other with nothing said about it.
     private func fitFontIfNeeded() {
-        guard !fontSizeIsChosen, let grid, grid.cols > 0, grid.rows > 0 else { return }
+        guard let grid, grid.cols > 0, grid.rows > 0 else { return }
         let available = scrollView.bounds.size
-        let key = FitKey(cols: grid.cols, rows: grid.rows, size: available)
+        let key = FitKey(cols: grid.cols, rows: grid.rows, size: available, zoom: zoom)
         guard fitted != key else { return }
         fitted = key
 
-        // Four is plenty: each step is a proportional correction, so it lands
-        // within a fraction of a point on the second. The bound exists for the
-        // quantised case, where it stops rather than settles.
-        for _ in 0..<4 {
+        // Solved rather than iterated towards. Cell size is linear in point
+        // size for a monospaced face, so one measurement gives points-per-cell
+        // and the answer follows directly — no feedback, and therefore no loop
+        // to get wrong. The second pass exists only because glyph advances are
+        // quantised, so the first answer can land a fraction off.
+        for _ in 0..<2 {
             guard let cell = cellSize(), cell.width > 0, cell.height > 0 else { return }
-            let scale = min(
-                available.width / (cell.width * CGFloat(grid.cols)),
-                available.height / (cell.height * CGFloat(grid.rows))
-            )
-            guard abs(scale - 1) > 0.005 else { return }
+            let point = terminalView.font.pointSize
+            let perPoint = CGSize(width: cell.width / point, height: cell.height / point)
 
-            let wanted = terminalView.font.pointSize * scale
-            let clamped = min(naturalFontSize, max(FontSize.readable, wanted))
-            // Clamped against its own current value, not the raw want: at the
-            // ceiling or the floor the correction never shrinks, and without
-            // this the loop would spend all four steps asking for the same size.
-            guard abs(clamped - terminalView.font.pointSize) > 0.05 else { return }
-            applyFont(ofSize: clamped)
+            let fit = min(
+                available.width / (perPoint.width * CGFloat(grid.cols)),
+                available.height / (perPoint.height * CGFloat(grid.rows))
+            )
+            // The fit is what the screen can take; the zoom is what the user
+            // asked for on top of it. They clamp differently — the fit stops at
+            // a readable size and at SwiftTerm's natural one, while a pinch may
+            // go anywhere legible glyphs still exist.
+            let base = min(naturalFontSize, max(FontSize.readable, fit))
+            let target = min(FontSize.max, max(FontSize.min, base * zoom))
+
+            guard abs(target - point) > 0.05 else { return }
+            applyFont(ofSize: target)
         }
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began, .changed:
-            fontSizeIsChosen = true
-            let wanted = terminalView.font.pointSize * gesture.scale
-            let clamped = min(FontSize.max, max(FontSize.min, wanted))
+            zoom = min(6, max(0.25, zoom * gesture.scale))
             gesture.scale = 1
-            guard abs(clamped - terminalView.font.pointSize) > 0.05 else { return }
-            applyFont(ofSize: clamped)
-            // Safe from here — a gesture is not inside a layout pass, so this
-            // schedules one rather than re-entering the one that is running.
+            // Invalidated so the next pass refits with the new multiplier;
+            // `setNeedsLayout` is safe here because a gesture is not inside a
+            // layout pass, so it schedules one rather than re-entering it.
+            fitted = nil
             view.setNeedsLayout()
         default:
             break

@@ -20,6 +20,7 @@ struct PaneView: View {
     /// connection so the retry re-races — are identical to the three list
     /// screens and already solved there.
     @State private var text: RemoteList<String>
+    @State private var transcript: TranscriptModel
     @State private var mode: PaneMode = .terminal
     /// When the snapshot was taken, so the reader can admit its age. The
     /// phone's clock, at the moment the answer arrived — the host does not
@@ -44,6 +45,9 @@ struct PaneView: View {
             session: session,
             fetch: { try await $0.paneText(target: target) }
         ))
+        _transcript = State(wrappedValue: TranscriptModel(
+            connections: connections, session: session, target: target
+        ))
     }
 
     var body: some View {
@@ -63,6 +67,14 @@ struct PaneView: View {
 
             if mode == .reader {
                 PaneReaderView(lines: text.state, capturedAt: capturedAt, reload: load)
+            }
+
+            if mode == .transcript {
+                PaneTranscriptView(
+                    phase: transcript.phase,
+                    capturedAt: transcript.capturedAt,
+                    reload: { await transcript.load(for: peer) }
+                )
             }
         }
         .navigationTitle(title)
@@ -99,8 +111,11 @@ struct PaneView: View {
         // the mode so returning to a snapshot already taken does not re-read —
         // the footer says how old it is and pull-to-refresh is right there.
         .task(id: mode) {
-            guard mode == .reader, capturedAt == nil else { return }
-            await load()
+            switch mode {
+            case .terminal: break
+            case .reader: if capturedAt == nil { await load() }
+            case .transcript: if transcript.capturedAt == nil { await transcript.load(for: peer) }
+            }
         }
         .onDisappear { Task { await model.close() } }
     }

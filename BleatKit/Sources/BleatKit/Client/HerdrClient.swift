@@ -61,6 +61,16 @@ public struct HerdrClient: Sendable {
         return try decode(SessionList.self, from: data, command: ["session", "list"]).sessions
     }
 
+    /// One agent row.
+    ///
+    /// `agents()` would answer the same question, but this screen wants exactly
+    /// one pane's `agent_session` and asking the host to enumerate every agent
+    /// in the session to find it is work on someone else's Mac.
+    public func agent(target: String) async throws -> Agent {
+        let result: AgentInfoResult = try await enveloped(["agent", "get", target])
+        return result.agent
+    }
+
     /// A pane's recent output as plain text, for the reader.
     ///
     /// Unlike everything else on this client the payload is **not JSON** and

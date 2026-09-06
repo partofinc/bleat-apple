@@ -35,6 +35,13 @@ public struct PaneLayoutResult: Decodable, Sendable {
     public let layout: PaneLayout
 }
 
+/// `agent get <target>` — one row, the same shape `agent list` returns as an
+/// array. Asked for by the transcript reader, which needs `agent_session` and
+/// nothing else.
+public struct AgentInfoResult: Decodable, Sendable {
+    public let agent: Agent
+}
+
 public struct PaneList: Decodable, Sendable {
     public let panes: [Pane]
 }

@@ -148,3 +148,42 @@ struct TranscriptCommandTests {
         #expect(command.hasSuffix("|| true"))
     }
 }
+
+@Suite("Following an agent while the chat is open")
+struct AgentWaitTests {
+
+    /// The exact argv, because none of it is checked at compile time and every
+    /// part is load-bearing. `--timeout` especially: without it the wait is
+    /// indefinite, which pins an exec channel open on the host forever when a
+    /// phone sleeps mid-wait.
+    @Test("it long-polls for the settled states, with a bounded timeout")
+    func buildsTheWait() async throws {
+        let command = "agent wait w5:p1 --timeout 25000 --until idle --until blocked --until done"
+        let client = HerdrClient(transport: FakeTransport(
+            responses: [command: try Fixture.data("agent-get.json")]
+        ))
+        // FakeTransport throws on any command it was not given, so returning
+        // at all is the assertion on the argv.
+        let agent = try await client.waitForAgent(
+            target: "w5:p1", until: [.idle, .blocked, .done], timeoutMs: 25_000
+        )
+        #expect(agent.paneID == "w5:p1")
+        #expect(agent.agentSession?.value == "0f7a74a0-560a-490e-8b83-b70930263a4a")
+    }
+
+    /// `agent get` and `agent wait` return the same `agent_info` shape — which
+    /// is what lets the chat learn the agent's state from the call it already
+    /// had to make to find the transcript.
+    @Test("agent get decodes the session pointer the chat needs")
+    func decodesAgentGet() async throws {
+        let client = HerdrClient(transport: FakeTransport(
+            responses: ["agent get w5:p1": try Fixture.data("agent-get.json")]
+        ))
+        let agent = try await client.agent(target: "w5:p1")
+        #expect(agent.agentStatus == .idle)
+        #expect(agent.agentSession?.kind == "id")
+        // The pane id is already the full target; joining the workspace on
+        // again gives `w5:w5:p1` and the host answers `pane_not_found`.
+        #expect(agent.target == "w5:p1")
+    }
+}

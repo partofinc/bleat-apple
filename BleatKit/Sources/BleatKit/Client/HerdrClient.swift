@@ -71,6 +71,29 @@ public struct HerdrClient: Sendable {
         return result.agent
     }
 
+    /// Blocks until an agent reaches one of `states`, then returns its row.
+    ///
+    /// A long poll, and the closest thing herdr offers to a push. There is no
+    /// stream behind the chat view — `pane read` and the transcript are both
+    /// snapshots — so this is what makes it feel live: wait for the agent to
+    /// settle, then re-read.
+    ///
+    /// **A timeout arrives as `HerdrError` with code `timeout`**, exit 1 and the
+    /// error envelope on stderr like any other refusal. That is a normal answer
+    /// here rather than a failure: it means "still working", and the caller
+    /// simply waits again. Without `--timeout` the wait is indefinite, which
+    /// would pin an exec channel open forever on a phone that has gone to sleep.
+    public func waitForAgent(
+        target: String,
+        until states: [AgentStatus],
+        timeoutMs: Int
+    ) async throws -> Agent {
+        var args = ["agent", "wait", target, "--timeout", String(timeoutMs)]
+        for state in states { args += ["--until", state.rawValue] }
+        let result: AgentInfoResult = try await enveloped(args)
+        return result.agent
+    }
+
     /// A pane's recent output as plain text, for the reader.
     ///
     /// Unlike everything else on this client the payload is **not JSON** and

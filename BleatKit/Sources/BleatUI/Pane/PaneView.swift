@@ -21,7 +21,14 @@ struct PaneView: View {
     /// screens and already solved there.
     @State private var text: RemoteList<String>
     @State private var transcript: TranscriptModel
-    @State private var mode: PaneMode = .terminal
+    @State private var mode: PaneMode = .chat
+    /// Whether the terminal has ever been asked for on this screen.
+    ///
+    /// It gates *mounting* the terminal, not showing it. Chat is the default
+    /// now, and mounting the terminal regardless would open an `observe` stream
+    /// — a live exec channel on someone's Mac — for every agent screen that is
+    /// opened and read. Once asked for it stays mounted for the reasons below.
+    @State private var terminalWasAskedFor = false
     /// When the snapshot was taken, so the reader can admit its age. The
     /// phone's clock, at the moment the answer arrived — the host does not
     /// stamp the payload.
@@ -52,28 +59,32 @@ struct PaneView: View {
 
     var body: some View {
         ZStack {
-            // **Kept mounted rather than swapped out.** Tearing the terminal
-            // down on every toggle would close the stream, and reopening it
-            // costs a dial plus the second `SSHStream.close()` spends draining
-            // — but worse, `close()` is async and a quick flip back would race
-            // the reopen and tear down the fresh stream. Hidden, the buffer and
-            // the stream both survive, so switching back is instant and shows
-            // the screen as it stands rather than waiting for a redraw the host
-            // only sends when a stream opens.
-            PaneSurface(model: model)
-                .opacity(mode == .terminal ? 1 : 0)
-                .allowsHitTesting(mode == .terminal)
-                .accessibilityHidden(mode != .terminal)
+            // **Once mounted, kept mounted rather than swapped out.** Tearing
+            // the terminal down on every toggle would close the stream, and
+            // reopening it costs a dial plus the second `SSHStream.close()`
+            // spends draining — but worse, `close()` is async and a quick flip
+            // back would race the reopen and tear down the fresh stream.
+            // Hidden, the buffer and the stream both survive, so switching back
+            // is instant and shows the screen as it stands rather than waiting
+            // for a redraw the host only sends when a stream opens.
+            if terminalWasAskedFor {
+                PaneSurface(model: model)
+                    .opacity(mode == .terminal ? 1 : 0)
+                    .allowsHitTesting(mode == .terminal)
+                    .accessibilityHidden(mode != .terminal)
+            }
 
             if mode == .reader {
                 PaneReaderView(lines: text.state, capturedAt: capturedAt, reload: load)
             }
 
-            if mode == .transcript {
-                PaneTranscriptView(
+            if mode == .chat {
+                PaneChatView(
                     phase: transcript.phase,
+                    status: transcript.status,
                     capturedAt: transcript.capturedAt,
-                    reload: { await transcript.load(for: peer) }
+                    reload: { await transcript.load(for: peer) },
+                    showTerminal: { mode = .terminal }
                 )
             }
         }
@@ -112,9 +123,15 @@ struct PaneView: View {
         // the footer says how old it is and pull-to-refresh is right there.
         .task(id: mode) {
             switch mode {
-            case .terminal: break
-            case .reader: if capturedAt == nil { await load() }
-            case .transcript: if transcript.capturedAt == nil { await transcript.load(for: peer) }
+            case .terminal:
+                terminalWasAskedFor = true
+            case .reader:
+                if capturedAt == nil { await load() }
+            case .chat:
+                if transcript.capturedAt == nil { await transcript.load(for: peer) }
+                // Then keep following. `follow` returns immediately unless the
+                // agent is working, so this costs nothing on an idle pane.
+                await transcript.follow(for: peer)
             }
         }
         .onDisappear { Task { await model.close() } }

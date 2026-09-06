@@ -17,9 +17,15 @@
 /// not have it and cannot, since everything herdr knows about an agent it read
 /// off the rendered buffer. What herdr provides is the pointer to it.
 enum PaneMode: CaseIterable, Identifiable {
+    /// The default, and it is the chat rather than the terminal.
+    ///
+    /// An agent screen is opened to read what the agent said, and that is the
+    /// one thing the terminal cannot do well on a phone: the pane is 142
+    /// columns because that is the pty, so portrait shows about the left third
+    /// of every line. The chat was never wrapped to anything and reflows.
+    case chat
     case terminal
     case reader
-    case transcript
 
     var id: Self { self }
 
@@ -27,7 +33,7 @@ enum PaneMode: CaseIterable, Identifiable {
         switch self {
         case .terminal: "Terminal"
         case .reader: "Reader"
-        case .transcript: "Transcript"
+        case .chat: "Chat"
         }
     }
 
@@ -35,7 +41,7 @@ enum PaneMode: CaseIterable, Identifiable {
         switch self {
         case .terminal: "apple.terminal"
         case .reader: "text.alignleft"
-        case .transcript: "bubble.left.and.bubble.right"
+        case .chat: "bubble.left.and.bubble.right"
         }
     }
 }

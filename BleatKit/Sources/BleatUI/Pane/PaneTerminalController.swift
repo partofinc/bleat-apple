@@ -177,9 +177,21 @@ final class PaneTerminalController: UIViewController {
 
         guard let cell = cellSize() else { return }
 
+        // **Measured at the natural font, not the fitted one.** The viewport is
+        // what the model asks the host to resize the pane's pty to, and the fit
+        // then scales the type to whatever the pane turns out to be. Reporting
+        // the *fitted* cell would close that into a loop: a smaller font means
+        // more columns fit, which asks for a wider pane, which needs a smaller
+        // font again. At the natural size it is a fixed property of the screen —
+        // "how much of a readable terminal fits here" — which is the question
+        // the resize is actually answering.
+        let natural = CGSize(
+            width: cell.width * naturalFontSize / terminalView.font.pointSize,
+            height: cell.height * naturalFontSize / terminalView.font.pointSize
+        )
         let viewport = TerminalGrid(
-            cols: Int(scrollView.bounds.width / cell.width),
-            rows: Int(scrollView.bounds.height / cell.height)
+            cols: Int(scrollView.bounds.width / natural.width),
+            rows: Int(scrollView.bounds.height / natural.height)
         )
         let applied = grid ?? viewport
         resizeTerminal(to: applied, cell: cell)

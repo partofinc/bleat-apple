@@ -46,6 +46,11 @@ final class PaneModel {
     /// True only when the host would not report a layout, so the stream had to
     /// be opened at this phone's size and is therefore cropped to it.
     var isCropped: Bool { paneGrid == nil }
+    /// Whether Bleat resized the pane's pty to fit this screen.
+    ///
+    /// Worth surfacing: it is the one write this screen makes to a running
+    /// program, and it changes the width for whoever is at the Mac as well.
+    private(set) var didResizePane = false
 
     private let connections: ConnectionStore
     private let peer: PairedPeer
@@ -180,7 +185,13 @@ final class PaneModel {
                 return
             }
             let pane = try await paneSize(from: client)
-            let size = pane ?? viewport
+            // **Make the pane fit the phone, rather than the phone cope.**
+            // Only when it does not already fit: widening someone's pane
+            // because a phone happens to be in landscape would be gratuitous,
+            // and a session that is already phone-shaped must be left alone.
+            let shrink = pane.map { viewport.cols < $0.cols || viewport.rows < $0.rows } ?? false
+            let resized = shrink ? await resizePty(to: viewport, on: peer, client: client) : false
+            let size = resized ? viewport : (pane ?? viewport)
 
             let opened = try await client.observe(
                 target, cols: size.cols, rows: size.rows
@@ -203,7 +214,8 @@ final class PaneModel {
             }
             self.opened = size
             grid = size
-            paneGrid = pane
+            paneGrid = resized ? size : pane
+            didResizePane = resized
             stream = opened
             phase = .live
 
@@ -228,6 +240,33 @@ final class PaneModel {
             guard !Task.isCancelled else { return }
             await connections.handle(error)
             phase = .failed(ErrorMessage.of(error))
+        }
+    }
+
+    /// Resizes the pane's pty so the program inside wraps to this phone.
+    ///
+    /// Best effort, and deliberately so. Every failure here — no tty, no
+    /// permission, a herdr too old for `pane process-info` — falls back to
+    /// reading the pane at whatever size it already has, which is what the app
+    /// did before this existed. A pane read at the wrong width beats no pane.
+    ///
+    /// - Returns: whether the pty is now this phone's size.
+    private func resizePty(
+        to grid: TerminalGrid,
+        on peer: PairedPeer,
+        client: HerdrClient
+    ) async -> Bool {
+        do {
+            let info = try await client.paneProcessInfo(target: target)
+            guard let pid = info.pid,
+                  let command = PtyResize.command(pid: pid, cols: grid.cols, rows: grid.rows)
+            else { return false }
+            // The plain-shell seam, not herdr: there is no herdr command that
+            // sets a pane's size, which is the whole reason this exists.
+            _ = try await connections.shell(for: peer).run(shell: command)
+            return true
+        } catch {
+            return false
         }
     }
 

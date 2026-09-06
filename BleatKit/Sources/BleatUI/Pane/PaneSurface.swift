@@ -11,8 +11,12 @@ struct PaneSurface: View {
 
     var body: some View {
         #if canImport(UIKit)
+        // **The safe area is respected, deliberately.** Extending under it
+        // looked tidier — the terminal's black reaching the bottom of the glass
+        // — but the pane's last row is its input line, and the home indicator
+        // sits on top of it. A terminal's bottom row is the one that matters
+        // most; there is nothing to gain by hiding it.
         TerminalHost(model: model)
-            .ignoresSafeArea(.container, edges: .bottom)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

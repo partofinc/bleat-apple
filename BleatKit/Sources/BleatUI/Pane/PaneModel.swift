@@ -169,18 +169,19 @@ final class PaneModel {
                 phase = .failed("Bleat could not work out what size to render \(target) at.")
                 return
             }
-            // The pane's own grid, for the badge. **Nothing is written to the
-            // host.** Resizing a live pane's pty was tried and does not work:
-            // the pane's buffer keeps the wrapping it already had and neither
-            // herdr nor the program reflows it, so every widen leaves the old
-            // lines wrapped at the old width — text interleaved at the seam,
-            // permanently. Measured at 100 and again at 90 columns against a
-            // buffer written at 54, and corrupt both times.
             let pane = try await paneSize(from: client)
+            let fit = pane.flatMap { PtyResize.target(viewport: size, pane: $0) }
 
+            // **Opened before the resize, on purpose.** `stty` raises SIGWINCH
+            // and the program repaints on its own schedule; `observe` sends a
+            // full redraw only when it opens, so resizing first races that
+            // repaint and can catch the old screen read at the new width.
+            // Opened first, the repaint arrives as ordinary frames on a stream
+            // already listening and settles the screen a moment later.
             let opened = try await client.observe(
                 target, cols: size.cols, rows: size.rows
             )
+            if let fit { _ = await resizePty(to: fit, on: peer, client: client) }
             // A reopen cancelled this reader while the channel was opening. It
             // is a live `herdr terminal session observe` on the host and
             // nothing else holds it, so installing it now would orphan it — or
@@ -224,6 +225,37 @@ final class PaneModel {
             guard !Task.isCancelled else { return }
             await connections.handle(error)
             phase = .failed(ErrorMessage.of(error))
+        }
+    }
+
+    /// Makes the pane's pty match this screen, so the program inside wraps to
+    /// it.
+    ///
+    /// **The only thing that actually reflows a pane.** `observe --cols` crops
+    /// rather than reflows and no stream client can change a pane's grid, but
+    /// the program writes at the width of its pty and a pty can be set from
+    /// outside. Verified on a clean pane: 53 columns grown to 100 came back
+    /// genuinely wrapped at 100.
+    ///
+    /// Best effort — no tty, no permission, a herdr without `pane process-info`
+    /// all fall back to reading the pane at the size it already has.
+    @discardableResult
+    private func resizePty(
+        to grid: TerminalGrid,
+        on peer: PairedPeer,
+        client: HerdrClient
+    ) async -> Bool {
+        do {
+            let info = try await client.paneProcessInfo(target: target)
+            guard let pid = info.pid,
+                  let command = PtyResize.command(pid: pid, cols: grid.cols, rows: grid.rows)
+            else { return false }
+            // The plain-shell seam, not herdr: there is no herdr command that
+            // sets a pane's size, which is the whole reason this exists.
+            _ = try await connections.shell(for: peer).run(shell: command)
+            return true
+        } catch {
+            return false
         }
     }
 

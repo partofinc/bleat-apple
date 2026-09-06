@@ -70,6 +70,27 @@ final class PaneTerminalController: UIViewController {
     /// Whether the user has pinched. Once they have, rotating must not throw
     /// their chosen size away.
     private var fontSizeIsChosen = false
+    /// SwiftTerm's own starting size, captured in `viewDidLoad` before anything
+    /// changes it — not lazily, or its value would depend on whether the fit had
+    /// already run. The ceiling for fitting: a 40-column pane should not be
+    /// blown up to fill a phone just because it would fit.
+    private var naturalFontSize: CGFloat = UIFont.systemFontSize
+    /// What the current fit was computed for. A settled fit is never recomputed,
+    /// which is what keeps the font change idempotent across layout passes.
+    private var fitted: FitKey?
+
+    private struct FitKey: Equatable {
+        let cols: Int
+        /// Rounded, because a bounds width that jitters by a hundredth of a
+        /// point would otherwise invalidate the fit on every layout pass and
+        /// re-run the measurement loop forever.
+        let width: CGFloat
+
+        init(cols: Int, width: CGFloat) {
+            self.cols = cols
+            self.width = (width * 2).rounded() / 2
+        }
+    }
 
     private enum FontSize {
         /// Below this, glyphs stop being glyphs — at 3x, 4pt type is about
@@ -78,9 +99,6 @@ final class PaneTerminalController: UIViewController {
         /// unread, and the pinch is right there.
         static let min: CGFloat = 3
         static let max: CGFloat = 24
-        /// SwiftTerm's own default, and the ceiling for fitting: a narrow pane
-        /// should not be blown up to fill the screen.
-        static let natural: CGFloat = UIFont.systemFontSize
     }
 
     override func viewDidLoad() {
@@ -92,6 +110,7 @@ final class PaneTerminalController: UIViewController {
         // glyph sharp, and it is the same code path the fit uses.
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
         scrollView.addGestureRecognizer(pinch)
+        naturalFontSize = terminalView.font.pointSize
         scrollView.addSubview(terminalView)
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = true
@@ -125,7 +144,8 @@ final class PaneTerminalController: UIViewController {
 
         // Fit before measuring: the cell size *is* the font, so choosing the
         // font first is what makes the arithmetic below land on the screen.
-        applyFontIfNeeded()
+        // It settles within this pass and never asks for another one.
+        fitFontIfNeeded()
 
         guard let cell = cellSize() else { return }
 
@@ -146,42 +166,70 @@ final class PaneTerminalController: UIViewController {
 
     /// Sets the font so the pane's full width spans the screen.
     ///
-    /// Cell width is linear in point size for a monospaced face, so one
-    /// measurement at the current size gives the scale factor for any other. It
-    /// is clamped at the top to SwiftTerm's natural size — a 40-column pane
-    /// should not be blown up to fill a phone — and at the bottom only by what
-    /// is still a glyph.
-    private func applyFontIfNeeded() {
+    /// **It must converge inside one layout pass, and it must not ask for
+    /// another.** The first version adjusted the font and called
+    /// `setNeedsLayout`, expecting to settle over a few passes. It froze the
+    /// app. Cell width is *not* a continuous function of point size — glyph
+    /// advances are quantised, so two nearby sizes can produce the same cell and
+    /// the correction flips between them forever, each flip requesting one more
+    /// pass. An unbounded feedback loop through UIKit's layout engine is a hang,
+    /// not a slow convergence.
+    ///
+    /// So: a bounded number of measure-and-adjust steps here, no relayout
+    /// request, and a cache key so a settled fit is never recomputed. The key is
+    /// what makes the whole thing idempotent — `viewDidLayoutSubviews` runs
+    /// often, and the only safe number of font changes per (grid, width) is one.
+    private func fitFontIfNeeded() {
         guard !fontSizeIsChosen, let grid, grid.cols > 0 else { return }
-        guard let cell = cellSize(), cell.width > 0 else { return }
+        let available = scrollView.bounds.width
+        let key = FitKey(cols: grid.cols, width: available)
+        guard fitted != key else { return }
+        fitted = key
 
-        let current = terminalView.font.pointSize
-        let wanted = current * (scrollView.bounds.width / (cell.width * CGFloat(grid.cols)))
-        let clamped = min(FontSize.natural, max(FontSize.min, wanted))
-        setFontSize(clamped)
+        // Four is plenty: each step is a proportional correction, so it lands
+        // within a fraction of a point on the second. The bound exists for the
+        // quantised case, where it stops rather than settles.
+        for _ in 0..<4 {
+            guard let cell = cellSize(), cell.width > 0 else { return }
+            let spanned = cell.width * CGFloat(grid.cols)
+            guard abs(spanned - available) > 0.5 else { return }
+
+            let wanted = terminalView.font.pointSize * (available / spanned)
+            let clamped = min(naturalFontSize, max(FontSize.min, wanted))
+            // Clamped against its own current value, not the raw want: at the
+            // ceiling or the floor the correction never shrinks, and without
+            // this the loop would spend all four steps asking for the same size.
+            guard abs(clamped - terminalView.font.pointSize) > 0.05 else { return }
+            applyFont(ofSize: clamped)
+        }
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began, .changed:
             fontSizeIsChosen = true
-            setFontSize(terminalView.font.pointSize * gesture.scale)
+            let wanted = terminalView.font.pointSize * gesture.scale
+            let clamped = min(FontSize.max, max(FontSize.min, wanted))
             gesture.scale = 1
+            guard abs(clamped - terminalView.font.pointSize) > 0.05 else { return }
+            applyFont(ofSize: clamped)
+            // Safe from here — a gesture is not inside a layout pass, so this
+            // schedules one rather than re-entering the one that is running.
+            view.setNeedsLayout()
         default:
             break
         }
     }
 
-    /// Applies a size and re-lays out, if it actually differs.
+    /// Swaps the font and re-measures immediately.
     ///
-    /// Guarded on a real change because setting `font` calls SwiftTerm's
-    /// `resetFont`, which reflows the buffer — and `viewDidLayoutSubviews` runs
-    /// often enough that an unguarded write would reflow on every pass.
-    private func setFontSize(_ size: CGFloat) {
-        let size = min(FontSize.max, max(FontSize.min, size))
-        guard abs(size - terminalView.font.pointSize) > 0.01 else { return }
+    /// `layoutIfNeeded` on the terminal rather than `setNeedsLayout` on the
+    /// controller: SwiftTerm recomputes `cellDimension` in its own
+    /// `layoutSubviews`, so the next `cellSize()` would otherwise still report
+    /// the old cell and every caller here measures right after setting.
+    private func applyFont(ofSize size: CGFloat) {
         terminalView.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        view.setNeedsLayout()
+        terminalView.layoutIfNeeded()
     }
 
     /// One cell, in points.

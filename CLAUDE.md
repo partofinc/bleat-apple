@@ -1126,9 +1126,69 @@ panning has to happen on the client.
 
 **This is not a herdr limitation.** A pane is one pty with one screen buffer of
 a single width, and the program inside wrapped its output to it. Any client that
-wants different wrapping has to resize the pty, which resizes it for whoever is
-at the Mac too — `control` can do that via `terminal.resize`, and Phase 3 will
-have to decide whether it may.
+wants different wrapping would have to resize the pty — and no client of this API
+can. See below.
+
+### A pane's size belongs to the session. No stream client can change it (verified 6 Sept 2026)
+
+An earlier version of this file said a client "has to resize the pty, which
+resizes it for whoever is at the Mac too — `control` can do that via
+`terminal.resize`, and Phase 3 will have to decide whether it may." **The second
+half was false and is withdrawn.** It was reasoning, not measurement. Measured in
+an isolated headless session, against a pane whose rect was 94x39:
+
+| what was attached | pane rect after |
+|---|---|
+| nothing (headless) | 94x39 |
+| `observe --cols 60 --rows 20` | 94x39 |
+| `control --cols 60 --rows 20 --takeover` | 94x39 |
+| `{"type":"terminal.resize","cols":60,"rows":20}` on stdin | 94x39 |
+
+Nothing moved it, and the resize record was *accepted* — no `input ignored` on
+stderr. What it did do is visible in the frames that one client received:
+`120x40 full=true` on attach, then `60x20 full=true` after the record. So
+`--cols`, `--rows` and `terminal.resize` are all **one client's viewport** and
+nothing else.
+
+**The geometry comes from the session's terminal size**, which is the attached
+TUI's window when one is attached and `server.headless_cols` /
+`server.headless_rows` when none is. Proved by restarting the same server under
+`headless_cols = 200, headless_rows = 60`: the pane became 174x59 — 200 minus the
+26-column sidebar, 60 minus the tab-bar row. Every pane in a session shares it;
+on the dev Mac all seven workspaces report `area=142x47+26,1`.
+
+Three consequences:
+
+- **Bleat cannot disturb the Mac through this API, at all.** The Phase 3 question
+  this file used to record — whether Bleat "may" resize someone's pane — does not
+  exist. Nothing about the pane view needs to be defensive about it.
+- **Resizing the Mac's window does change the pane**, because that is the session
+  geometry moving. Bleat sees the new rect on its next `pane layout`; its own
+  `--cols` never enters into it.
+- **A phone-shaped host is a config change, not a client feature.** A herdr
+  running headless sits at `headless_cols`/`headless_rows` (120x40 by default), so
+  a phone-first setup can set those and every pane really is that size. That is a
+  better answer than anything a client can do and needs no code here.
+
+**The crop was re-verified in the same controlled session**, since it is the fact
+the whole design rests on. A single line of `A`x60 + `B`x60 + `C`x54 printed into
+a 174-column pane, read by two observers at once:
+
+| client asks | A | B | C |
+|---|---|---|---|
+| `--cols 174` | 60 | 60 | 54 |
+| `--cols 60` | 60 | **0** | **0** |
+
+The B's and C's are **gone, not wrapped onto a second line**. `--cols` crops. It
+has never reflowed and cannot.
+
+Two escape hatches found while probing, both worth knowing:
+`experimental.allow_nested = true` in the config is what lifts the "nested herdr
+is disabled by default" guard that has blocked scratch sessions from inside a
+herdr pane, and `HERDR_CONFIG_PATH` lets a probe run on its own config without
+touching the user's. Together with `HERDR_SESSION` and an unset
+`HERDR_SOCKET_PATH`, that is how to get a disposable session to measure in —
+`herdr server` with no subcommand runs one headless.
 
 **What the app does now (option 1 of the four that were weighed).** It asks
 `pane layout --pane <target>` for the pane's real grid, opens the stream at
@@ -1208,11 +1268,14 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   captured fixture.
 
 Not taken: fitting the full width to the screen (~2.8pt type, not viable), or
-keeping the crop and merely labelling it. Phase 3 may add a genuine resize via
-`control`, which changes the pane for whoever is at the Mac — and the better
-answer there is a **separate, phone-shaped session**, since the layout is sized
-to the attached client. Untested: what herdr does when two clients of different
-sizes attach to one session (tmux shrinks to the smallest).
+keeping the crop and merely labelling it. A genuine resize via `control` is not
+on the table either — it does not exist, per the section above. The phone-shaped
+answer is a session whose *own* geometry is phone-shaped, set by
+`server.headless_cols`/`headless_rows` on the host.
+
+Resolved by the same probe: two clients of different sizes attaching to one
+session do **not** fight, and nothing shrinks to the smallest as tmux would.
+Each gets its own cropped or padded viewport onto one unchanged grid.
 
 - **Frames that arrive before the renderer exists are held, not dropped.** The
   first frame is the full-screen replay, and on an idle pane nothing follows it

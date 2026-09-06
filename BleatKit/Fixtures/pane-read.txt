@@ -1,0 +1,60 @@
+  branches deleted. Next: wait for Apple's review outcome, and set the App Privacy nutrition label to Data Not Collected in the browser.
+
+❯ v1.2 was released. you can fill the GitHub release for the tag
+
+
+  Ran 1 shell command
+
+⏺ The release already exists and is filled. Let me check what actually changed — whether 1.2 went live on the App Store.
+
+
+⏺ Skill(appstore-connect)
+  ⎿  Successfully loaded skill
+
+
+
+  Searched for 1 pattern, listed 1 directory, ran 2 shell commands
+
+⏺ 1.2 is READY_FOR_SALE — live on the store. Let me look at the whole release body as it stands.
+
+  Ran 2 shell commands
+
+⏺ The v1.2 release is already filled — I published it on 3 September, right after the submission, and it's marked Latest. Nothing is missing
+  from it.
+
+  What actually changed since then is on Apple's side, and it's the good news: 1.2 is READY_FOR_SALE. Version state READY_FOR_DISTRIBUTION,
+  build 11 VALID from 7f83e80. All three versions — 1.0, 1.1, 1.2 — are live.
+
+  So the release body's opening line, "On the App Store: …", is now true rather than anticipatory. It was written the same way for 1.1, and
+  1.1 also went live afterwards, so the pattern already holds; there's no stale claim to correct. The one line I'd have had to fix if review
+  had gone the other way is the Provenance section, and it's accurate.
+
+  Where things stand:
+
+  ┌───────────┬──────────────────────────────────────────────────┐
+  │           │                                                  │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ App Store │ 1.2 READY_FOR_SALE, build 11                     │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ GitHub    │ v1.2 release published, Latest                   │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ Repo      │ main at 6a2424d, clean, no branches, no open PRs │
+  └───────────┴──────────────────────────────────────────────────┘
+
+  If you meant something specific that the release is missing — a download link, screenshots, the store copy alongside the engineering notes —
+  tell me which and I'll add it. Otherwise 1.2 is fully closed out, and the only thing still outstanding from this whole cycle is the App
+  Privacy nutrition label, which has no API and has to be set in the browser.
+
+✻ Crunched for 1m 7s · done Saturday 11:54 AM
+
+※ recap: KettleForge 1.2 is fully shipped: live on the App Store, GitHub release published, main clean with no open branches or PRs. Nothing
+  is pending except the App Privacy nutrition label, which you'd need to set in the browser. (disable recaps in /config)
+
+❯ /compact
+  ⎿  Compacted (ctrl+o to see full summary)
+  ⎿  Skills restored (artifact-design)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── KettelForge ─
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents                                                                                    /rc

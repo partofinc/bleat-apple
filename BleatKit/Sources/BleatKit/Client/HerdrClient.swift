@@ -61,6 +61,28 @@ public struct HerdrClient: Sendable {
         return try decode(SessionList.self, from: data, command: ["session", "list"]).sessions
     }
 
+    /// A pane's recent output as plain text, for the reader.
+    ///
+    /// Unlike everything else on this client the payload is **not JSON** and
+    /// carries no envelope: `pane read` writes the text straight to stdout. A
+    /// failure still arrives the usual way — the error envelope on stderr with
+    /// a non-zero exit — so `HerdrError` reaches the caller through the
+    /// transport rather than through decoding.
+    ///
+    /// - Parameter lines: How much scrollback to ask for. The host returns the
+    ///   *last* N lines and silently gives fewer when the buffer holds fewer,
+    ///   so this is a ceiling rather than a request that can fail. `pane read`
+    ///   caps around 1000 lines whatever is asked for.
+    public func paneText(target: String, lines: Int = 400) async throws -> [String] {
+        let data = try await transport.run([
+            "pane", "read", target,
+            "--source", "recent-unwrapped",
+            "--format", "text",
+            "--lines", String(lines),
+        ])
+        return PaneText.lines(from: data)
+    }
+
     // MARK: - Pane stream
 
     /// Attach to a pane's live stream.

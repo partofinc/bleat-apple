@@ -743,6 +743,16 @@ stdout exactly — but `.zshenv` is sourced for every non-interactive zsh, so
 anything a user's startup file prints would have made every healthy endpoint
 fail, and the message blames the network.
 
+**When every endpoint left is an overlay address, the message names the VPN.**
+On cellular against a Tailscale-only host, `endpointsToTry` has already dropped
+the `.local` name and the LAN addresses as unroutable — so if nothing answered,
+the likeliest cause is the tunnel being down on the *phone*, and "none of N
+address(es) could be reached" sends the user to check a network that is working
+perfectly. `PeerConnector` cannot see the VPN's state (`Network` is Apple-only
+and that file compiles for Linux), so it names the possibility rather than
+asserting it. A mixed list keeps the ordinary message: a LAN address in it means
+the phone is on Wi-Fi and the host is simply off, asleep, or elsewhere.
+
 A host key mismatch is promoted over every other failure when nothing wins — it
 is the only outcome that is not about the network, and reporting it as "no
 address answered" sends the user to check their Wi-Fi. Verified live: with the

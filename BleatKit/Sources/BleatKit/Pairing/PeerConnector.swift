@@ -114,7 +114,7 @@ public enum PeerConnector {
     /// it was not the one the pairing code describes — either the code is for a
     /// different machine, or something is standing in for it. Reporting that as
     /// "no address answered" sends the user to check their Wi-Fi.
-    private static func failure(
+    static func failure(
         from failures: [(Endpoint, any Error)],
         endpoints: [Endpoint]
     ) -> any Error {
@@ -129,9 +129,24 @@ public enum PeerConnector {
         for (_, error) in failures {
             if case TransportError.authenticationFailed = error { return error }
         }
+        let addresses = endpoints.map(\.description).joined(separator: ", ")
+        // Every surviving candidate is a mesh VPN address, which happens on
+        // cellular against a host that is only reachable through the tunnel:
+        // `endpointsToTry` has already dropped the `.local` name and the LAN
+        // addresses as unroutable. The likeliest cause is then the tunnel being
+        // down on *this* device, and "no address could be reached" sends the
+        // user to check a network that is working perfectly. Nothing here can
+        // see the VPN's state — `Network` is Apple-only and this file compiles
+        // for Linux — so it names the possibility rather than asserting it.
+        if !endpoints.isEmpty, endpoints.allSatisfy({ $0.reach == .overlay }) {
+            return TransportError.connectionFailed(
+                "this host is only reachable over a mesh VPN from here, and "
+                + "nothing answered — check the VPN is connected on this device: "
+                + addresses
+            )
+        }
         return TransportError.connectionFailed(
-            "none of \(endpoints.count) address(es) could be reached: "
-            + endpoints.map(\.description).joined(separator: ", ")
+            "none of \(endpoints.count) address(es) could be reached: " + addresses
         )
     }
 

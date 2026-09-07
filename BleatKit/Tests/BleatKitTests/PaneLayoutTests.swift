@@ -80,31 +80,44 @@ struct PaneLayoutTests {
 
     /// A split tab holds several panes and the right one has to be picked.
     ///
-    /// **Derived from the captured fixture rather than captured**, and that is
-    /// a real gap: no split has ever been observed live. `wA` has two panes but
-    /// they are in different tabs (`wA:t1`, `wA:t4`), and a split could not be
-    /// made to capture — `herdr session attach` refuses from inside a herdr
-    /// pane ("nested herdr is disabled by default"), and creating one in the
-    /// live `work` session is out of bounds. So the shape here is the host's;
-    /// only the second entry is synthesised.
-    @Test("in a split tab, the pane is found by id rather than by position")
-    func splitTab() throws {
-        let real = try JSONDecoder().decode(
-            HerdrEnvelope<PaneLayoutResult>.self, from: try Fixture.data("pane-layout.json")
-        ).result.layout
-        let sibling = PaneLayout.Placement(
-            paneID: "w5:p2",
-            rect: PaneLayout.Rect(width: 70, height: 47, x: 98, y: 1)
-        )
-        let split = PaneLayout(
-            tabID: real.tabID,
-            workspaceID: real.workspaceID,
-            area: real.area,
-            // The target second, so taking `panes.first` cannot pass.
-            panes: [sibling] + real.panes
-        )
+    /// **Captured live, 7 Sept 2026** — `herdr pane split w2:p1 --direction
+    /// right` in an isolated probe workspace, then `pane layout --pane w2:p1`.
+    /// This closes CLAUDE.md's longest-standing open question: until now the
+    /// split case was *derived* from the single-pane fixture, with the sibling
+    /// synthesised, because a split had never been observed.
+    ///
+    /// The numbers are the point. The tab's `area` is 54 columns and each pane
+    /// is **27** — so a client that rendered a split pane at `area.width`, the
+    /// obvious mistake, would wrap every single line at double the real width.
+    /// Looking the pane up by id is what avoids it.
+    @Test("in a split tab, the pane is found by id and gets half the area")
+    func splitTab() async throws {
+        let client = HerdrClient(transport: FakeTransport(
+            responses: ["pane layout --pane w2:p1": try Fixture.data("pane-layout-split.json")]
+        ))
+        let layout = try await client.paneLayout(target: "w2:p1")
 
-        #expect(split.rect(ofPane: "w5:p1")?.width == 142)
-        #expect(split.rect(ofPane: "w5:p2")?.width == 70)
+        #expect(layout.tabID == "w2:t1")
+        #expect(layout.panes.count == 2)
+        #expect(layout.area?.width == 54)
+        #expect(layout.rect(ofPane: "w2:p1")?.width == 27)
+        #expect(layout.rect(ofPane: "w2:p2")?.width == 27)
+        // Side by side, so the second starts where the first ends.
+        #expect(layout.rect(ofPane: "w2:p1")?.x == 0)
+        #expect(layout.rect(ofPane: "w2:p2")?.x == 27)
+    }
+
+    /// A real split reply carries a `splits` array — a field nothing in the app
+    /// reads and that no fixture had ever contained. Herdr JSON's rule is that
+    /// unknown keys are ignored rather than fatal, and this is the first
+    /// capture that actually exercises it on `pane layout`.
+    @Test("an unread field in a real reply is ignored, not fatal")
+    func toleratesSplitsField() throws {
+        let raw = try String(data: try Fixture.data("pane-layout-split.json"), encoding: .utf8)
+        #expect(raw?.contains("\"splits\"") == true)
+        let layout = try JSONDecoder().decode(
+            HerdrEnvelope<PaneLayoutResult>.self, from: try Fixture.data("pane-layout-split.json")
+        ).result.layout
+        #expect(layout.panes.count == 2)
     }
 }

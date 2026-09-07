@@ -16,6 +16,15 @@ public final class AppContext {
     /// removing a device's access is not something a screen going away should
     /// abandon halfway.
     public let unpair: UnpairModel
+    /// The pairing sheet. A router for the same reason `unpair` is one: it can
+    /// be started from the peer list *or* by the system handing the app a
+    /// `bleat://` link while any screen is on top.
+    public let pairing = PairingRouter()
+    /// Whether iOS is letting the app onto the local network. Owned here, not
+    /// by the pairing sheet, because the browser it watches has to outlive any
+    /// one sheet — a permission granted after a sheet closed is still the
+    /// answer the next one needs.
+    public let localNetwork = LocalNetworkAccess()
 
     public init(peers: PeerStore) {
         let reachability = Reachability()

@@ -14,6 +14,13 @@ struct PairingPhaseView: View {
             // rather than showing a bare spinner.
             ProgressView("Reaching the host…")
                 .controlSize(.large)
+        case .awaitingPermission:
+            // A different wait, and saying so matters: the user has an alert in
+            // front of them and nothing here explains why the app is stalled.
+            // Dismissable, unlike `pairing` — nothing is in flight.
+            ProgressView("Waiting for permission to reach your local network…")
+                .controlSize(.large)
+                .multilineTextAlignment(.center)
         case .paired(let peer):
             PairedResultView(peer: peer)
         case .failed(let message):

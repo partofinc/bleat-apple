@@ -1,0 +1,54 @@
+{
+    "id": "cli:agent:list",
+    "result": {
+        "agents": [
+            {
+                "agent": "claude",
+                "agent_session": {
+                    "agent": "claude",
+                    "kind": "id",
+                    "source": "herdr:claude",
+                    "value": "48e16e8d-fdd8-4698-9720-5054de308348"
+                },
+                "agent_status": "idle",
+                "cwd": "/Users/ravil/Developer/rawillk/bleat-apple",
+                "focused": true,
+                "foreground_cwd": "/Users/ravil/Developer/rawillk/bleat-apple",
+                "interactive_ready": true,
+                "name": "bleat",
+                "pane_id": "w1:p1",
+                "revision": 24,
+                "state_change_seq": 13,
+                "tab_id": "w1:t1",
+                "terminal_id": "term_65ad2a3144de61",
+                "terminal_title": "\u2733 Claude Code",
+                "terminal_title_stripped": "Claude Code",
+                "workspace_id": "w1"
+            },
+            {
+                "agent": "claude",
+                "agent_session": {
+                    "agent": "claude",
+                    "kind": "id",
+                    "source": "herdr:claude",
+                    "value": "b682dc98-9922-4f52-b81c-9b8912c198b2"
+                },
+                "agent_status": "done",
+                "cwd": "/private/tmp/bleat-probe",
+                "focused": false,
+                "foreground_cwd": "/private/tmp/bleat-probe",
+                "interactive_ready": true,
+                "name": "probe",
+                "pane_id": "w2:p1",
+                "revision": 4,
+                "state_change_seq": 17,
+                "tab_id": "w2:t1",
+                "terminal_id": "term_65ade2bd32d122",
+                "terminal_title": "\u2733 Session naming",
+                "terminal_title_stripped": "Session naming",
+                "workspace_id": "w2"
+            }
+        ],
+        "type": "agent_list"
+    }
+}

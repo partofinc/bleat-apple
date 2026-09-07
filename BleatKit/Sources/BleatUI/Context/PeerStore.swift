@@ -115,6 +115,36 @@ public final class PeerStore {
         reload()
     }
 
+    /// Adds an address the user typed in.
+    ///
+    /// - Returns: whether anything was stored, so the sheet can stay open and
+    ///   say why when nothing was.
+    @discardableResult
+    public func addEndpoint(_ endpoint: Endpoint, to peer: PairedPeer) -> Bool {
+        do {
+            let stored = try registry.addEndpoint(endpoint, forHostKey: peer.hostKey)
+            reload()
+            return stored != nil
+        } catch {
+            failure = String(describing: error)
+            return false
+        }
+    }
+
+    /// Removes an address. Refuses to remove the last one — see
+    /// `PeerRegistry.removeEndpoint`.
+    @discardableResult
+    public func removeEndpoint(_ endpoint: Endpoint, from peer: PairedPeer) -> Bool {
+        do {
+            let stored = try registry.removeEndpoint(endpoint, forHostKey: peer.hostKey)
+            reload()
+            return stored != nil
+        } catch {
+            failure = String(describing: error)
+            return false
+        }
+    }
+
     // MARK: - Device key
 
     /// The device's key, created on first read.

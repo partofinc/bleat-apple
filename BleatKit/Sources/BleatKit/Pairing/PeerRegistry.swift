@@ -145,6 +145,71 @@ public struct PeerRegistry: Sendable {
         return refreshed
     }
 
+    /// Adds an address the user supplied, which detection could not find.
+    ///
+    /// The backstop for everything the other two paths miss. A zero-trust
+    /// overlay's private DNS name is the motivating case — nothing on the host
+    /// knows it, so no refresh can ever discover it — but it equally covers a
+    /// port-forward, a jump address, and a host that has moved somewhere the
+    /// phone cannot reach until it is told where.
+    ///
+    /// Deliberately **not** recorded in `hostReportedEndpoints`, which is what
+    /// makes it sticky: a refresh may only prune what the host once claimed, so
+    /// an address the host has never mentioned survives every refresh. That is
+    /// the whole point — it was added precisely because detection cannot see
+    /// it.
+    ///
+    /// - Returns: nil for an unknown peer or an address already present. A
+    ///   duplicate is not an error; the address the user wanted is there.
+    @discardableResult
+    public func addEndpoint(_ endpoint: Endpoint, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard !peers[index].endpoints.contains(endpoint) else { return peers[index] }
+        peers[index].endpoints.append(endpoint)
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Removes an address the user no longer wants dialled.
+    ///
+    /// Mostly for what a refresh cannot prune: an endpoint that came from the
+    /// QR was never attributed to the host's self-report, so it is sticky, and
+    /// a stale one would otherwise be raced on every connection forever.
+    ///
+    /// **`lastGoodEndpoint` is cleared when it is the one being removed**, and
+    /// this is load-bearing rather than tidiness. `refreshingEndpoints` puts the
+    /// last-good address back into the list unconditionally — it completed a
+    /// handshake, which outranks any report — so leaving the field pointing at
+    /// a deleted address would have the next refresh silently restore it, and
+    /// the removal would appear to undo itself minutes later.
+    ///
+    /// The **last** endpoint cannot be removed. A peer with none is
+    /// unreachable and unrepairable from the phone: there is nothing left to
+    /// connect over, so nothing can add one back, and the only way out is a
+    /// walk to the Mac. Unpairing is the deliberate way to be rid of a peer.
+    ///
+    /// An address the host still reports **will come back on the next
+    /// refresh**, and that is correct: the host is saying it answers there.
+    /// A tombstone would make removal stick, at the cost of a way to blind the
+    /// app permanently to a working address; racing one extra endpoint
+    /// concurrently is much the cheaper mistake.
+    ///
+    /// - Returns: nil when the peer is unknown, the address is not on it, or it
+    ///   is the only one left.
+    @discardableResult
+    public func removeEndpoint(_ endpoint: Endpoint, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard peers[index].endpoints.contains(endpoint), peers[index].endpoints.count > 1 else {
+            return nil
+        }
+        peers[index].endpoints.removeAll { $0 == endpoint }
+        if peers[index].lastGoodEndpoint == endpoint { peers[index].lastGoodEndpoint = nil }
+        try write(peers)
+        return peers[index]
+    }
+
     /// Forgets a peer.
     ///
     /// This does **not** remove the device key from the host — nothing here can

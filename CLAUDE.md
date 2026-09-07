@@ -891,8 +891,50 @@ the newer record's `lastGoodEndpoint`, and this runs moments after
 **It is a hedge, not a guarantee.** A refresh only happens over a connection
 that still works, so a host whose every stored endpoint died at once is still a
 re-pair. What it removes is the far more common case where *one* of them
-changed. An endpoint from the QR that the host has since stopped reporting also
-lingers, since it was never attributed — removing one by hand is the answer.
+changed.
+
+### Addresses added by hand (Phase 2)
+
+The backstop under the other two. Pairing enumerates what the host can see about
+itself and a refresh asks it again on every connection, but **neither can
+produce an address the host does not know it has** — which is exactly a
+zero-trust overlay's private DNS name, held entirely on the client's side. It
+equally covers a port forward or a jump address, which have no discovery story
+at all.
+
+`PeerDetailView`'s "Reachable at" section adds and swipes-to-remove;
+`PeerRegistry.addEndpoint` / `removeEndpoint` are targeted mutations like the
+rest.
+
+- **An added address is never written into `hostReportedEndpoints`**, which is
+  what makes it permanent: a refresh may only prune what the host once claimed,
+  so an address the host has never mentioned survives every refresh there will
+  ever be. That is the entire point of adding it.
+- **Removing the last-good address clears `lastGoodEndpoint`, and that is
+  load-bearing.** `refreshingEndpoints` restores the last-good address
+  unconditionally — it completed a handshake, which outranks any report — so a
+  removal that left the field pointing at a deleted address would be silently
+  undone by the next connection's refresh, minutes later, with nothing on screen
+  to explain it.
+- **The last address cannot be removed**, and the swipe action is hidden rather
+  than shown and refused. A peer with none is unreachable *and* unrepairable
+  from the phone: nothing is left to connect over, so nothing can add one back.
+  Unpairing is the deliberate way to be rid of a peer.
+- **An address the host still reports comes back on the next refresh**, and the
+  section footer says the list maintains itself so this is not a surprise. A
+  tombstone would make removal stick, at the cost of a way to blind the app
+  permanently to a working address — racing one extra endpoint concurrently is
+  much the cheaper mistake. An address the host has *never* reported stays
+  removed, which is the case that matters: a stale entry from a QR.
+- The port defaults to **the peer's own**, not 22. An address typed without one
+  silently inheriting 22 on a host running sshd elsewhere produces an entry that
+  looks right in the list and refuses every connection — the same trap
+  `bleat inspect --endpoint` avoids by re-parsing against `--port`.
+- `PeerDetailView` reads the peer back out of `PeerStore` by host key rather
+  than using the value it was pushed with, or an edit would not appear until the
+  screen was popped and pushed again. It falls back to that value so unpairing
+  does not flash an empty screen in the moment between the record being deleted
+  and the navigation popping.
 
 ### Connecting to a paired peer (Phase 2)
 

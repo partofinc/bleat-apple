@@ -26,18 +26,35 @@ enum Inspect {
         print("endpoints     \(report.endpoints.isEmpty ? "(none found)" : "")")
         for endpoint in report.endpoints {
             let reach = switch endpoint.reach {
-            case .lan:      "lan       — same network only"
-            case .overlay:  "overlay   — works over the tunnel, including cellular"
-            case .routable: "routable  — public"
+            case .linkScoped:     "link      — same network only, and no VPN changes that"
+            // Named apart from the link-scoped case because a VPN can carry
+            // this one and cannot carry that one, which is the whole reason a
+            // phone on cellular with a zero-trust client up can still reach
+            // this host.
+            case .privateAddress: "lan       — same network, or a VPN routing it"
+            case .overlay:        "overlay   — works over the tunnel, including cellular"
+            case .routable:       "routable  — public"
             }
             print("  \(endpoint.description.padded(42)) \(reach)")
         }
 
         if !report.endpoints.contains(where: \.isUsableOffLink) {
             print("")
-            print("note: every endpoint is LAN-only, so a phone will only reach this")
-            print("      host on the same network. Add one with --endpoint, or bring")
-            print("      up a mesh VPN, if you want it to work from cellular.")
+            // Two different warnings, because the remedies differ. A VPN can
+            // route a private address and cannot route an mDNS name, so
+            // offering one to a host known only by its `.local` name would send
+            // the user to set up a tunnel that could never carry it.
+            if report.endpoints.contains(where: { $0.reach == .privateAddress }) {
+                print("note: every endpoint is LAN-only, so a phone will reach this host")
+                print("      on the same network, or through a VPN that routes one of")
+                print("      the private addresses above. Add one with --endpoint, or")
+                print("      bring up a mesh VPN, to reach it from cellular unaided.")
+            } else {
+                print("note: this host is only known by names that work on its own")
+                print("      network, and no VPN carries those. Add a reachable address")
+                print("      with --endpoint, or bring up a mesh VPN, if you want a")
+                print("      phone to reach it from anywhere else.")
+            }
         }
     }
 }

@@ -14,13 +14,27 @@ public enum ConnectionPolicy {
     /// won, so one made on Wi-Fi against a `.local` name can only fail after
     /// the phone moves to cellular — and the peer's overlay address, which
     /// would have worked, never gets a turn because the cache answered first.
+    ///
+    /// The tunnel is part of that state, because it changes which endpoints are
+    /// candidates: a private address is dropped without one and raced with one,
+    /// so a connection made before a VPN connected was raced over a strictly
+    /// smaller list, and reusing it would pin the phone to that list for as
+    /// long as the screen stays open.
+    ///
+    /// **Compared through `candidateIdentity`, not as a whole.** On the local
+    /// link every endpoint is a candidate whatever the tunnel is doing, so a
+    /// tunnel change there cannot alter the raced list — and comparing it would
+    /// discard a working connection for nothing. An on-demand VPN profile
+    /// connecting and dropping while the app sits on Wi-Fi would tear down the
+    /// live SSH session and re-handshake on the next request, repeatedly.
     public static func canReuse(
         cachedHostKey: String,
-        cachedOnLocalLink: Bool,
+        cachedLink: LinkState,
         for peer: PairedPeer,
-        onLocalLink: Bool
+        link: LinkState
     ) -> Bool {
-        cachedHostKey == peer.hostKey && cachedOnLocalLink == onLocalLink
+        cachedHostKey == peer.hostKey
+            && cachedLink.candidateIdentity == link.candidateIdentity
     }
 
     /// Whether an error means the connection itself is over, rather than the

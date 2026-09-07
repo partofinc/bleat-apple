@@ -54,7 +54,7 @@ public enum PeerConnector {
         privateKey: SSHKeyPair,
         herdrPath: String = "herdr",
         session: String? = nil,
-        droppedUnroutable: Bool = false
+        everyCandidateNeedsATunnel: Bool = false
     ) async throws -> Connection {
         guard !endpoints.isEmpty else {
             throw TransportError.connectionFailed("no endpoint to try")
@@ -104,7 +104,7 @@ public enum PeerConnector {
                     }
                     _ = finish(.failure(failure(
                         from: failures, endpoints: endpoints,
-                        droppedUnroutable: droppedUnroutable
+                        everyCandidateNeedsATunnel: everyCandidateNeedsATunnel
                     )))
                 }
             }
@@ -121,7 +121,7 @@ public enum PeerConnector {
     static func failure(
         from failures: [(Endpoint, any Error)],
         endpoints: [Endpoint],
-        droppedUnroutable: Bool = false
+        everyCandidateNeedsATunnel: Bool = false
     ) -> any Error {
         for (_, error) in failures {
             if case TransportError.hostKeyMismatch = error { return error }
@@ -135,29 +135,42 @@ public enum PeerConnector {
             if case TransportError.authenticationFailed = error { return error }
         }
         let addresses = endpoints.map(\.description).joined(separator: ", ")
-        // Every candidate was a mesh VPN address *and the caller ruled the rest
-        // out*, which is the cellular case: `endpointsToTry` dropped the
-        // `.local` name and the LAN addresses as unroutable, so the tunnel is
-        // the only way in and the likeliest reason nothing answered is that it
-        // is down on this device. "No address could be reached" would send the
-        // user to check a network that is working perfectly.
+        // Every candidate needed a tunnel to reach *from where the phone is
+        // standing*, and nothing answered — so the likeliest cause is that the
+        // tunnel is down on this device. "No address could be reached" would
+        // send the user to check a network that is working perfectly.
         //
-        // **The flag is load-bearing, not decoration.** Pairing hands this a
-        // deliberately narrowed list — one endpoint, the one that just carried
-        // the enrollment handshake — to ask whether *that* host accepts the new
-        // key. If that single attempt fails on a tunnel address, telling the
-        // user to check a VPN that demonstrably just worked would be false, at
-        // the one moment in the flow where the enrollment key may already be
-        // spent. Without the flag this branch fires there.
+        // **The caller computes this, and only one caller can.** The question
+        // is link-dependent: a mesh address always needs a tunnel, while an
+        // ordinary private address needs one only off the local link — on Wi-Fi
+        // it is simply the network the phone is on, and a failure there means
+        // the host is asleep. `PeerConnection` knows both the link and what it
+        // filtered out; `PeerConnector` knows neither.
+        //
+        // An earlier version passed "the caller ruled some endpoints out" and
+        // re-derived the rest here. That conflated two different facts and lost
+        // a case: a peer whose only endpoint is a Tailscale address, reached
+        // from Wi-Fi with the tunnel off, is exactly when this advice is right
+        // and exactly when a `!onLocalLink` flag suppresses it.
+        //
+        // **It stays a parameter rather than a computation because pairing must
+        // not trigger it.** `PairingClient` hands this a deliberately narrowed
+        // list — one endpoint, the one that just carried the enrollment
+        // handshake — to ask whether the host accepts the new device key. Every
+        // candidate there is trivially a tunnel address, so a self-derived
+        // condition would tell the user to check a VPN that had demonstrably
+        // just worked, at the one moment in the flow where the enrollment key
+        // may already be spent and rescanning is not an option.
         //
         // Nothing here can see the VPN's state — `Network` is Apple-only and
         // this file compiles for Linux — so it names the possibility rather
         // than asserting it.
-        if droppedUnroutable, !endpoints.isEmpty, endpoints.allSatisfy({ $0.reach == .overlay }) {
+        //
+        if everyCandidateNeedsATunnel, !endpoints.isEmpty {
             return TransportError.overlayUnreachable(
-                "this host is only reachable over a mesh VPN from here, and "
-                + "nothing answered — check the VPN is connected on this device: "
-                + addresses
+                "this host is only reachable over a VPN from here, and nothing "
+                + "answered — check that a VPN reaching it is connected on this "
+                + "device: " + addresses
             )
         }
         return TransportError.connectionFailed(

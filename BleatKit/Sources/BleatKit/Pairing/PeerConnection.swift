@@ -20,34 +20,49 @@ public enum PeerConnection {
 
     /// Races the peer's endpoints and returns a client on the winner.
     ///
-    /// - Parameter onLocalLink: Whether the phone is on a network where a
-    ///   `.local` name or an RFC1918 address could resolve at all. On cellular
-    ///   they cannot, and attempting them only spends the timeout — so
-    ///   `endpointsToTry` drops them rather than ordering them last.
+    /// - Parameter link: Where the phone is standing. Endpoints that provably
+    ///   cannot work from there are dropped rather than ordered last, since
+    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
     /// - Throws: `TransportError.connectionFailed` when nothing answered, or
     ///   `.hostKeyMismatch` when something answered and was not this peer.
     public static func connect(
         to peer: PairedPeer,
         deviceKey: SSHKeyPair,
-        onLocalLink: Bool,
+        link: LinkState,
         session: String? = nil
     ) async throws -> Connected {
-        let endpoints = peer.endpointsToTry(onLocalLink: onLocalLink)
+        let endpoints = peer.endpointsToTry(from: link)
         guard !endpoints.isEmpty else {
             // Distinguished from "nothing answered": the addresses were not
             // tried, they were ruled out, and the remedy is a different network
             // rather than a running host.
+            guard !link.onLocalLink else {
+                throw TransportError.connectionFailed("this host has no known address")
+            }
+            // Whether a VPN could help depends on what was ruled out, and
+            // offering one where it cannot is the mistake this whole change is
+            // about avoiding. A private address is routable through a tunnel
+            // that carries the subnet; an mDNS name is not, because multicast
+            // does not leave the link — so a peer known only by its `.local`
+            // name must not be answered with "connect a VPN".
+            let aTunnelCouldHelp = peer.endpoints.contains { $0.reach == .privateAddress }
             throw TransportError.connectionFailed(
-                onLocalLink
-                    ? "this host has no known address"
-                    : "this host is only reachable on its local network"
+                aTunnelCouldHelp
+                    ? "this host is only reachable on its local network — join that "
+                        + "network, or connect a VPN that routes it"
+                    : "this host is only reachable by a name that works only on its "
+                        + "own network — join that network, or add an address that "
+                        + "works from here"
             )
         }
 
-        // The only caller that vouches for this: `endpoints` is what survived
-        // `endpointsToTry`, so anything unroutable from here has already been
-        // ruled out and "all that is left is the tunnel" is a fact rather than
-        // an accident of what the caller happened to pass.
+        // The only caller that can answer this: `endpoints` is what survived
+        // `endpointsToTry`, so anything unreachable from here has already been
+        // ruled out — and `needsTunnel(from:)` is link-dependent, which is the
+        // part `PeerConnector` cannot work out for itself. A mesh address
+        // always needs the tunnel, including on Wi-Fi; an ordinary private one
+        // needs it only off the local link, where it is a candidate at all only
+        // because a tunnel was detected.
         let connection = try await PeerConnector.connect(
             endpoints: endpoints,
             username: peer.username,
@@ -58,7 +73,7 @@ public enum PeerConnection {
             // before a client is handed out.
             herdrPath: peer.herdrPath ?? "herdr",
             session: session ?? peer.session,
-            droppedUnroutable: true
+            everyCandidateNeedsATunnel: endpoints.allSatisfy { $0.needsTunnel(from: link) }
         )
 
         var discovered: String?

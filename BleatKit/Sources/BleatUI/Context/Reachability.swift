@@ -1,22 +1,62 @@
+import BleatKit
 import Network
 import Observation
 
-/// Whether the phone is somewhere a `.local` name or an RFC1918 address could
-/// resolve.
+/// Answers the two questions in `LinkState` from the system's own view of the
+/// network.
 ///
-/// The whole rule is the interface type: on Wi-Fi or Ethernet those addresses
-/// may work, on cellular they cannot resolve or route at all and attempting
-/// them only spends the connection's timeout budget. `PairedPeer.endpointsToTry`
-/// takes this and drops them rather than ordering them last.
+/// **The whole rule used to be the interface type**: on Wi-Fi or Ethernet a
+/// `.local` name and an RFC1918 address may work, on cellular they cannot, so
+/// `endpointsToTry` dropped them. That is right for a bare cellular connection
+/// and wrong the moment a VPN is up — a zero-trust client like Twingate reaches
+/// a host by its *ordinary* private address, because that kind of overlay gives
+/// the host no address of its own to discover. The address that works was being
+/// discarded before it was ever dialled.
 ///
-/// Starts optimistic. The first path update arrives in milliseconds, and being
-/// briefly wrong towards *trying* an address is cheaper than being wrong
-/// towards refusing to.
+/// So there are two monitors. The default path answers "is a local network
+/// directly attached", and a second one restricted to tunnel interfaces answers
+/// "is there a VPN at all".
+///
+/// Starts optimistic on the link and pessimistic on the tunnel: the first path
+/// update arrives in milliseconds, and the cost of each initial guess being
+/// wrong is one extra candidate in a concurrent race, or one fewer for a few
+/// milliseconds.
 @Observable
 public final class Reachability {
-    public private(set) var isOnLocalLink = true
+    public private(set) var link = LinkState.localLink
 
+    /// The default path: what this device would use to reach the internet.
     private let monitor = NWPathMonitor()
+    /// Restricted to `.other`, which is what a `utun` from a `NEPacketTunnelProvider`
+    /// reports as — every VPN and zero-trust client on iOS is one.
+    ///
+    /// A *second* monitor rather than `usesInterfaceType(.other)` on the first,
+    /// and the difference is the case that matters. Twingate and most
+    /// zero-trust clients split-tunnel: they claim routes for the configured
+    /// resources and leave everything else on cellular, so the **default** path
+    /// is still cellular and does not use the tunnel at all. Asking the default
+    /// path would answer "no tunnel" with the tunnel plainly up. A monitor with
+    /// a required interface type reports satisfied when an interface of that
+    /// type exists and can carry traffic, which is the question actually being
+    /// asked.
+    ///
+    /// **This is the unverified part, and its blast radius is wider than a
+    /// missed VPN.** `.other` is documented as "virtual or otherwise unknown",
+    /// not "VPN", and iOS can have `utun` interfaces up for iCloud Private
+    /// Relay or an idle on-demand profile. If this reports satisfied without a
+    /// tunnel that routes anything useful, `tunnelActive` is stuck true and the
+    /// cellular filter stops discarding private addresses at all: a LAN-only
+    /// peer on cellular goes from an instant "only reachable on its local
+    /// network" to a full TCP timeout per RFC1918 candidate, since cellular
+    /// black-holes those rather than refusing them.
+    ///
+    /// Shipped that way deliberately, because the alternative is the bug this
+    /// fixes — the one endpoint that works being discarded unseen — and because
+    /// the failure is slow rather than wrong: `overlayUnreachable` still names
+    /// the right remedy, since reaching a LAN-only host from cellular does take
+    /// a VPN whether or not one is currently up. **Wants measuring on a real
+    /// phone, on cellular, with and without the tunnel.**
+    private let tunnelMonitor = NWPathMonitor(requiredInterfaceType: .other)
     private let queue = DispatchQueue(label: "team.partof.bleat.reachability")
 
     public init() {
@@ -27,13 +67,21 @@ public final class Reachability {
             // Hops to the main actor because the value is read from view
             // bodies; `NWPathMonitor` calls back on its own queue.
             Task { @MainActor [weak self] in
-                self?.isOnLocalLink = local
+                self?.link.onLocalLink = local
+            }
+        }
+        tunnelMonitor.pathUpdateHandler = { [weak self] path in
+            let tunnel = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                self?.link.tunnelActive = tunnel
             }
         }
         monitor.start(queue: queue)
+        tunnelMonitor.start(queue: queue)
     }
 
     deinit {
         monitor.cancel()
+        tunnelMonitor.cancel()
     }
 }

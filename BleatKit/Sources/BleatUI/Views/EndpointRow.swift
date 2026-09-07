@@ -34,7 +34,12 @@ struct EndpointRow: View {
     /// user can act on: a LAN address that fails on cellular is not broken.
     private var reachDescription: String {
         switch endpoint.reach {
-        case .lan: "local network"
+        case .linkScoped: "local network"
+        // Distinguished from the case above because it is not the same promise:
+        // a VPN that routes this subnet reaches it from anywhere, and that is
+        // how a zero-trust client like Twingate works. Nothing carries an mDNS
+        // name, a loopback or a link-local address off the link it belongs to.
+        case .privateAddress: "local network or VPN"
         case .overlay: "VPN"
         case .routable: "anywhere"
         }

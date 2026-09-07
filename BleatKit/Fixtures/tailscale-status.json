@@ -1,0 +1,18 @@
+{
+    "BackendState": "Running",
+    "MagicDNSSuffix": "tailexample.ts.net",
+    "CurrentTailnet": {
+        "Name": "example.com",
+        "MagicDNSSuffix": "tailexample.ts.net",
+        "MagicDNSEnabled": true
+    },
+    "Self": {
+        "HostName": "somemac",
+        "DNSName": "somemac.tailexample.ts.net.",
+        "TailscaleIPs": [
+            "100.114.119.30",
+            "fd7a:115c:a1e0::42a:771f"
+        ],
+        "Online": true
+    }
+}

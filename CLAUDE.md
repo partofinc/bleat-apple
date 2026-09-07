@@ -469,12 +469,27 @@ peer with two endpoints*, not two peers.
 - `bleat pair` enumerates what it can and accepts `--endpoint` for the rest:
   - mDNS name (`scutil --get LocalHostName` + `.local`) — LAN only
   - routable interface addresses from `ifconfig` — LAN v4, global v6
-  - Tailscale addresses, **via `ifconfig`, not via the `tailscale` CLI**. The
-    tunnel's `utun` interface holds them and passes every filter, so they are
-    enumerated like any other address and then classified `.overlay` by
-    `Endpoint.reach`. Verified on device over cellular, 7 Sept 2026. Nothing
-    here shells out to `tailscale`; an earlier version of this file said it
-    did.
+  - Tailscale addresses arrive **via `ifconfig`** — the tunnel's `utun`
+    interface holds them and they pass every filter, then `Endpoint.reach`
+    classifies them `.overlay`. Verified on device over cellular, 7 Sept 2026.
+    This is how it worked before any Tailscale-specific code existed.
+  - The **MagicDNS name** does need the CLI (`tailscale status --json` →
+    `Self.DNSName`), because no interface carries it. `TailscaleStatus` parses
+    it and `HostInspector` runs the command, from an absolute path — `run` does
+    not search `PATH` deliberately, since resolving a tool through the user's
+    `PATH` during pairing is a way to execute something else entirely.
+    - **`DNSName` comes back fully qualified, with a trailing dot.** Verified
+      live: `rawillk.tail2a3bab.ts.net.`
+    - Taken only when `BackendState` is `Running` — a stopped or logged-out
+      Tailscale still reports the last state it knew, and an endpoint recorded
+      from a tailnet the machine may have left is indistinguishable later from
+      a host that is merely switched off.
+    - …and only when `CurrentTailnet.MagicDNSEnabled` is true, or the name does
+      not resolve and every race spends a timeout on it.
+    - It earns its place because a node's address is stable only while its node
+      record lives: removing the machine from the tailnet and re-adding it
+      mints a new one, and endpoints are captured at pair time and never
+      re-discovered. The name follows the machine across that.
   - Twingate and similar overlays do not tell the host its own resolvable name.
     Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
 
@@ -599,6 +614,21 @@ profile, profiles print banners, and taking the whole of stdout stores
 Measured across these changes on the three-endpoint case: the URL went
 **411 → 383 → 350 → 221** characters and the rendered code **85 → 77 → 73 → 61**
 columns, 43 → 31 rows.
+
+**Tailscale spends some of that back, and it is worth knowing how much.**
+Measured 7 Sept 2026 at level L with a 4-module quiet zone, and pinned by
+`QRPayloadSizeTests`:
+
+| endpoints | URL chars | modules | rows |
+|---|---|---|---|
+| 4 — LAN plus both Tailscale addresses | 227 | 63 | 32 |
+| 5 — and the MagicDNS name | 262 | 67 | 34 |
+| 7 — everything this Mac offers | 363 | 75 | 38 |
+
+So the name costs two rows and a Tailscale-connected Mac costs six over a
+LAN-only one. With three rows of chrome the worst case needs **41**, which is
+exactly the reduced-margin threshold this file measured earlier — inside it,
+with nothing spare. A shorter window falls back to the link.
 
 **Height is the binding constraint, so nothing is spent on it carelessly.**
 Chrome is three rows — title, host key, footer — with no blank spacers: the QR's

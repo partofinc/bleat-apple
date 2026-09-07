@@ -35,6 +35,23 @@ public struct HostInspector: Sendable {
         "/etc/ssh/ssh_host_ecdsa_key.pub",
     ]
 
+    /// Where the `tailscale` CLI lives, in the order worth trying.
+    ///
+    /// Absolute paths because `run` does not search `PATH`, deliberately: this
+    /// runs as part of pairing, and resolving a tool through a user's `PATH`
+    /// is a way to execute something else entirely. The App Store build ships
+    /// the CLI inside the bundle; the standalone and Homebrew builds put a
+    /// link in one of the two `bin` directories.
+    static let tailscalePaths = [
+        "/usr/local/bin/tailscale",
+        "/opt/homebrew/bin/tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ]
+
+    static func locateTailscale() -> String? {
+        tailscalePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     public init() {}
 
     /// - Parameters:
@@ -53,6 +70,16 @@ public struct HostInspector: Sendable {
         if let text = run("/sbin/ifconfig", []) {
             endpoints.append(contentsOf: InterfaceAddresses.endpoints(ifconfigOutput: text, port: port))
         }
+        // After `ifconfig`, because the tunnel's `utun` addresses usually come
+        // from there and the de-duplication below keeps whichever arrived
+        // first. What this adds that `ifconfig` cannot is the MagicDNS name.
+        if let path = Self.locateTailscale(), let json = run(path, ["status", "--json"]) {
+            endpoints.append(contentsOf: TailscaleStatus.endpoints(
+                fromStatusJSON: Data(json.utf8), port: port
+            ))
+        }
+        var seen = Set<Endpoint>()
+        endpoints = endpoints.filter { seen.insert($0).inserted }
         for endpoint in extraEndpoints where !endpoints.contains(endpoint) {
             endpoints.append(endpoint)
         }

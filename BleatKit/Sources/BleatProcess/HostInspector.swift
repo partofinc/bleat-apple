@@ -58,9 +58,20 @@ public struct HostInspector: Sendable {
     /// in the list would have answered. Which is the whole point of this code,
     /// lost without a word.
     ///
-    /// `EndpointDiscovery.tailscaleStatusCommand` is the same loop as a shell
+    /// **Exiting 0 is not answering, and taking it for one was a regression.**
+    /// An earlier refactor returned the first non-nil output, where the code
+    /// before it kept going until a reply actually yielded endpoints. A
+    /// Homebrew CLI that cannot reach the App Store app's daemon can exit
+    /// cleanly reporting `NeedsLogin` or `Stopped`, so the weaker test stops
+    /// there and never tries the bundled binary — dropping the MagicDNS name
+    /// without a word, which is what this loop exists to prevent.
+    /// `TailscaleStatus.isRunning` is the condition, and the shell command
+    /// greps for the same `BackendState` so the two ends cannot disagree.
+    ///
+    /// `EndpointDiscovery.tailscaleStatusCommand` is this loop as a shell
     /// command, for the phone to run over an exec channel. The two have to keep
-    /// agreeing — the order of the paths and the five-second bound especially.
+    /// agreeing — the order of the paths, the five-second bound, and now the
+    /// success condition.
     func tailscaleStatusJSON() -> String? {
         for path in Self.tailscalePaths
         where FileManager.default.isExecutableFile(atPath: path) {
@@ -70,7 +81,9 @@ public struct HostInspector: Sendable {
             // pairing at a blank terminal with no explanation. `readHostKey`
             // passes `ssh-keyscan -T 5` for the same hazard; `tailscale` has no
             // such flag, so the timeout is imposed from outside.
-            guard let json = run(path, ["status", "--json"], timeout: 5) else { continue }
+            guard let json = run(path, ["status", "--json"], timeout: 5),
+                  TailscaleStatus.isRunning(statusJSON: Data(json.utf8))
+            else { continue }
             return json
         }
         return nil

@@ -22,9 +22,20 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// anywhere — which is precisely what a zero-trust client like Twingate
     /// does — while nothing carries multicast DNS off the link it is scoped to.
     public enum Reach: Sendable, Hashable {
-        /// An mDNS `.local` name. Multicast is link-scoped, so no tunnel makes
-        /// one resolvable; only being on the network does.
-        case multicastDNS
+        /// Scoped to the link it is on, with **nothing that can carry it off**:
+        /// an mDNS `.local` name, a loopback address, an IPv4 or IPv6
+        /// link-local.
+        ///
+        /// Loopback and link-local belong here rather than with the private
+        /// addresses, and the difference is not academic. A VPN routes
+        /// `192.168.1.20`; no VPN routes `127.0.0.1`, `::1` or `fe80::1` —
+        /// those name this device or this wire. Filed as private, each would
+        /// become a candidate the moment any tunnel came up, and cost a full
+        /// TCP timeout in the race for a destination that cannot exist.
+        /// `127.0.0.1:2222` is not hypothetical: it is what the throwaway-sshd
+        /// flow in this repo's own test procedure uses, and endpoints can be
+        /// added by hand.
+        case linkScoped
         /// An RFC1918 or ULA address. Routable on the attached link, and also
         /// through any VPN that carries that subnet.
         case privateAddress
@@ -34,24 +45,6 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
         case overlay
         /// A globally routable address or a public DNS name.
         case routable
-
-        /// Whether this is one of the two that used to be `lan`. Kept for the
-        /// places that summarise reach for a human, where "same network" is
-        /// still the useful distinction.
-        public var isLocalOnly: Bool { self == .multicastDNS || self == .privateAddress }
-
-        /// Whether reaching this from off the local link takes a tunnel.
-        ///
-        /// A mesh address obviously does. An ordinary private one does too, and
-        /// that is the case worth naming: off-link it survives the candidate
-        /// filter *only* because a tunnel is up, which is how a zero-trust
-        /// client reaches a host — by its plain LAN address, routed. So when
-        /// everything left is one of these and none answered, the tunnel is the
-        /// thing to check rather than the network.
-        ///
-        /// `.multicastDNS` is excluded because no tunnel carries multicast; it
-        /// is dropped off-link rather than being a tunnel candidate.
-        public var needsTunnelOffLink: Bool { self == .overlay || self == .privateAddress }
     }
 
     /// Tailscale hands out `100.64.0.0/10` (CGNAT) and `fd7a:115c:a1e0::/48`.
@@ -63,7 +56,11 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     public var reach: Reach {
         let name = host.lowercased()
         if Self.isTailscale(name) { return .overlay }
-        if name.hasSuffix(".local") || name.hasSuffix(".local.") { return .multicastDNS }
+        // Multicast DNS, then the addresses nothing routes — both before the
+        // private test, which would otherwise claim them and let a tunnel
+        // license a dial that can never connect.
+        if name.hasSuffix(".local") || name.hasSuffix(".local.") { return .linkScoped }
+        if Self.isLinkScoped(name) { return .linkScoped }
         if Self.isPrivateAddress(name) { return .privateAddress }
         return .routable
     }
@@ -84,9 +81,28 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// meant the one candidate that would have connected was never dialled.
     public func isUsable(from link: LinkState) -> Bool {
         switch reach {
-        case .multicastDNS: link.onLocalLink
+        case .linkScoped: link.onLocalLink
         case .privateAddress: link.onLocalLink || link.tunnelActive
         case .overlay, .routable: true
+        }
+    }
+
+    /// Whether reaching this endpoint *from here* takes a tunnel.
+    ///
+    /// Link-dependent, which is the whole reason it is a function rather than a
+    /// property on `Reach`. A mesh address always needs one. An ordinary
+    /// private address needs one only off the local link — on Wi-Fi it is
+    /// simply the network the phone is standing on, and a failure there means
+    /// the host is asleep rather than that a VPN wants checking.
+    ///
+    /// This is what decides whether a failed race names the VPN, and getting it
+    /// wrong in either direction sends the user to fix something that is not
+    /// broken.
+    public func needsTunnel(from link: LinkState) -> Bool {
+        switch reach {
+        case .overlay: true
+        case .privateAddress: !link.onLocalLink
+        case .linkScoped, .routable: false
         }
     }
 
@@ -169,20 +185,37 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
         return true
     }
 
+    /// Addresses that name this device or this wire, which no tunnel routes.
+    ///
+    /// Split out of `isPrivateAddress` so a tunnel cannot license them. They
+    /// stay perfectly usable on the local link — `bleat redeem` against a
+    /// throwaway sshd on `127.0.0.1:2222` is a documented flow — which is why
+    /// they are `.linkScoped` rather than dropped outright.
+    static func isLinkScoped(_ host: String) -> Bool {
+        if host == "localhost" || host == "::1" { return true }
+        // The v6 prefix only means anything in something that is actually an
+        // address: `fe80s-diner.example` is a public name.
+        if host.contains(":") { return host.hasPrefix("fe80:") }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts.allSatisfy({ Int($0) != nil }),
+              let first = Int(parts[0]), let second = Int(parts[1])
+        else { return false }
+        return first == 127 || (first == 169 && second == 254)
+    }
+
     static func isPrivateAddress(_ host: String) -> Bool {
         // The v6 prefixes only mean anything in something that is actually an
         // address: `fdisk.example.com` starts with "fd" and is a public name.
+        // Loopback and link-local have already been taken by `isLinkScoped`.
         if host.contains(":") {
-            if host.hasPrefix("fe80:") { return true }           // link-local
-            if host.hasPrefix("fc") || host.hasPrefix("fd") { return true }  // ULA, fc00::/7
+            return host.hasPrefix("fc") || host.hasPrefix("fd")  // ULA, fc00::/7
         }
-        if host == "::1" || host == "localhost" { return true }
         let parts = host.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4, parts.allSatisfy({ Int($0) != nil }),
               let first = Int(parts[0]), let second = Int(parts[1])
         else { return false }
         switch (first, second) {
-        case (10, _), (127, _), (169, 254), (192, 168): return true
+        case (10, _), (192, 168): return true
         case (172, 16...31): return true
         default: return false
         }

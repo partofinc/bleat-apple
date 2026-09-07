@@ -104,13 +104,23 @@ public final class PeerStore {
     /// Deliberately silent on every failure. Nothing here is worth showing a
     /// user — they did not ask for it, and the whole of the downside is that
     /// the endpoints stay as they were.
-    public func refreshEndpoints(for peer: PairedPeer, over shell: any ShellRunner) async {
-        // The peer's own port, not 22. A host reached on 2222 must have its
-        // refreshed addresses recorded on 2222 or every one of them is a new,
-        // wrong endpoint alongside the working ones.
-        let port = peer.lastGoodEndpoint?.port ?? peer.endpoints.first?.port ?? Endpoint.defaultPort
+    /// - Parameter port: The port of the endpoint that **just won the race**,
+    ///   not one read off the peer. A snapshot's `lastGoodEndpoint` is the
+    ///   *previous* winner, and with mixed ports — a `--endpoint host:2222`
+    ///   extra beside port-22 detected addresses, which is exactly the
+    ///   throwaway-sshd flow this repo documents — that stamps every discovered
+    ///   address with the wrong port while pruning the right ones, replacing
+    ///   working endpoints with addresses nothing is listening on.
+    public func refreshEndpoints(
+        for peer: PairedPeer,
+        over shell: any ShellRunner,
+        port: Int
+    ) async {
         let discovered = await EndpointDiscovery.probe(shell, port: port)
-        guard !discovered.isEmpty else { return }
+        // No probe answered — the host was unaskable, or this task was
+        // cancelled part way. Either way there is nothing to say about its
+        // addresses, and saying it anyway would prune against silence.
+        guard discovered.answered, !Task.isCancelled else { return }
         try? registry.recordDiscoveredEndpoints(discovered, forHostKey: peer.hostKey)
         reload()
     }

@@ -73,6 +73,27 @@ struct ConnectionPolicyTests {
         ))
     }
 
+    /// …but **only off the link**, and this is the other half of getting that
+    /// key right. On Wi-Fi every endpoint is a candidate whatever the tunnel is
+    /// doing, so a tunnel change cannot alter the raced list — and comparing it
+    /// would throw away a working connection for nothing. An on-demand VPN
+    /// profile connecting and dropping while the app sits on Wi-Fi would tear
+    /// down the live SSH session and re-handshake on the next request, over and
+    /// over, for a list that did not change.
+    @Test("a tunnel changing on Wi-Fi does not invalidate anything")
+    func tunnelChangeOnTheLinkIsIrrelevant() {
+        let plain = LinkState.localLink
+        let withTunnel = LinkState(onLocalLink: true, tunnelActive: true)
+        #expect(ConnectionPolicy.canReuse(
+            cachedHostKey: "ssh-ed25519 AAAAKEY", cachedLink: plain,
+            for: peer(), link: withTunnel
+        ))
+        #expect(ConnectionPolicy.canReuse(
+            cachedHostKey: "ssh-ed25519 AAAAKEY", cachedLink: withTunnel,
+            for: peer(), link: plain
+        ))
+    }
+
     @Test("a transport failure ends the connection")
     func transportErrorIsFatal() {
         #expect(ConnectionPolicy.isFatalToConnection(TransportError.channelClosed))

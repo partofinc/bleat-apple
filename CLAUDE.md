@@ -836,43 +836,95 @@ folding a peer into a shape `bleat pair` would never have produced.
   absence is a normal answer. Without it a host without `scutil` produces a
   *failed command* and the user is told "the host rejected a command (exit 1)"
   about a machine that is working perfectly.
-- The `tailscale` probe is the same loop as `HostInspector.tailscaleStatusJSON`
-  — absolute paths, in order, first that *answers* — plus a `kill` after five
-  seconds. `tailscale` has no timeout flag and a wedged `tailscaled` would
-  otherwise hold the exec channel open for the life of the connection. **The
-  watchdog's own output goes to `/dev/null` so it is not a writer on the
-  channel**; left attached it would hold the command open for the full five
-  seconds on every run, including the ordinary case where `tailscale` answered
-  at once. Verified in both `zsh` and `sh` on this Mac: sub-second.
 - The probes run **serially**, not with `async let`. Three concurrent exec
   channels would save a few hundred milliseconds of work nobody waits for, in
   exchange for exercising concurrent use of `SSHTransport` — which wraps a
   Citadel client that is not `Sendable`-audited and is lock-guarded for exactly
-  that reason.
-- It runs **after** the connection is installed and is never awaited, so a list
-  screen draws at the same speed it always did — and only on a fresh dial, since
-  a reused connection returns before reaching it. `ConnectionStore` holds the
-  task only to cancel it, on `release()` and before starting another: it runs on
-  a transport the store is about to disconnect, and one that outlived its
-  connection would also write endpoints for a peer the user has left.
+  that reason. Serial is also what makes the cancellation checks between them
+  mean anything.
+- It runs **after** the connection is installed and is never awaited by the
+  screen, so a list draws at the same speed it always did — and only on a fresh
+  dial, since a reused connection returns before reaching it.
 
-**What a refresh may change, and the three rules that bound it.** `PairedPeer`
-gains `hostReportedEndpoints`, the host's most recent self-report.
+**Cancelling the refresh is not enough on its own, and this is the sharp
+edge.** `SSHTransport` re-dials lazily when its client is nil and
+`SSHClient.connect` does not observe cancellation, so a probe command that runs
+after `ConnectionStore.release()` has disconnected opens a **brand new SSH
+session** that nothing references and nothing will close — an orphaned session
+on the user's Mac, which is the one thing `ConnectionStore` promises not to
+leave. So `EndpointDiscovery.probe` checks `Task.isCancelled` between every
+command, a cancelled probe reports **nothing at all** rather than a partial
+answer, and `release()` *awaits* the task exactly as it already does a dial in
+flight.
 
-- **`nil` is not the empty list.** `nil` means never refreshed, so nothing on
+### The `tailscale` probe, and what running it taught
+
+Same loop as `HostInspector.tailscaleStatusJSON` — absolute paths, in order,
+first that *answers* — with a five-second watchdog, since `tailscale` has no
+timeout flag and a wedged `tailscaled` would hold the exec channel for the life
+of the connection. Four of its details were bugs, and each was found by running
+the string rather than reading it:
+
+- **`status` is read-only in `zsh`**, which is what sshd runs on a modern macOS.
+  Naming the exit status that aborted the whole loop under the one shell it will
+  actually meet, while working under `sh` and `bash`. Verified across all three
+  now.
+- **Each attempt writes to its own scratch file.** Straight to stdout, the
+  attempts concatenate: a binary that emits a partial object before failing, or
+  one killed mid-write by the watchdog, glues that fragment to the front of the
+  next binary's reply. Reproduced — `{"partial":{…}{"BackendState":…}` — which
+  parses as nothing, so the loop written to save the MagicDNS name lost it in
+  the exact case it exists for.
+- **Exiting 0 is not answering.** A Homebrew CLI that cannot reach the App Store
+  app's daemon exits cleanly reporting `NeedsLogin` or `Stopped`, so stopping at
+  the first clean exit never tries the bundled binary that would have answered.
+  The condition is `BackendState == "Running"`, greped here and checked by
+  `TailscaleStatus.isRunning` locally; the two have to agree.
+- **The watchdog's output goes to `/dev/null`** so it is not a writer on the
+  channel — attached, it holds the command open for the full five seconds on
+  every run — and `exec 2>/dev/null` suppresses the shell's `Terminated: 15`
+  notice when the watchdog is killed.
+
+**What a refresh may change, and the four rules that bound it.** `PairedPeer`
+gains `hostReport`, the host's most recent self-report **kept per probe**.
+
+- **`nil` is not an empty report.** `nil` means never refreshed, so nothing on
   the record can be attributed to the host and the first refresh may add but
   must not prune. Without that distinction every `--endpoint` extra baked into
   a QR would vanish the first time the phone connected after this shipped.
-- **An empty report changes nothing.** A probe answers empty when it could not
-  run at all, which is not the host saying it has no addresses. Reading it as
-  one would empty the peer and strand the phone with a record it can never
-  connect through again.
+- **A report no probe answered changes nothing.** That is the host being
+  unaskable — or the refresh being cancelled — and not the host saying it has no
+  addresses. Reading it as one would empty the peer and strand the phone with a
+  record it can never connect through again.
+- **Pruning is per probe, not per report, and this is the one that matters
+  most.** Flattened into a single list, one flaky probe is indistinguishable
+  from a host that has dropped a whole category. Tailscale being switched off is
+  not even an error — the CLI exits 0 with `BackendState: "Stopped"` — so
+  `scutil` and `ifconfig` answering normally would yield a perfectly non-empty
+  report with no overlay endpoints in it, and one pass would delete the MagicDNS
+  name and both tunnel addresses. The next time the phone was on cellular the
+  host would be unreachable **permanently, from a transient condition** — which
+  is the exact cost this feature exists to remove. So each of the three fields
+  in `EndpointDiscovery.Report` is independently optional: `nil` means "this
+  probe gave no confident answer" and prunes nothing, while an empty array is a
+  real answer.
 - **Only what the host previously claimed may be pruned.** Everything else is
   sticky — `--endpoint` extras, anything added by hand — because detection
   cannot see them and their absence from a report is not evidence of anything.
   This is what protects a Twingate private DNS name.
-- **`lastGoodEndpoint` always survives**, even if the report drops it. It
-  completed a handshake minutes ago, which outranks any report about it.
+- **`lastGoodEndpoint` survives, for one refresh.** It completed a handshake
+  minutes ago, which outranks any report about it. Putting it back is recorded
+  in `Report.reinstated` so the exemption *expires*: unrecorded, it reads as an
+  address the host never claimed and becomes permanently un-prunable, so a
+  recycled DHCP lease that won one race would live in the peer forever — the
+  very hazard the pruning exists for.
+
+**The port comes from the endpoint that just won**, not from the peer snapshot.
+That snapshot's `lastGoodEndpoint` is the *previous* winner, and on a host with
+mixed ports — a `--endpoint host:2222` extra beside port-22 detected addresses,
+which is exactly the throwaway-sshd flow this file documents — it would stamp
+every discovered address with the wrong port while pruning the right ones,
+replacing working endpoints with addresses nothing is listening on.
 
 **Pruning matters as much as adding, and it is the half that is easy to skip.**
 A list that only grows accumulates recycled DHCP leases and dead node
@@ -992,6 +1044,12 @@ prompts, guesses, or trusts anything on first sight.
     before it connected was raced over a strictly smaller set; reusing it would
     pin the phone to that set for as long as the screen stays open — the same
     shape of bug the Wi-Fi/cellular half was added to fix.
+    - Compared through **`LinkState.candidateIdentity`**, not as a whole. On the
+      local link every endpoint is a candidate whatever the tunnel is doing, so
+      a tunnel change there cannot alter the raced list — and comparing it would
+      discard a working connection for nothing. An on-demand VPN profile
+      connecting and dropping while the app sits on Wi-Fi would otherwise tear
+      down the live SSH session and re-handshake on every request.
 - **"No address to try here" is not "nothing answered."** A LAN-only peer on
   cellular was not dialled and failed; it was ruled out, and the remedy is a
   different network or an overlay endpoint rather than a host that needs
@@ -1286,7 +1344,7 @@ differently:
 
 | reach | needs |
 |---|---|
-| `multicastDNS` (`.local`) | the attached link. Multicast is link-scoped, so **no tunnel makes one resolvable.** |
+| `linkScoped` (`.local`, loopback, link-local) | the attached link, and **nothing carries these off it** |
 | `privateAddress` (RFC1918, ULA) | the attached link **or** a tunnel routing that subnet |
 | `overlay` (Tailscale CGNAT/ULA/`.ts.net`) | the tunnel |
 | `routable` | nothing |
@@ -1295,24 +1353,59 @@ Dropping `privateAddress` on cellular is what made Twingate look unsupported:
 that overlay reaches a host by its ordinary `192.168.x` address, so the single
 endpoint that would have connected was discarded before it was dialled.
 
+**Loopback and link-local are `linkScoped`, not `privateAddress`, and that
+split is load-bearing.** A VPN routes `192.168.1.20`; none routes `127.0.0.1`,
+`::1` or `fe80::1`, which name this device or this wire. Filed with the private
+addresses, each would become a candidate the moment any tunnel came up and cost
+a full TCP timeout in the race for a destination that cannot exist —
+`127.0.0.1:2222` is not hypothetical, it is what this file's own throwaway-sshd
+procedure uses, and endpoints can be added by hand. They stay usable *on* the
+link, so `bleat redeem` against a loopback sshd still works.
+
 **Nothing here asks which subnets a split-tunnel client has claimed**, because
 nothing can — and it would still not answer for a private DNS name. Being wrong
 towards trying costs one slot in a concurrent race; being wrong towards refusing
 costs the connection. So a tunnel being up is enough.
 
-The same asymmetry reaches the failure message. `PeerConnector`'s
-`overlayUnreachable` fires when everything raced needed a tunnel, which now
-counts private addresses as well as mesh ones — off-link they survived the
-filter *only* because a tunnel was up. `PeerConnection` passes
-`droppedUnroutable: !link.onLocalLink` so it cannot fire on Wi-Fi, where nothing
-was dropped and a private address failing means the host is off, not that a VPN
-needs checking.
+**"Does this need a tunnel" is link-dependent, and only the caller can answer
+it.** `Endpoint.needsTunnel(from:)` is a function rather than a property for
+that reason: a mesh address always needs one, while a private address needs one
+only off the link — on Wi-Fi it is simply the network the phone is standing on,
+and a failure there means the host is asleep. `PeerConnection` computes
+`endpoints.allSatisfy { $0.needsTunnel(from: link) }` and hands the verdict to
+`PeerConnector.failure` as `everyCandidateNeedsATunnel`.
 
-**Unverified on device:** that Twingate's iOS client presents as `.other` to
-`NWPathMonitor`. The architecture is documented; that specific reading is
-reasoned from `NEPacketTunnelProvider` and needs measuring. The cost of it being
-wrong is small in one direction (a false positive races two or three private
-addresses that fail, concurrently) and is the status quo in the other.
+- It stays a **parameter**, not a computation inside `PeerConnector`, for the
+  reason the old `droppedUnroutable` flag existed: pairing hands the connector a
+  deliberately narrowed list — one endpoint, the one that just carried the
+  enrollment handshake — where every candidate is trivially a tunnel address. A
+  self-derived condition would tell the user to check a VPN that had
+  demonstrably just worked, at the moment the enrollment key may already be
+  spent.
+- **An earlier version passed `!link.onLocalLink` and lost a case.** A peer
+  whose only endpoint is a Tailscale address, reached from Wi-Fi with the tunnel
+  off, is exactly when the VPN advice is right — and exactly when that flag
+  suppressed it, sending the user to check a Wi-Fi network that was working.
+
+**The ruled-out message distinguishes the two kinds too.** Off the link with no
+candidates left, "connect a VPN that routes it" is right for a peer with a
+private address and wrong for one known only by its `.local` name — no tunnel
+carries multicast, so that would send the user to set up something that could
+never work. `bleat inspect`'s LAN-only note branches the same way.
+
+**Unverified on device, and the blast radius is wider than a missed VPN.**
+`NWInterface.InterfaceType.other` is documented as "virtual or otherwise
+unknown", not "VPN", and iOS can have `utun` interfaces up for iCloud Private
+Relay or an idle on-demand profile. If the monitor reports satisfied without a
+tunnel that routes anything useful, `tunnelActive` is stuck true and the
+cellular filter stops discarding private addresses at all: a LAN-only peer on
+cellular goes from an instant "only reachable on its local network" to a full
+TCP timeout per RFC1918 candidate, since cellular black-holes those rather than
+refusing them. Shipped that way deliberately — the alternative is the bug being
+fixed, and the failure is *slow* rather than *wrong*, since `overlayUnreachable`
+still names the right remedy (reaching a LAN-only host from cellular does take a
+VPN, whether or not one is up). **Wants measuring on a real phone, on cellular,
+with and without the tunnel.**
 
 Whichever endpoint wins, the host key is still checked against the peer's pin.
 The endpoint is a hint; the key is the identity.

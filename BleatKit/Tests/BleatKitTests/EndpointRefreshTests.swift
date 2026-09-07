@@ -35,7 +35,7 @@ struct EndpointRefreshTests {
     private func peer(
         _ endpoints: [String],
         lastGood: String? = nil,
-        hostReported: [String]? = nil
+        hostReport: EndpointDiscovery.Report? = nil
     ) -> PairedPeer {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAKEY",
@@ -43,7 +43,20 @@ struct EndpointRefreshTests {
             username: "ravil",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
             lastGoodEndpoint: lastGood.flatMap { Endpoint(string: $0) },
-            hostReportedEndpoints: hostReported?.compactMap { Endpoint(string: $0) }
+            hostReport: hostReport
+        )
+    }
+
+    /// A report shaped the way a real probe run produces one, per category.
+    private func report(
+        name: [String]? = nil,
+        interfaces: [String]? = nil,
+        tailscale: [String]? = nil
+    ) -> EndpointDiscovery.Report {
+        EndpointDiscovery.Report(
+            localHostName: name?.compactMap { Endpoint(string: $0) },
+            interfaces: interfaces?.compactMap { Endpoint(string: $0) },
+            tailscale: tailscale?.compactMap { Endpoint(string: $0) }
         )
     }
 
@@ -59,7 +72,7 @@ struct EndpointRefreshTests {
             ifconfig: try Fixture.text("ifconfig.txt"),
             tailscale: try Fixture.text("tailscale-status.json")
         )
-        let found = await EndpointDiscovery.probe(shell)
+        let found = await EndpointDiscovery.probe(shell).all
 
         // mDNS name first, then the interface addresses, then whatever only the
         // CLI knows — which is the MagicDNS name.
@@ -102,9 +115,12 @@ struct EndpointRefreshTests {
         )
         let found = await EndpointDiscovery.probe(shell)
 
-        #expect(!found.isEmpty)
-        #expect(!found.contains { $0.host.hasSuffix(".local") })
-        #expect(!found.contains { $0.host.hasSuffix(".ts.net") })
+        #expect(found.answered)
+        #expect(!found.all.isEmpty)
+        // …and the probes that failed report `nil`, not an empty answer, so
+        // nothing of theirs is prunable.
+        #expect(found.localHostName == nil)
+        #expect(found.tailscale == nil)
     }
 
     /// The peer's port, not 22. A host reached on 2222 whose refreshed
@@ -125,18 +141,22 @@ struct EndpointRefreshTests {
     /// that is not the host saying it has no addresses — reading it as one
     /// would empty the peer and strand the phone with a record it can never
     /// connect through again.
-    @Test("an empty report changes nothing at all")
-    func emptyReportIsNotAnAnswer() {
+    @Test("a report no probe answered changes nothing at all")
+    func silentReportIsNotAnAnswer() {
         let before = peer(["mac.local", "192.168.1.20"], lastGood: "192.168.1.20")
-        #expect(before.refreshingEndpoints(discovered: []) == before)
+        #expect(before.refreshingEndpoints(discovered: EndpointDiscovery.Report()) == before)
     }
 
     /// The second rule, in the direction that helps: a host that has moved
     /// network gains its new address without a re-pair.
     @Test("a new address the host reports is added")
     func addsWhatIsNew() {
-        let refreshed = peer(["mac.local", "192.168.1.20"], hostReported: ["mac.local", "192.168.1.20"])
-            .refreshingEndpoints(discovered: [Endpoint(host: "mac.local"), Endpoint(host: "10.0.5.9")])
+        let refreshed = peer(
+            ["mac.local", "192.168.1.20"],
+            hostReport: report(name: ["mac.local"], interfaces: ["192.168.1.20"])
+        ).refreshingEndpoints(
+            discovered: report(name: ["mac.local"], interfaces: ["10.0.5.9"])
+        )
         #expect(refreshed.endpoints.map(\.host) == ["mac.local", "10.0.5.9"])
     }
 
@@ -151,8 +171,8 @@ struct EndpointRefreshTests {
     func prunesWhatTheHostDropped() {
         let refreshed = peer(
             ["mac.local", "192.168.1.20"],
-            hostReported: ["mac.local", "192.168.1.20"]
-        ).refreshingEndpoints(discovered: [Endpoint(host: "mac.local")])
+            hostReport: report(name: ["mac.local"], interfaces: ["192.168.1.20"])
+        ).refreshingEndpoints(discovered: report(name: ["mac.local"], interfaces: []))
         #expect(refreshed.endpoints.map(\.host) == ["mac.local"])
     }
 
@@ -165,8 +185,8 @@ struct EndpointRefreshTests {
     func keepsWhatTheHostNeverClaimed() {
         let refreshed = peer(
             ["mac.local", "mac.internal.example.com"],
-            hostReported: ["mac.local"]
-        ).refreshingEndpoints(discovered: [Endpoint(host: "10.0.5.9")])
+            hostReport: report(name: ["mac.local"])
+        ).refreshingEndpoints(discovered: report(name: [], interfaces: ["10.0.5.9"]))
         #expect(refreshed.endpoints.map(\.host).contains("mac.internal.example.com"))
         #expect(!refreshed.endpoints.map(\.host).contains("mac.local"))
     }
@@ -178,10 +198,10 @@ struct EndpointRefreshTests {
     @Test("the first refresh of an older record prunes nothing")
     func firstRefreshIsAdditive() {
         let refreshed = peer(["mac.local", "192.168.1.20", "vpn.example.com"])
-            .refreshingEndpoints(discovered: [Endpoint(host: "10.0.5.9")])
+            .refreshingEndpoints(discovered: report(interfaces: ["10.0.5.9"]))
         #expect(refreshed.endpoints.map(\.host)
             == ["mac.local", "192.168.1.20", "vpn.example.com", "10.0.5.9"])
-        #expect(refreshed.hostReportedEndpoints?.map(\.host) == ["10.0.5.9"])
+        #expect(refreshed.hostReport?.interfaces?.map(\.host) == ["10.0.5.9"])
     }
 
     /// The third rule. It completed a handshake minutes ago, which outranks any
@@ -192,12 +212,129 @@ struct EndpointRefreshTests {
         let refreshed = peer(
             ["mac.local", "192.168.1.20"],
             lastGood: "192.168.1.20",
-            hostReported: ["mac.local", "192.168.1.20"]
-        ).refreshingEndpoints(discovered: [Endpoint(host: "mac.local")])
+            hostReport: report(name: ["mac.local"], interfaces: ["192.168.1.20"])
+        ).refreshingEndpoints(discovered: report(name: ["mac.local"], interfaces: []))
 
         #expect(refreshed.endpoints.map(\.host).contains("192.168.1.20"))
         #expect(refreshed.lastGoodEndpoint == Endpoint(host: "192.168.1.20"))
         #expect(refreshed.endpointsToTry(from: .localLink).first?.host == "192.168.1.20")
+        // Recorded, so the exemption is one refresh long rather than forever.
+        #expect(refreshed.hostReport?.reinstated == [Endpoint(host: "192.168.1.20")])
+    }
+
+    /// **The finding this whole shape exists for.** Tailscale being switched
+    /// off is not an error — the CLI exits 0 with `BackendState: "Stopped"` —
+    /// so a flattened report would come back perfectly non-empty with no
+    /// overlay endpoints in it, and one pass would delete the MagicDNS name and
+    /// both tunnel addresses. The next time the phone was on cellular the host
+    /// would be unreachable, permanently, from a transient condition. That is
+    /// the exact cost this feature exists to remove.
+    @Test("a probe that did not answer prunes nothing of its own")
+    func aSilentProbePrunesNothing() {
+        let before = peer(
+            ["mac.local", "192.168.1.20", "100.101.102.103", "mac.tail1234.ts.net"],
+            hostReport: report(
+                name: ["mac.local"],
+                interfaces: ["192.168.1.20", "100.101.102.103"],
+                tailscale: ["mac.tail1234.ts.net"]
+            )
+        )
+        // scutil and ifconfig answer; the tunnel is down so neither the CLI nor
+        // the `utun` interface has anything to say.
+        let refreshed = before.refreshingEndpoints(
+            discovered: report(name: ["mac.local"], interfaces: ["192.168.1.20"])
+        )
+
+        // The `utun` address goes — `ifconfig` answered and no longer lists it,
+        // which is a real observation about the interfaces.
+        #expect(!refreshed.endpoints.contains(Endpoint(host: "100.101.102.103")))
+        // The MagicDNS name stays. The only probe that could have spoken for it
+        // said nothing, and its absence is not evidence.
+        #expect(refreshed.endpoints.contains(Endpoint(host: "mac.tail1234.ts.net")))
+        #expect(refreshed.hostReport?.tailscale?.map(\.host) == ["mac.tail1234.ts.net"])
+    }
+
+    /// The other side of it: once the CLI does answer and no longer names it,
+    /// the name goes. Silence is not an answer, but an answer is.
+    @Test("a probe that answers does prune its own category")
+    func ananswringProbePrunesItsOwn() {
+        let before = peer(
+            ["mac.local", "mac.tail1234.ts.net"],
+            hostReport: report(name: ["mac.local"], tailscale: ["mac.tail1234.ts.net"])
+        )
+        let refreshed = before.refreshingEndpoints(
+            discovered: report(name: ["mac.local"], tailscale: [])
+        )
+        #expect(refreshed.endpoints.map(\.host) == ["mac.local"])
+    }
+
+    /// **The exemption has to expire.** Putting the last-good address back
+    /// without recording it leaves it looking like an address the host never
+    /// claimed — permanently sticky, and still there long after `recordSuccess`
+    /// has moved on. A recycled DHCP lease that won one race would then live in
+    /// the peer forever, and per this file's own reasoning a recycled address
+    /// reaching an unrelated machine yields a `hostKeyMismatch` that
+    /// `PeerConnector` promotes over every other failure.
+    @Test("a reinstated address becomes prunable again on the next refresh")
+    func reinstatedAddressIsNotPermanent() {
+        let first = peer(
+            ["mac.local", "192.168.1.20"],
+            lastGood: "192.168.1.20",
+            hostReport: report(name: ["mac.local"], interfaces: ["192.168.1.20"])
+        ).refreshingEndpoints(discovered: report(name: ["mac.local"], interfaces: []))
+        #expect(first.endpoints.map(\.host).contains("192.168.1.20"))
+
+        // The race has since been won elsewhere, so nothing exempts it now.
+        var moved = first
+        moved.lastGoodEndpoint = Endpoint(host: "mac.local")
+        let second = moved.refreshingEndpoints(
+            discovered: report(name: ["mac.local"], interfaces: [])
+        )
+        #expect(second.endpoints.map(\.host) == ["mac.local"])
+    }
+
+    // MARK: - A refresh nobody is waiting for
+
+    /// **Cancellation has to reach the probe, and a partial answer is worse
+    /// than none.** `SSHTransport` re-dials lazily when its client is nil and
+    /// `SSHClient.connect` does not observe cancellation, so a command run
+    /// after `release()` disconnects opens a brand new session nothing will
+    /// close. And a report truncated part way through is non-empty, so it would
+    /// be written — pruning every category the cancelled probes never reached.
+    @Test("a cancelled probe reports nothing at all")
+    func cancelledProbeReportsNothing() async throws {
+        let shell = FakeDiscoveryShell(
+            localHostName: "mac",
+            ifconfig: try Fixture.text("ifconfig.txt"),
+            tailscale: try Fixture.text("tailscale-status.json")
+        )
+        let task = Task { await EndpointDiscovery.probe(shell) }
+        task.cancel()
+        let found = await task.value
+
+        #expect(!found.answered)
+        #expect(found.all.isEmpty)
+        // And so it is inert against a peer, rather than emptying one.
+        let before = peer(["mac.local", "192.168.1.20"])
+        #expect(before.refreshingEndpoints(discovered: found) == before)
+    }
+
+    // MARK: - Which tailscale answered
+
+    /// Exit status is not the success condition, and taking it for one drops
+    /// the MagicDNS name in silence. A Homebrew CLI that cannot reach the App
+    /// Store app's daemon exits cleanly reporting `Stopped` or `NeedsLogin`;
+    /// the loop has to keep going to the binary that can answer.
+    @Test("only a running tailnet counts as an answer")
+    func onlyRunningCounts() throws {
+        #expect(TailscaleStatus.isRunning(statusJSON: try Fixture.data("tailscale-status.json")))
+        for state in ["Stopped", "NeedsLogin", "NoState"] {
+            let json = Data(
+                "{\"BackendState\":\"\(state)\",\"Self\":{\"DNSName\":\"mac.ts.net.\"}}".utf8
+            )
+            #expect(!TailscaleStatus.isRunning(statusJSON: json), "\(state)")
+        }
+        #expect(!TailscaleStatus.isRunning(statusJSON: Data("not json".utf8)))
     }
 
     // MARK: - Through the registry
@@ -216,7 +353,7 @@ struct EndpointRefreshTests {
         try registry.save(peer(["mac.local", "192.168.1.20"]))
         try registry.recordSuccess(endpoint: Endpoint(host: "192.168.1.20"), forHostKey: "ssh-ed25519 AAAAKEY")
         let stored = try registry.recordDiscoveredEndpoints(
-            [Endpoint(host: "mac.local"), Endpoint(host: "10.0.5.9")],
+            report(name: ["mac.local"], interfaces: ["10.0.5.9"]),
             forHostKey: "ssh-ed25519 AAAAKEY"
         )
 
@@ -238,7 +375,7 @@ struct EndpointRefreshTests {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         #expect(try registry.recordDiscoveredEndpoints(
-            [Endpoint(host: "10.0.5.9")], forHostKey: "ssh-ed25519 GONE"
+            report(interfaces: ["10.0.5.9"]), forHostKey: "ssh-ed25519 GONE"
         ) == nil)
         #expect(try registry.all().isEmpty)
     }

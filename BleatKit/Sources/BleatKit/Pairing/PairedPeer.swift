@@ -40,6 +40,28 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// Session to select by default, once the user has picked one.
     public var session: String?
 
+    /// The host's most recent report about its own addresses, kept per probe.
+    ///
+    /// **`nil` is not an empty report, and the difference is what makes a
+    /// refresh safe.** `nil` means this record has never been refreshed — every
+    /// endpoint on it came from the QR, and none can be attributed to the
+    /// host's self-report, so a refresh may add but must not prune. A stored
+    /// report is a set the phone watched the host produce, so anything in it
+    /// the host no longer reports has genuinely gone.
+    ///
+    /// Kept so a refresh can tell an address the host has dropped from one it
+    /// never claimed. The second kind is sticky: a private DNS name given with
+    /// `--endpoint`, or anything added by hand, is invisible to detection, and
+    /// pruning it for being absent from a report that could never have
+    /// contained it would delete the one endpoint that works for a zero-trust
+    /// overlay.
+    ///
+    /// Per probe rather than one flat set, because a probe that fails must not
+    /// look like a category the host has emptied — see
+    /// `EndpointDiscovery.Report`, where that distinction is the difference
+    /// between a stopped Tailscale and a peer that can never be reached again.
+    public var hostReport: EndpointDiscovery.Report?
+
     public var id: String { hostKey }
 
     /// `SHA256:…` for showing the user. Never used for comparison.
@@ -53,7 +75,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         herdrPath: String? = nil,
         lastGoodEndpoint: Endpoint? = nil,
         deviceMarker: String? = nil,
-        session: String? = nil
+        session: String? = nil,
+        hostReport: EndpointDiscovery.Report? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -63,6 +86,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.lastGoodEndpoint = lastGoodEndpoint
         self.deviceMarker = deviceMarker
         self.session = session
+        self.hostReport = hostReport
     }
 
     public init(payload: PairingPayload) {
@@ -113,7 +137,71 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
             merged.endpoints.append(endpoint)
         }
         if let session = other.session { merged.session = session }
+        merged.hostReport = other.hostReport ?? hostReport
         return merged
+    }
+
+    /// Folds a fresh report of the host's own addresses into this record.
+    ///
+    /// Runs after a successful connection, over the connection that just
+    /// succeeded — so it is exactly as trustworthy as the host key pin that
+    /// authenticated it, which is what lets it happen silently with nothing to
+    /// confirm.
+    ///
+    /// Four rules, and each of them is a way this would otherwise go wrong:
+    ///
+    /// - **A report where no probe answered changes nothing.** That is the host
+    ///   being unaskable — an older macOS without `scutil`, a restricted shell,
+    ///   a cancelled refresh — and not the host saying it has no addresses.
+    ///   Treating it as one would empty the peer and strand the phone with a
+    ///   record it can never connect through again.
+    /// - **Pruning is per probe, not per report.** Only categories the host
+    ///   actually answered for may lose entries. Flattened, a `tailscale` that
+    ///   timed out — or is merely switched off, which is not an error at all —
+    ///   would look like a host that had dropped every overlay endpoint, and
+    ///   one pass would delete the MagicDNS name and both tunnel addresses.
+    ///   The next time the phone left Wi-Fi the host would be gone for good.
+    /// - **Only what the host previously claimed may be pruned.** Everything
+    ///   else is sticky: entries from the QR, `--endpoint` extras, anything
+    ///   added by hand. Detection cannot see them, so their absence from a
+    ///   report is not evidence of anything.
+    /// - **`lastGoodEndpoint` survives, for one refresh.** It completed a
+    ///   handshake minutes ago, which outranks any report about it. Putting it
+    ///   back is recorded in `Report.reinstated` so the exemption expires:
+    ///   unrecorded, it would read as an address the host never claimed and
+    ///   become permanently un-prunable, so a recycled DHCP lease that won one
+    ///   race would live in the peer forever.
+    ///
+    /// Pruning matters as much as adding, and this is the half that is easy to
+    /// skip. A list that only ever grows accumulates recycled DHCP leases and
+    /// dead node addresses, and each one is dialled on every connection from
+    /// then on. Worse than the wasted slot: a recycled address reaches an
+    /// unrelated machine, which fails *host key verification* — and
+    /// `PeerConnector` promotes a mismatch over every other failure, so a
+    /// sleeping Mac plus one stale address reports a security warning instead
+    /// of "could not reach it". `InterfaceAddresses.ignoredPrefixes` exists to
+    /// avoid the identical hazard from virtual interfaces.
+    public func refreshingEndpoints(discovered: EndpointDiscovery.Report) -> PairedPeer {
+        guard discovered.answered else { return self }
+        var updated = self
+        let previous = hostReport ?? EndpointDiscovery.Report()
+        let superseded = previous.superseded(by: discovered)
+        var kept = endpoints.filter { !superseded.contains($0) }
+        for endpoint in discovered.all where !kept.contains(endpoint) {
+            kept.append(endpoint)
+        }
+        var report = previous.merging(discovered)
+        // After the merge, not before: the winner may be one the host has just
+        // stopped reporting, and it is still the only address demonstrated to
+        // work from where this phone is standing. Recorded, so the next refresh
+        // may take it away once it is no longer the winner.
+        if let last = lastGoodEndpoint, !kept.contains(last) {
+            kept.append(last)
+            report.reinstated = [last]
+        }
+        updated.endpoints = kept
+        updated.hostReport = report
+        return updated
     }
 
     /// The endpoints to try, in order, given where the phone is standing.

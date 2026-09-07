@@ -13,4 +13,11 @@ enum Fixture {
     static func data(_ name: String) throws -> Data {
         try Data(contentsOf: directory.appendingPathComponent(name))
     }
+
+    /// The same bytes as text, for the fixtures that are command output rather
+    /// than JSON — `ifconfig.txt`, `localhostname.txt` — and for feeding a fake
+    /// shell that answers with what a host really said.
+    static func text(_ name: String) throws -> String {
+        String(decoding: try data(name), as: UTF8.self)
+    }
 }

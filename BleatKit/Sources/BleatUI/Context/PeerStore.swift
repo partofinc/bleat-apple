@@ -86,6 +86,45 @@ public final class PeerStore {
         reload()
     }
 
+    /// Asks the host what its addresses are now, and folds the answer in.
+    ///
+    /// **Why this exists:** endpoints were captured once, at pair time, and
+    /// never looked at again. A Mac that moved to a new network, a Tailscale
+    /// node removed and re-added, a tunnel set up after pairing — each of them
+    /// cost a full re-pair, walking back to the Mac to run `bleat pair`. The
+    /// host is the authority on its own addresses and the phone is already
+    /// talking to it, so asking costs three exec channels on a connection that
+    /// is already open.
+    ///
+    /// It is a hedge, not a guarantee, and worth being honest about: a refresh
+    /// only happens over a connection that still works, so a host whose every
+    /// stored endpoint died at once is still a re-pair. What this removes is
+    /// the far more common case where *one* of them changed.
+    ///
+    /// Deliberately silent on every failure. Nothing here is worth showing a
+    /// user — they did not ask for it, and the whole of the downside is that
+    /// the endpoints stay as they were.
+    /// - Parameter port: The port of the endpoint that **just won the race**,
+    ///   not one read off the peer. A snapshot's `lastGoodEndpoint` is the
+    ///   *previous* winner, and with mixed ports — a `--endpoint host:2222`
+    ///   extra beside port-22 detected addresses, which is exactly the
+    ///   throwaway-sshd flow this repo documents — that stamps every discovered
+    ///   address with the wrong port while pruning the right ones, replacing
+    ///   working endpoints with addresses nothing is listening on.
+    public func refreshEndpoints(
+        for peer: PairedPeer,
+        over shell: any ShellRunner,
+        port: Int
+    ) async {
+        let discovered = await EndpointDiscovery.probe(shell, port: port)
+        // No probe answered — the host was unaskable, or this task was
+        // cancelled part way. Either way there is nothing to say about its
+        // addresses, and saying it anyway would prune against silence.
+        guard discovered.answered, !Task.isCancelled else { return }
+        try? registry.recordDiscoveredEndpoints(discovered, forHostKey: peer.hostKey)
+        reload()
+    }
+
     // MARK: - Device key
 
     /// The device's key, created on first read.

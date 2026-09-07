@@ -489,8 +489,7 @@ peer with two endpoints*, not two peers.
       not resolve and every race spends a timeout on it.
     - It earns its place because a node's address is stable only while its node
       record lives: removing the machine from the tailnet and re-adding it
-      mints a new one, and endpoints are captured at pair time and never
-      re-discovered. The name follows the machine across that.
+      mints a new one. The name follows the machine across that.
   - **Twingate and similar zero-trust overlays give the host no address of its
     own, and this is a different shape from Tailscale rather than a gap in the
     detection.** A mesh puts an address on every node's own interface, which is
@@ -812,6 +811,140 @@ sends the user to run `bleat pair` again rather than back to a dead QR.
 second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
+
+### Endpoints are refreshed on connect, not captured once (Phase 2)
+
+Endpoints used to be read at pair time and never looked at again, so a Mac that
+moved network, a Tailscale node removed and re-added, or a tunnel set up after
+pairing each cost a full re-pair — walking back to the Mac to run `bleat pair`.
+The host is the authority on its own addresses and the phone is already talking
+to it, so it asks.
+
+**This is safe because of what authenticated it.** Anything learned over a
+connection already verified against the pinned host key is exactly as
+trustworthy as the pin, which is what lets a refresh happen silently with
+nothing to confirm.
+
+`EndpointDiscovery` in `BleatKit` holds both the three probes and the assembly
+of their answers, and **both ends use it**: `HostInspector` runs the commands
+locally with `Process` while `bleat pair` mints a QR, and `PeerStore` runs them
+over an exec channel on a connection it already has. Two copies of "which
+addresses does this machine offer" would drift silently — the phone would keep
+folding a peer into a shape `bleat pair` would never have produced.
+
+- Every probe ends in `|| true`, for the reason `HerdrLookup.command` does:
+  absence is a normal answer. Without it a host without `scutil` produces a
+  *failed command* and the user is told "the host rejected a command (exit 1)"
+  about a machine that is working perfectly.
+- The probes run **serially**, not with `async let`. Three concurrent exec
+  channels would save a few hundred milliseconds of work nobody waits for, in
+  exchange for exercising concurrent use of `SSHTransport` — which wraps a
+  Citadel client that is not `Sendable`-audited and is lock-guarded for exactly
+  that reason. Serial is also what makes the cancellation checks between them
+  mean anything.
+- It runs **after** the connection is installed and is never awaited by the
+  screen, so a list draws at the same speed it always did — and only on a fresh
+  dial, since a reused connection returns before reaching it.
+
+**Cancelling the refresh is not enough on its own, and this is the sharp
+edge.** `SSHTransport` re-dials lazily when its client is nil and
+`SSHClient.connect` does not observe cancellation, so a probe command that runs
+after `ConnectionStore.release()` has disconnected opens a **brand new SSH
+session** that nothing references and nothing will close — an orphaned session
+on the user's Mac, which is the one thing `ConnectionStore` promises not to
+leave. So `EndpointDiscovery.probe` checks `Task.isCancelled` between every
+command, a cancelled probe reports **nothing at all** rather than a partial
+answer, and `release()` *awaits* the task exactly as it already does a dial in
+flight.
+
+### The `tailscale` probe, and what running it taught
+
+Same loop as `HostInspector.tailscaleStatusJSON` — absolute paths, in order,
+first that *answers* — with a five-second watchdog, since `tailscale` has no
+timeout flag and a wedged `tailscaled` would hold the exec channel for the life
+of the connection. Four of its details were bugs, and each was found by running
+the string rather than reading it:
+
+- **`status` is read-only in `zsh`**, which is what sshd runs on a modern macOS.
+  Naming the exit status that aborted the whole loop under the one shell it will
+  actually meet, while working under `sh` and `bash`. Verified across all three
+  now.
+- **Each attempt writes to its own scratch file.** Straight to stdout, the
+  attempts concatenate: a binary that emits a partial object before failing, or
+  one killed mid-write by the watchdog, glues that fragment to the front of the
+  next binary's reply. Reproduced — `{"partial":{…}{"BackendState":…}` — which
+  parses as nothing, so the loop written to save the MagicDNS name lost it in
+  the exact case it exists for.
+- **Exiting 0 is not answering.** A Homebrew CLI that cannot reach the App Store
+  app's daemon exits cleanly reporting `NeedsLogin` or `Stopped`, so stopping at
+  the first clean exit never tries the bundled binary that would have answered.
+  The condition is `BackendState == "Running"`, greped here and checked by
+  `TailscaleStatus.isRunning` locally; the two have to agree.
+- **The watchdog's output goes to `/dev/null`** so it is not a writer on the
+  channel — attached, it holds the command open for the full five seconds on
+  every run — and `exec 2>/dev/null` suppresses the shell's `Terminated: 15`
+  notice when the watchdog is killed.
+
+**What a refresh may change, and the four rules that bound it.** `PairedPeer`
+gains `hostReport`, the host's most recent self-report **kept per probe**.
+
+- **`nil` is not an empty report.** `nil` means never refreshed, so nothing on
+  the record can be attributed to the host and the first refresh may add but
+  must not prune. Without that distinction every `--endpoint` extra baked into
+  a QR would vanish the first time the phone connected after this shipped.
+- **A report no probe answered changes nothing.** That is the host being
+  unaskable — or the refresh being cancelled — and not the host saying it has no
+  addresses. Reading it as one would empty the peer and strand the phone with a
+  record it can never connect through again.
+- **Pruning is per probe, not per report, and this is the one that matters
+  most.** Flattened into a single list, one flaky probe is indistinguishable
+  from a host that has dropped a whole category. Tailscale being switched off is
+  not even an error — the CLI exits 0 with `BackendState: "Stopped"` — so
+  `scutil` and `ifconfig` answering normally would yield a perfectly non-empty
+  report with no overlay endpoints in it, and one pass would delete the MagicDNS
+  name and both tunnel addresses. The next time the phone was on cellular the
+  host would be unreachable **permanently, from a transient condition** — which
+  is the exact cost this feature exists to remove. So each of the three fields
+  in `EndpointDiscovery.Report` is independently optional: `nil` means "this
+  probe gave no confident answer" and prunes nothing, while an empty array is a
+  real answer.
+- **Only what the host previously claimed may be pruned.** Everything else is
+  sticky — `--endpoint` extras, anything added by hand — because detection
+  cannot see them and their absence from a report is not evidence of anything.
+  This is what protects a Twingate private DNS name.
+- **`lastGoodEndpoint` survives, for one refresh.** It completed a handshake
+  minutes ago, which outranks any report about it. Putting it back is recorded
+  in `Report.reinstated` so the exemption *expires*: unrecorded, it reads as an
+  address the host never claimed and becomes permanently un-prunable, so a
+  recycled DHCP lease that won one race would live in the peer forever — the
+  very hazard the pruning exists for.
+
+**The port comes from the endpoint that just won**, not from the peer snapshot.
+That snapshot's `lastGoodEndpoint` is the *previous* winner, and on a host with
+mixed ports — a `--endpoint host:2222` extra beside port-22 detected addresses,
+which is exactly the throwaway-sshd flow this file documents — it would stamp
+every discovered address with the wrong port while pruning the right ones,
+replacing working endpoints with addresses nothing is listening on.
+
+**Pruning matters as much as adding, and it is the half that is easy to skip.**
+A list that only grows accumulates recycled DHCP leases and dead node
+addresses, each dialled on every connection afterwards. Worse than the wasted
+race slot: a recycled address reaches an unrelated machine and fails *host key
+verification*, and `PeerConnector` promotes a mismatch over every other failure
+— so a sleeping Mac plus one stale address reports a security warning instead of
+"could not reach it". `InterfaceAddresses.ignoredPrefixes` exists to avoid the
+identical hazard from virtual interfaces.
+
+`PeerRegistry.recordDiscoveredEndpoints` is a **targeted mutation**, for the
+reason `recordHerdrPath` is one and more urgently: `save` merges, a merge takes
+the newer record's `lastGoodEndpoint`, and this runs moments after
+`recordSuccess`.
+
+**It is a hedge, not a guarantee.** A refresh only happens over a connection
+that still works, so a host whose every stored endpoint died at once is still a
+re-pair. What it removes is the far more common case where *one* of them
+changed. An endpoint from the QR that the host has since stopped reporting also
+lingers, since it was never attributed — removing one by hand is the answer.
 
 ### Connecting to a paired peer (Phase 2)
 

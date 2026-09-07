@@ -1997,6 +1997,18 @@ behaviour when it moves across the seam.
     would pull the base branch out from under a stacked PR the moment its
     parent merged. Delete merged branches deliberately instead, once nothing
     is stacked on them.
+- **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
+  Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
+  open Xcode is using. Interleaving configurations and destinations there —
+  Debug simulator, Debug device, Release device, in one sitting — leaves the
+  build database and the products on disk out of step, and the first thing that
+  notices is **previews**, which JIT-link per-file object files:
+  `FailedToLaunchAppError` wrapping `ShellCouldNotValidatePathExists: Could not
+  validate that build product path exists to link: …/BleatUI.build/
+  Objects-normal/arm64/AgentLink.o`. The file was there; the build description
+  disagreed. It cost a 2.2 GB DerivedData deletion and a full rebuild to clear.
+  Build into a scratch path instead, and let Xcode keep its own.
+
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

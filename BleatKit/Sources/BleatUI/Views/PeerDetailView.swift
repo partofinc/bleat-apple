@@ -9,27 +9,19 @@ import SwiftUI
 /// they are worth reading is the moment the list above has failed.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
-    /// The peer as it was when this screen was pushed. Read through `peer`
-    /// below rather than used directly: editing an address rewrites the record,
-    /// and a screen holding the version from before the edit would show the old
-    /// list until it was popped and pushed again.
-    let initialPeer: PairedPeer
+    /// Always current: `RouteView` looks the peer up by host key on every body
+    /// evaluation and hands the stored value in, so an edit here is reflected
+    /// without this screen tracking the store itself — and a peer that has been
+    /// unpaired swaps the whole screen out one level up rather than needing a
+    /// fallback here.
+    let peer: PairedPeer
     @State private var sessions: RemoteList<SessionInfo>
     @State private var addingEndpoint = false
-
-    /// The stored record, falling back to the one this screen was built with.
-    ///
-    /// The fallback is what keeps unpairing from flashing an empty screen: the
-    /// record is deleted while this view is still on the stack for the moment
-    /// before the navigation pops.
-    private var peer: PairedPeer {
-        context.peers.peers.first { $0.hostKey == initialPeer.hostKey } ?? initialPeer
-    }
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
     init(peer: PairedPeer, connections: ConnectionStore) {
-        self.initialPeer = peer
+        self.peer = peer
         // No session prefix: `session list` is a client-side command that
         // reports every session regardless of which one is selected.
         _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
@@ -56,7 +48,13 @@ struct PeerDetailView: View {
             Section {
                 ForEach(peer.endpoints, id: \.self) { endpoint in
                     EndpointRow(endpoint: endpoint, isLastGood: endpoint == peer.lastGoodEndpoint)
-                        .swipeActions {
+                        // `allowsFullSwipe: false`, so removing takes a
+                        // deliberate tap. An address the user added by hand is
+                        // one detection can never report, so deleting it is
+                        // permanent and undone only by retyping it from memory
+                        // — and the peer list beside this one already refuses
+                        // to let a full swipe act rather than ask.
+                        .swipeActions(allowsFullSwipe: false) {
                             // Hidden on the last one rather than shown and
                             // refused. A peer with no addresses cannot be
                             // connected to, and since nothing can add one back
@@ -71,6 +69,16 @@ struct PeerDetailView: View {
                         }
                 }
                 Button("Add an address", systemImage: "plus") { addingEndpoint = true }
+                // Editing writes to disk, and a write can fail — an unwritable
+                // container, a full disk. Without this the row simply stays
+                // where it was and the swipe looks like it did nothing, because
+                // `PeerStore.failure` is only rendered a screen back on the
+                // peer list. The user swipes again, to the same effect.
+                if let failure = context.peers.failure {
+                    Label(failure, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                }
             } header: {
                 Text("Reachable at")
             } footer: {

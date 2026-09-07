@@ -204,6 +204,37 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         return updated
     }
 
+    /// The port to stamp a freshly discovered address with.
+    ///
+    /// **Discovery yields addresses, never ports.** `scutil`, `ifconfig` and
+    /// `tailscale` all report where a machine can be found and none of them
+    /// knows what port its sshd binds — that was settled once, by
+    /// `bleat pair --port`. So a refresh must not invent one; it has to reuse
+    /// the port this peer already associates with the host, and the most common
+    /// port across its endpoints is that answer.
+    ///
+    /// **The obvious alternative strands the peer.** Taking the port of the
+    /// endpoint that just won the race looks right — it demonstrably reached
+    /// sshd — but the winner can be a manually added port forward, which is the
+    /// motivating case for adding one at all. A peer with `mac.local:22`,
+    /// `192.168.1.20:22` and `100.114.119.30:22` plus a hand-typed
+    /// `home.example.com:2222` connects over the forward from cellular; the
+    /// refresh then rebuilds every discovered address at 2222 and supersedes
+    /// the three that worked. Back on Wi-Fi every endpoint refuses, and since
+    /// no connection succeeds no later refresh can repair it. A re-pair, caused
+    /// by using the feature as documented.
+    ///
+    /// Ties break towards the lower port, so the answer is stable rather than
+    /// depending on dictionary order.
+    public var discoveryPort: Int {
+        var counts: [Int: Int] = [:]
+        for endpoint in endpoints { counts[endpoint.port, default: 0] += 1 }
+        guard let best = counts.max(by: { ($0.value, $1.key) < ($1.value, $0.key) })?.key else {
+            return Endpoint.defaultPort
+        }
+        return best
+    }
+
     /// The endpoints to try, in order, given where the phone is standing.
     ///
     /// Last-known-good goes first — it is nearly always still right, and trying

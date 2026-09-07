@@ -189,6 +189,96 @@ struct ManualEndpointTests {
             .endpoints.map(\.host) == ["mac.local"])
     }
 
+    // MARK: - What a refresh does around a hand-typed address
+
+    /// **The stranding case, and it is the feature used exactly as documented.**
+    /// Discovery reports addresses and never ports — no probe knows what port
+    /// sshd binds — so a refresh has to reuse the port the peer already
+    /// associates with the host. Taking the port of the endpoint that just won
+    /// looks right and is not: the winner can be a hand-typed port forward,
+    /// which is the motivating reason to add one. Every discovered address
+    /// would then be rebuilt at the forward's external port, superseding the
+    /// three that worked — and back on Wi-Fi nothing connects, so no later
+    /// refresh can repair it.
+    @Test("a hand-typed port forward does not re-port the host's own addresses")
+    func manualPortDoesNotRestampDiscoveredAddresses() throws {
+        let temp = TempRegistry()
+        let registry = temp.registry
+        try registry.save(peer(["mac.local", "192.168.1.20", "100.101.102.103"]))
+        try registry.addEndpoint(
+            Endpoint(string: "home.example.com:2222")!, forHostKey: Self.hostKey
+        )
+        // The forward won the race from cellular, and is the stored winner.
+        try registry.recordSuccess(
+            endpoint: Endpoint(string: "home.example.com:2222")!, forHostKey: Self.hostKey
+        )
+        let stored = try #require(try registry.peer(hostKey: Self.hostKey))
+
+        // Three endpoints on 22 against one on 2222: the host's port is 22.
+        #expect(stored.discoveryPort == 22)
+
+        let refreshed = stored.refreshingEndpoints(discovered: report(
+            name: ["mac.local"], interfaces: ["192.168.1.20", "100.101.102.103"]
+        ))
+        #expect(refreshed.endpoints.filter { $0.port == 22 }.count == 3)
+        #expect(refreshed.endpoints.map(\.description).contains("home.example.com:2222"))
+    }
+
+    /// …and a host genuinely on a non-standard port keeps it, because the
+    /// majority is what decides rather than a hardcoded 22.
+    @Test("a host paired on a non-standard port keeps that port")
+    func nonStandardPortIsKept() {
+        #expect(peer(["mac.local:2222", "192.168.1.20:2222"]).discoveryPort == 2222)
+        #expect(peer([]).discoveryPort == Endpoint.defaultPort)
+    }
+
+    // MARK: - What a user may type
+
+    /// DNS is case-insensitive and `Hashable` is not, so an endpoint stores its
+    /// host lower-cased. Without that, a differently-cased duplicate is a
+    /// second endpoint for one machine — and it can never be pruned, because
+    /// the host reports the other form, so every race dials the host twice
+    /// forever.
+    @Test("case does not create a second endpoint for one machine")
+    func caseInsensitiveHosts() throws {
+        let temp = TempRegistry()
+        let registry = temp.registry
+        try registry.save(peer(["rawillkair.local"]))
+        try registry.addEndpoint(Endpoint(host: "RawillkAir.Local"), forHostKey: Self.hostKey)
+        #expect(try registry.peer(hostKey: Self.hostKey)?.endpoints.count == 1)
+        #expect(Endpoint(host: "MAC.local") == Endpoint(host: "mac.local"))
+    }
+
+    /// `Endpoint(string:)` is a parser, not a validator: anything without a
+    /// colon becomes a hostname verbatim. That matters here because an address
+    /// added by hand is permanently sticky — no refresh can prune what
+    /// detection cannot see — so junk would be dialled in every race from then
+    /// on and counted in the message explaining the failure.
+    @Test("the shapes people actually paste are refused")
+    func implausibleHostsAreRefused() {
+        for text in [
+            "ravil@mac.internal", "ssh mac.local", "mac.local/foo", "https://mac.local",
+            "mac..local", ".mac.local", "mac local", "", "mac\"local",
+        ] {
+            let host = Endpoint(string: text)?.host
+            #expect(host.map { !Endpoint.isPlausibleHost($0) } ?? true, "\(text)")
+        }
+    }
+
+    /// …and the ones that are addresses still pass, including the awkward
+    /// forms. Rejecting a valid internal name would be the worse failure: the
+    /// user has no other way to add it.
+    @Test("real addresses are still accepted")
+    func plausibleHostsAreAccepted() {
+        for text in [
+            "mac.local", "192.168.1.20", "home.example.com:2222",
+            "[fd7a:115c:a1e0::42a:771f]", "[fe80::1]:2222", "mac-01.internal", "mac",
+        ] {
+            let endpoint = Endpoint(string: text)
+            #expect(endpoint.map { Endpoint.isPlausibleHost($0.host) } == true, "\(text)")
+        }
+    }
+
     @Test("editing an unknown peer writes nothing")
     func unknownPeerIsSilence() throws {
         let temp = TempRegistry()

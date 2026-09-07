@@ -104,19 +104,14 @@ public final class PeerStore {
     /// Deliberately silent on every failure. Nothing here is worth showing a
     /// user — they did not ask for it, and the whole of the downside is that
     /// the endpoints stay as they were.
-    /// - Parameter port: The port of the endpoint that **just won the race**,
-    ///   not one read off the peer. A snapshot's `lastGoodEndpoint` is the
-    ///   *previous* winner, and with mixed ports — a `--endpoint host:2222`
-    ///   extra beside port-22 detected addresses, which is exactly the
-    ///   throwaway-sshd flow this repo documents — that stamps every discovered
-    ///   address with the wrong port while pruning the right ones, replacing
-    ///   working endpoints with addresses nothing is listening on.
-    public func refreshEndpoints(
-        for peer: PairedPeer,
-        over shell: any ShellRunner,
-        port: Int
-    ) async {
-        let discovered = await EndpointDiscovery.probe(shell, port: port)
+    /// The port comes from `PairedPeer.discoveryPort` — the port this peer
+    /// already associates with the host — because discovery reports addresses
+    /// and never ports. Neither the endpoint that won the race nor the previous
+    /// `lastGoodEndpoint` will do: either can be a manually added port forward,
+    /// and stamping every discovered address with its external port supersedes
+    /// the ones that actually work.
+    public func refreshEndpoints(for peer: PairedPeer, over shell: any ShellRunner) async {
+        let discovered = await EndpointDiscovery.probe(shell, port: peer.discoveryPort)
         // No probe answered — the host was unaskable, or this task was
         // cancelled part way. Either way there is nothing to say about its
         // addresses, and saying it anyway would prune against silence.
@@ -127,8 +122,14 @@ public final class PeerStore {
 
     /// Adds an address the user typed in.
     ///
-    /// - Returns: whether anything was stored, so the sheet can stay open and
-    ///   say why when nothing was.
+    /// - Returns: whether the address is on the peer afterwards — which is
+    ///   `true` for one that was already there, since that is the outcome the
+    ///   user asked for and the sheet should close either way. Only a failed
+    ///   write returns `false`, and it is the sheet's cue to stay open and say
+    ///   so. Deliberately not "whether anything was written": a background
+    ///   refresh can add the very address being typed while the sheet is open,
+    ///   and reporting that as a failure would be a lie about a peer that has
+    ///   exactly what was wanted.
     @discardableResult
     public func addEndpoint(_ endpoint: Endpoint, to peer: PairedPeer) -> Bool {
         do {

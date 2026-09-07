@@ -155,13 +155,7 @@ public final class ConnectionStore {
         // than once per request.
         refresh?.cancel()
         refresh = Task { [peers] in
-            // The port of the endpoint that just won, not one read off `peer`
-            // — that snapshot carries the *previous* winner, and on a host with
-            // mixed ports it would stamp every refreshed address with the wrong
-            // one.
-            await peers.refreshEndpoints(
-                for: peer, over: connected.transport, port: connected.endpoint.port
-            )
+            await peers.refreshEndpoints(for: peer, over: connected.transport)
         }
         return connected
     }

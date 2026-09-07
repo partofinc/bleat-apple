@@ -32,6 +32,9 @@ struct AddEndpointView: View {
                         .autocorrectionDisabled()
                         .focused($focused)
                         .onSubmit(add)
+                        // Or the red row keeps naming the address the user has
+                        // just finished editing away from.
+                        .onChange(of: text) { failure = nil }
                         // Both are UIKit-only, and both matter here rather than
                         // being polish: an autocapitalised first letter makes
                         // an address that will not resolve, and the prose
@@ -87,12 +90,27 @@ struct AddEndpointView: View {
     /// Parsed on every keystroke rather than on submit, so "Add" is disabled
     /// until there is something to add — which is a quieter way to say "that is
     /// not an address" than an error after the fact.
+    ///
+    /// **`Endpoint(string:)` alone is not enough**, because it is a parser and
+    /// not a validator: anything without a colon becomes a hostname verbatim,
+    /// so `ravil@mac.internal` — a very natural paste — `ssh mac.local` and
+    /// `mac.local/foo` would all enable the button and be stored. And an
+    /// address added here is permanently sticky, since detection can never
+    /// report it: it would be dialled in every race from then on, costing a
+    /// connect timeout each time and inflating the count in the message that
+    /// explains the failure. `Endpoint.isPlausibleHost` is the second half.
     private var parsed: Endpoint? {
-        Endpoint(string: text, defaultPort: defaultPort)
+        guard let endpoint = Endpoint(string: text, defaultPort: defaultPort),
+              Endpoint.isPlausibleHost(endpoint.host)
+        else { return nil }
+        return endpoint
     }
 
     private func add() {
         guard let endpoint = parsed else { return }
+        // `Endpoint` lower-cases its host, so this catches `RawillkAir.local`
+        // against a stored `rawillkair.local` — which DNS treats as one machine
+        // and `Hashable` would not.
         guard !peer.endpoints.contains(endpoint) else {
             failure = "\(endpoint) is already on the list."
             return

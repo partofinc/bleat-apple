@@ -923,8 +923,17 @@ fixed nothing visible; the user had to know to tap "Try again".
   refusing, which covers both "the alert is unanswered" and "the user said
   no". **Everything else stays `.unknown` on purpose** — blaming a permission
   for an unrelated failure sends the user to Settings to fix what is not
-  broken. Verified on the simulator that the browser does reach `.ready`;
-  the refusal path is reasoned from the documented codes, not observed.
+  broken.
+- **Verified on device 7 Sept 2026: pairing on a fresh install is smooth.** The
+  alert now arrives with the sheet and is answered before there is a code, so
+  the failure that started this never happens. Two things that confirmation
+  does *not* cover, because a successful prime means neither runs: the
+  wait-and-retry path, and the `-65555`/`-65570` refusal codes, which are
+  reasoned from Apple's constants rather than observed. Forcing a denial to
+  test them needs a privacy reset, and the only clean route to one is an
+  uninstall — which wipes the app's Application Support and strands the device
+  key on the host with no `PairedPeer` naming the line to revoke. Not worth it
+  for a fallback whose failure mode is "behaves exactly as it did before".
 - **`NSBonjourServices` is not optional here.** Without the declaration the
   browser is refused before the permission is ever consulted, so the app would
   conclude "blocked" and never retry. It names `_ssh._tcp`, which is honestly

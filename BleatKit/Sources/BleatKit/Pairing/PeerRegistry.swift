@@ -133,7 +133,7 @@ public struct PeerRegistry: Sendable {
     ///   peer removed while it was in flight is a race with no consequence.
     @discardableResult
     public func recordDiscoveredEndpoints(
-        _ discovered: [Endpoint],
+        _ discovered: EndpointDiscovery.Report,
         forHostKey hostKey: String
     ) throws -> PairedPeer? {
         var peers = try all()

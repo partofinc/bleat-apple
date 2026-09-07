@@ -41,14 +41,19 @@ public final class ConnectionStore {
     /// A dial in flight, so two screens asking at once do not race every
     /// endpoint twice and leak whichever transport loses the assignment.
     private var connecting: (hostKey: String, task: Task<PeerConnection.Connected, any Error>)?
-    /// The background endpoint refresh, held only so it can be cancelled.
+    /// The background endpoint refresh, held so it can be cancelled *and*
+    /// waited for.
     ///
-    /// Cancelled on `release()` and before starting another, because it runs on
-    /// a transport this store is about to disconnect. Letting one outlive its
-    /// connection would leave it awaiting a channel that is being torn down —
-    /// harmless in itself, since every failure here is swallowed, but it would
-    /// also write back endpoints for a peer the user has left, on top of
-    /// whatever the next screen recorded.
+    /// **Cancelling is not enough, and this is the part that bites.**
+    /// `SSHTransport` re-dials lazily when its client is nil, and
+    /// `SSHClient.connect` does not observe cancellation — so a probe that runs
+    /// after `release()` has disconnected opens a brand new SSH session that
+    /// this store no longer references and will never close. An orphaned
+    /// session on the user's Mac is the one thing this type promises not to
+    /// leave behind. `EndpointDiscovery.probe` checks `Task.isCancelled`
+    /// between every command for that reason, and `release()` awaits the task
+    /// rather than walking away from it, exactly as it already does for a dial
+    /// in flight.
     private var refresh: Task<Void, Never>?
 
     public init(peers: PeerStore, reachability: Reachability) {
@@ -150,7 +155,13 @@ public final class ConnectionStore {
         // than once per request.
         refresh?.cancel()
         refresh = Task { [peers] in
-            await peers.refreshEndpoints(for: peer, over: connected.transport)
+            // The port of the endpoint that just won, not one read off `peer`
+            // — that snapshot carries the *previous* winner, and on a host with
+            // mixed ports it would stamp every refreshed address with the wrong
+            // one.
+            await peers.refreshEndpoints(
+                for: peer, over: connected.transport, port: connected.endpoint.port
+            )
         }
         return connected
     }
@@ -174,8 +185,13 @@ public final class ConnectionStore {
     /// Closes whatever is open, including a dial that has not finished.
     /// Idempotent.
     public func release() async {
-        refresh?.cancel()
+        // Awaited, not abandoned: the cancellation checks inside the probe only
+        // help if nothing is mid-command when the transport goes away, and the
+        // wait is bounded by one already-running command.
+        let refreshing = refresh
         refresh = nil
+        refreshing?.cancel()
+        await refreshing?.value
         let pending = connecting
         connecting = nil
         pending?.task.cancel()

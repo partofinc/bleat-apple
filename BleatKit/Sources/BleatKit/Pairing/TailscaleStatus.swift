@@ -80,6 +80,24 @@ public struct TailscaleStatus: Decodable, Sendable {
     /// normally finds them, because it only finds them when there is a `utun`
     /// to find: userspace-networking mode has no interface. They cost nothing
     /// when duplicated — the caller de-duplicates.
+    /// Whether this CLI actually spoke for a *live* tailnet.
+    ///
+    /// The success condition for "which `tailscale` on this host answers", and
+    /// it is not exit status. A Homebrew CLI that cannot reach the App Store
+    /// app's sandboxed daemon may still exit 0 reporting `NeedsLogin` or
+    /// `Stopped` — so stopping at the first binary that exits cleanly takes
+    /// that one and never tries the bundled binary that would have answered.
+    /// The MagicDNS name is then dropped in silence, which is the exact failure
+    /// the path loop exists to prevent.
+    ///
+    /// It is also what tells "Tailscale is off" apart from "Tailscale is gone",
+    /// which decides whether a refresh may prune a peer's overlay endpoints. A
+    /// stopped tailnet still holds the node's addresses; reading it as an empty
+    /// answer would delete them.
+    public static func isRunning(statusJSON data: Data) -> Bool {
+        (try? JSONDecoder().decode(Self.self, from: data))?.backendState == "Running"
+    }
+
     public static func endpoints(fromStatusJSON data: Data, port: Int) -> [Endpoint] {
         guard let status = try? JSONDecoder().decode(Self.self, from: data),
               status.backendState == "Running"

@@ -135,19 +135,19 @@ struct EndpointSelectionTests {
     @Test("off the local link, LAN endpoints are dropped rather than deprioritised")
     func offLinkDropsLAN() {
         let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103", "herdr.dev"])
-        #expect(p.endpointsToTry(onLocalLink: false).map(\.host) == ["100.101.102.103", "herdr.dev"])
+        #expect(p.endpointsToTry(from: .offLink).map(\.host) == ["100.101.102.103", "herdr.dev"])
     }
 
     @Test("on the local link, everything is a candidate")
     func onLinkKeepsAll() {
         let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103"])
-        #expect(p.endpointsToTry(onLocalLink: true).count == 3)
+        #expect(p.endpointsToTry(from: .localLink).count == 3)
     }
 
     @Test("last-known-good is tried first and not repeated")
     func lastGoodLeads() {
         let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103"], lastGood: "100.101.102.103")
-        let order = p.endpointsToTry(onLocalLink: true).map(\.host)
+        let order = p.endpointsToTry(from: .localLink).map(\.host)
         #expect(order == ["100.101.102.103", "rawillkair.local", "192.168.11.54"])
     }
 
@@ -156,12 +156,12 @@ struct EndpointSelectionTests {
     @Test("a last-known-good LAN endpoint is still dropped off-link")
     func lastGoodStillFiltered() {
         let p = peer(["rawillkair.local", "100.101.102.103"], lastGood: "rawillkair.local")
-        #expect(p.endpointsToTry(onLocalLink: false).map(\.host) == ["100.101.102.103"])
+        #expect(p.endpointsToTry(from: .offLink).map(\.host) == ["100.101.102.103"])
     }
 
     @Test("a peer with only LAN endpoints yields nothing off-link, rather than a doomed attempt")
     func noneUsableOffLink() {
         let p = peer(["rawillkair.local", "192.168.11.54"])
-        #expect(p.endpointsToTry(onLocalLink: false).isEmpty)
+        #expect(p.endpointsToTry(from: .offLink).isEmpty)
     }
 }

@@ -14,13 +14,20 @@ public enum ConnectionPolicy {
     /// won, so one made on Wi-Fi against a `.local` name can only fail after
     /// the phone moves to cellular — and the peer's overlay address, which
     /// would have worked, never gets a turn because the cache answered first.
+    ///
+    /// The whole `LinkState` is compared, not just `onLocalLink`. A tunnel
+    /// coming up changes which endpoints are candidates — a private address is
+    /// dropped without one and raced with one — so a connection made before it
+    /// was up was raced over a smaller list than the one available now, and
+    /// reusing it would pin the phone to that smaller list for as long as the
+    /// screen stays open.
     public static func canReuse(
         cachedHostKey: String,
-        cachedOnLocalLink: Bool,
+        cachedLink: LinkState,
         for peer: PairedPeer,
-        onLocalLink: Bool
+        link: LinkState
     ) -> Bool {
-        cachedHostKey == peer.hostKey && cachedOnLocalLink == onLocalLink
+        cachedHostKey == peer.hostKey && cachedLink == link
     }
 
     /// Whether an error means the connection itself is over, rather than the

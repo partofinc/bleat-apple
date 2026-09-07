@@ -135,12 +135,18 @@ public enum PeerConnector {
             if case TransportError.authenticationFailed = error { return error }
         }
         let addresses = endpoints.map(\.description).joined(separator: ", ")
-        // Every candidate was a mesh VPN address *and the caller ruled the rest
-        // out*, which is the cellular case: `endpointsToTry` dropped the
-        // `.local` name and the LAN addresses as unroutable, so the tunnel is
-        // the only way in and the likeliest reason nothing answered is that it
-        // is down on this device. "No address could be reached" would send the
-        // user to check a network that is working perfectly.
+        // Every candidate needs a tunnel *and the caller ruled the rest out*,
+        // which is the cellular case: `endpointsToTry` dropped the `.local`
+        // name as unroutable, so the tunnel is the only way in and the
+        // likeliest reason nothing answered is that it is down on this device.
+        // "No address could be reached" would send the user to check a network
+        // that is working perfectly.
+        //
+        // A private address counts here as much as a mesh one. Off the local
+        // link it survived `endpointsToTry` only because a tunnel was up, and a
+        // zero-trust client like Twingate reaches a host by exactly that — its
+        // ordinary LAN address, routed. So if that is all that is left and none
+        // of it answered, the tunnel is the thing to check.
         //
         // **The flag is load-bearing, not decoration.** Pairing hands this a
         // deliberately narrowed list — one endpoint, the one that just carried
@@ -153,10 +159,10 @@ public enum PeerConnector {
         // Nothing here can see the VPN's state — `Network` is Apple-only and
         // this file compiles for Linux — so it names the possibility rather
         // than asserting it.
-        if droppedUnroutable, !endpoints.isEmpty, endpoints.allSatisfy({ $0.reach == .overlay }) {
+        if droppedUnroutable, !endpoints.isEmpty, endpoints.allSatisfy(\.reach.needsTunnelOffLink) {
             return TransportError.overlayUnreachable(
-                "this host is only reachable over a mesh VPN from here, and "
-                + "nothing answered — check the VPN is connected on this device: "
+                "this host is only reachable over a VPN from here, and nothing "
+                + "answered — check the VPN is connected on this device: "
                 + addresses
             )
         }

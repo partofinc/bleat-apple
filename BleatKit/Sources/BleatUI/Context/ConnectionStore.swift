@@ -30,8 +30,10 @@ public final class ConnectionStore {
         /// Where the phone was standing when this was raced. A connection made
         /// on Wi-Fi is pinned to whichever address won, so once the phone
         /// leaves that network the cached client can only fail — the peer's
-        /// overlay address is never given a turn.
-        let onLocalLink: Bool
+        /// overlay address is never given a turn. A tunnel coming up counts
+        /// too: it widens the candidate list, and this one was raced without
+        /// it.
+        let link: LinkState
         let connected: PeerConnection.Connected
     }
 
@@ -79,13 +81,13 @@ public final class ConnectionStore {
         for peer: PairedPeer,
         session: String?
     ) async throws -> PeerConnection.Connected {
-        let onLocalLink = reachability.isOnLocalLink
+        let link = reachability.link
         if let live = current,
            ConnectionPolicy.canReuse(
                cachedHostKey: live.hostKey,
-               cachedOnLocalLink: live.onLocalLink,
+               cachedLink: live.link,
                for: peer,
-               onLocalLink: onLocalLink
+               link: link
            ) {
             return live.connected
         }
@@ -99,7 +101,7 @@ public final class ConnectionStore {
         let deviceKey = try peers.deviceKey()
         let task = Task {
             try await PeerConnection.connect(
-                to: peer, deviceKey: deviceKey, onLocalLink: onLocalLink, session: session
+                to: peer, deviceKey: deviceKey, link: link, session: session
             )
         }
         connecting = (peer.hostKey, task)
@@ -116,7 +118,7 @@ public final class ConnectionStore {
             throw CancellationError()
         }
 
-        current = Live(hostKey: peer.hostKey, onLocalLink: onLocalLink, connected: connected)
+        current = Live(hostKey: peer.hostKey, link: link, connected: connected)
         endpoint = connected.endpoint
 
         // Written back so the next connection tries the winner first instead of

@@ -81,7 +81,7 @@ struct PeerRegistryTests {
 
         let loaded = try #require(try store.peer(hostKey: "ssh-ed25519 AAAAKEY"))
         #expect(loaded.lastGoodEndpoint == winner)
-        #expect(loaded.endpointsToTry(onLocalLink: true).first == winner)
+        #expect(loaded.endpointsToTry(from: .localLink).first == winner)
     }
 
     /// Called on the success path of a connection. Failing there would turn a
@@ -123,7 +123,7 @@ struct PeerRegistryTests {
         let merged = try store.save(away)
 
         #expect(merged.lastGoodEndpoint == Endpoint(string: "mac.tail1234.ts.net"))
-        #expect(merged.endpointsToTry(onLocalLink: false).first == Endpoint(string: "mac.tail1234.ts.net"))
+        #expect(merged.endpointsToTry(from: .offLink).first == Endpoint(string: "mac.tail1234.ts.net"))
     }
 
     /// …but a record that learned nothing must not erase what was known.

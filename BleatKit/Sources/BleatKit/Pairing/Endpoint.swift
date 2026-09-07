@@ -16,15 +16,42 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     }
 
     /// How far an endpoint carries, which decides whether it is worth trying.
+    ///
+    /// `lan` used to cover both of the first two cases. They were split because
+    /// a tunnel treats them differently: a VPN can route a private subnet from
+    /// anywhere — which is precisely what a zero-trust client like Twingate
+    /// does — while nothing carries multicast DNS off the link it is scoped to.
     public enum Reach: Sendable, Hashable {
-        /// mDNS names and private addresses. Reachable only on the same link.
-        case lan
+        /// An mDNS `.local` name. Multicast is link-scoped, so no tunnel makes
+        /// one resolvable; only being on the network does.
+        case multicastDNS
+        /// An RFC1918 or ULA address. Routable on the attached link, and also
+        /// through any VPN that carries that subnet.
+        case privateAddress
         /// A mesh VPN's own address space — Tailscale's CGNAT and ULA ranges.
         /// Private-looking, but routed by the tunnel, so it works from anywhere
         /// the tunnel is up, including cellular.
         case overlay
         /// A globally routable address or a public DNS name.
         case routable
+
+        /// Whether this is one of the two that used to be `lan`. Kept for the
+        /// places that summarise reach for a human, where "same network" is
+        /// still the useful distinction.
+        public var isLocalOnly: Bool { self == .multicastDNS || self == .privateAddress }
+
+        /// Whether reaching this from off the local link takes a tunnel.
+        ///
+        /// A mesh address obviously does. An ordinary private one does too, and
+        /// that is the case worth naming: off-link it survives the candidate
+        /// filter *only* because a tunnel is up, which is how a zero-trust
+        /// client reaches a host — by its plain LAN address, routed. So when
+        /// everything left is one of these and none answered, the tunnel is the
+        /// thing to check rather than the network.
+        ///
+        /// `.multicastDNS` is excluded because no tunnel carries multicast; it
+        /// is dropped off-link rather than being a tunnel candidate.
+        public var needsTunnelOffLink: Bool { self == .overlay || self == .privateAddress }
     }
 
     /// Tailscale hands out `100.64.0.0/10` (CGNAT) and `fd7a:115c:a1e0::/48`.
@@ -36,16 +63,36 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     public var reach: Reach {
         let name = host.lowercased()
         if Self.isTailscale(name) { return .overlay }
-        if name.hasSuffix(".local") || name.hasSuffix(".local.") { return .lan }
-        if Self.isPrivateAddress(name) { return .lan }
+        if name.hasSuffix(".local") || name.hasSuffix(".local.") { return .multicastDNS }
+        if Self.isPrivateAddress(name) { return .privateAddress }
         return .routable
     }
 
-    /// Whether this endpoint is worth attempting when off the local link.
+    /// Whether this endpoint is worth attempting from where the phone is.
     ///
-    /// `.local` cannot resolve and RFC1918 cannot route once the phone is on
-    /// cellular; attempting them only spends the timeout.
-    public var isUsableOffLink: Bool { reach != .lan }
+    /// Attempting one that provably cannot work is not free: every candidate
+    /// costs a socket and a full TCP timeout in `PeerConnector`'s race, and the
+    /// failure message counts them. So the rule drops what cannot work rather
+    /// than ordering it last.
+    ///
+    /// The private-address case is the one that changed. It was dropped
+    /// whenever the phone left Wi-Fi — correct for a bare cellular connection,
+    /// and wrong for the case that prompted this: with a zero-trust client like
+    /// Twingate up, the host's ordinary `192.168.x` address is routable from
+    /// cellular, and it is *the* address that works, because that kind of
+    /// overlay gives the host no address of its own to discover. Dropping it
+    /// meant the one candidate that would have connected was never dialled.
+    public func isUsable(from link: LinkState) -> Bool {
+        switch reach {
+        case .multicastDNS: link.onLocalLink
+        case .privateAddress: link.onLocalLink || link.tunnelActive
+        case .overlay, .routable: true
+        }
+    }
+
+    /// Whether this endpoint can work from cellular with no tunnel at all —
+    /// the strictest case, which is what `bleat inspect` warns a user about.
+    public var isUsableOffLink: Bool { isUsable(from: .offLink) }
 
     /// `host:port`, bracketing IPv6 so the result can be parsed back.
     ///

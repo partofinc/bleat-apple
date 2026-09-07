@@ -20,27 +20,28 @@ public enum PeerConnection {
 
     /// Races the peer's endpoints and returns a client on the winner.
     ///
-    /// - Parameter onLocalLink: Whether the phone is on a network where a
-    ///   `.local` name or an RFC1918 address could resolve at all. On cellular
-    ///   they cannot, and attempting them only spends the timeout — so
-    ///   `endpointsToTry` drops them rather than ordering them last.
+    /// - Parameter link: Where the phone is standing. Endpoints that provably
+    ///   cannot work from there are dropped rather than ordered last, since
+    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
     /// - Throws: `TransportError.connectionFailed` when nothing answered, or
     ///   `.hostKeyMismatch` when something answered and was not this peer.
     public static func connect(
         to peer: PairedPeer,
         deviceKey: SSHKeyPair,
-        onLocalLink: Bool,
+        link: LinkState,
         session: String? = nil
     ) async throws -> Connected {
-        let endpoints = peer.endpointsToTry(onLocalLink: onLocalLink)
+        let endpoints = peer.endpointsToTry(from: link)
         guard !endpoints.isEmpty else {
             // Distinguished from "nothing answered": the addresses were not
             // tried, they were ruled out, and the remedy is a different network
             // rather than a running host.
             throw TransportError.connectionFailed(
-                onLocalLink
+                link.onLocalLink
                     ? "this host has no known address"
-                    : "this host is only reachable on its local network"
+                    : "this host is only reachable on its local network — join "
+                        + "that network, connect a VPN that reaches it, or add "
+                        + "an address that works from here"
             )
         }
 
@@ -48,6 +49,10 @@ public enum PeerConnection {
         // `endpointsToTry`, so anything unroutable from here has already been
         // ruled out and "all that is left is the tunnel" is a fact rather than
         // an accident of what the caller happened to pass.
+        //
+        // …and only off the local link. On Wi-Fi nothing was dropped as
+        // unroutable, so a private address that failed there means the host is
+        // off or asleep — not that a VPN needs checking.
         let connection = try await PeerConnector.connect(
             endpoints: endpoints,
             username: peer.username,
@@ -58,7 +63,7 @@ public enum PeerConnection {
             // before a client is handed out.
             herdrPath: peer.herdrPath ?? "herdr",
             session: session ?? peer.session,
-            droppedUnroutable: true
+            droppedUnroutable: !link.onLocalLink
         )
 
         var discovered: String?

@@ -119,12 +119,12 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// The endpoints to try, in order, given where the phone is standing.
     ///
     /// Last-known-good goes first — it is nearly always still right, and trying
-    /// it alone avoids opening several connections for nothing. When the phone
-    /// is off the local link, `.local` names and RFC1918 addresses are dropped
-    /// entirely rather than ordered last: they cannot resolve or route from
-    /// there, so attempting them only spends the timeout budget.
-    public func endpointsToTry(onLocalLink: Bool) -> [Endpoint] {
-        let candidates = onLocalLink ? endpoints : endpoints.filter(\.isUsableOffLink)
+    /// it alone avoids opening several connections for nothing. Anything that
+    /// provably cannot work from here is dropped entirely rather than ordered
+    /// last, since attempting it only spends the timeout budget; `link` is what
+    /// decides, and `Endpoint.isUsable(from:)` holds the rule.
+    public func endpointsToTry(from link: LinkState) -> [Endpoint] {
+        let candidates = endpoints.filter { $0.isUsable(from: link) }
         guard let last = lastGoodEndpoint, candidates.contains(last) else { return candidates }
         return [last] + candidates.filter { $0 != last }
     }

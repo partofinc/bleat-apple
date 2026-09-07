@@ -39,7 +39,11 @@ enum Redeem {
     /// it does is take away access, so the failure worth catching is the one
     /// where it *says* it did and did not — and that can only be seen against a
     /// real host. `bleat keys list` on the other side is the check.
-    static func unpair(name: String, peers: PeerRegistry, reachability onLocalLink: Bool = true) async throws {
+    /// `link` defaults to `.localLink`, which tries every endpoint. The tool
+    /// runs on a Mac at a keyboard with no way to ask about tunnels, and
+    /// trying an address that cannot work costs a timeout in a race — where
+    /// skipping the one that would have worked costs the revocation.
+    static func unpair(name: String, peers: PeerRegistry, link: LinkState = .localLink) async throws {
         let all = try peers.all()
         // By name or by host key, since the host key is the identity and a name
         // can repeat. `bleat peers` prints both.
@@ -68,7 +72,7 @@ enum Redeem {
         let connection: PeerConnection.Connected
         do {
             connection = try await PeerConnection.connect(
-                to: peer, deviceKey: deviceKey, onLocalLink: onLocalLink
+                to: peer, deviceKey: deviceKey, link: link
             )
         } catch TransportError.authenticationFailed(let detail) {
             // Reached and refused, which is the opposite advice: the key has

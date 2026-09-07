@@ -491,8 +491,21 @@ peer with two endpoints*, not two peers.
       record lives: removing the machine from the tailnet and re-adding it
       mints a new one, and endpoints are captured at pair time and never
       re-discovered. The name follows the machine across that.
-  - Twingate and similar overlays do not tell the host its own resolvable name.
-    Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
+  - **Twingate and similar zero-trust overlays give the host no address of its
+    own, and this is a different shape from Tailscale rather than a gap in the
+    detection.** A mesh puts an address on every node's own interface, which is
+    why `ifconfig` finds Tailscale. A zero-trust client instead runs a Connector
+    inside the private network and routes the *client* to resources by their
+    ordinary private address or private DNS name. There is nothing new on the
+    host to discover, and there never will be.
+    - So the endpoint that works over Twingate is the host's **plain LAN
+      address**, which is already enumerated and already in every peer record.
+      What was wrong was on the phone: `endpointsToTry` dropped private
+      addresses the moment the phone left Wi-Fi, so the one candidate that
+      would have connected was never dialled. See **Endpoint selection on the
+      phone**.
+    - A private *DNS name* still has to be user-supplied via `--endpoint`,
+      since nothing on the host knows it.
 
 ### The QR carries the host key, not its fingerprint
 
@@ -837,11 +850,25 @@ prompts, guesses, or trusts anything on first sight.
   successful refresh with its own failure — an error banner over rows that
   arrived perfectly well. Refreshing also keeps the rows on screen: `refreshable`
   draws its own spinner, and replacing the list underneath it is a downgrade.
-- **Reachability is one question**: is this Wi-Fi or Ethernet? On cellular a
-  `.local` name and an RFC1918 address cannot resolve or route, so
-  `endpointsToTry` drops them rather than ordering them last. `Reachability`
-  lives in `BleatUI` rather than `BleatKit` — `Network` is Apple-only, and where
-  the phone is standing is a question the UI layer is entitled to ask.
+- **Reachability is two questions, not one**, and `LinkState` carries both: is
+  a local network directly attached, and is there a tunnel. It used to be the
+  single question "is this Wi-Fi or Ethernet", which quietly assumed anything
+  private needs the attached link — true until a VPN routes the private subnet,
+  which is exactly what a zero-trust client does. `Reachability` lives in
+  `BleatUI` rather than `BleatKit` — `Network` is Apple-only — while `LinkState`
+  and the rules it feeds are in `BleatKit` where they are tested.
+  - **The tunnel question needs its own `NWPathMonitor(requiredInterfaceType:
+    .other)`.** Asking the default path with `usesInterfaceType(.other)` gets
+    the wrong answer for the case that matters: Twingate and most zero-trust
+    clients split-tunnel, claiming routes only for configured resources, so the
+    **default** path stays on cellular and does not use the tunnel at all. A
+    monitor with a required interface type reports satisfied when such an
+    interface exists and can carry traffic, which is the question being asked.
+  - **`LinkState` is the cache key for a live connection**, not just an input to
+    the race. A tunnel coming up widens the candidate list, so a connection made
+    before it connected was raced over a strictly smaller set; reusing it would
+    pin the phone to that set for as long as the screen stays open — the same
+    shape of bug the Wi-Fi/cellular half was added to fix.
 - **"No address to try here" is not "nothing answered."** A LAN-only peer on
   cellular was not dialled and failed; it was ruled out, and the remedy is a
   different network or an overlay endpoint rather than a host that needs
@@ -1128,9 +1155,41 @@ Try last-known-good first with a short timeout, then race the remaining
 endpoints and keep whichever completes the SSH handshake first. Persist the
 winner per peer.
 
-**On cellular, skip `.local` and RFC1918 addresses entirely.** They cannot
-resolve or route off-LAN, and attempting them only spends the timeout.
-`NWPathMonitor` reports the interface type; that is the whole rule.
+**Off the local link, skip what cannot work — but a private address is only
+unreachable *unaided*.** `Endpoint.Reach` used to have one `lan` case covering
+both mDNS names and private addresses, and both were dropped the moment the
+phone left Wi-Fi. They are now separate cases because a tunnel treats them
+differently:
+
+| reach | needs |
+|---|---|
+| `multicastDNS` (`.local`) | the attached link. Multicast is link-scoped, so **no tunnel makes one resolvable.** |
+| `privateAddress` (RFC1918, ULA) | the attached link **or** a tunnel routing that subnet |
+| `overlay` (Tailscale CGNAT/ULA/`.ts.net`) | the tunnel |
+| `routable` | nothing |
+
+Dropping `privateAddress` on cellular is what made Twingate look unsupported:
+that overlay reaches a host by its ordinary `192.168.x` address, so the single
+endpoint that would have connected was discarded before it was dialled.
+
+**Nothing here asks which subnets a split-tunnel client has claimed**, because
+nothing can — and it would still not answer for a private DNS name. Being wrong
+towards trying costs one slot in a concurrent race; being wrong towards refusing
+costs the connection. So a tunnel being up is enough.
+
+The same asymmetry reaches the failure message. `PeerConnector`'s
+`overlayUnreachable` fires when everything raced needed a tunnel, which now
+counts private addresses as well as mesh ones — off-link they survived the
+filter *only* because a tunnel was up. `PeerConnection` passes
+`droppedUnroutable: !link.onLocalLink` so it cannot fire on Wi-Fi, where nothing
+was dropped and a private address failing means the host is off, not that a VPN
+needs checking.
+
+**Unverified on device:** that Twingate's iOS client presents as `.other` to
+`NWPathMonitor`. The architecture is documented; that specific reading is
+reasoned from `NEPacketTunnelProvider` and needs measuring. The cost of it being
+wrong is small in one direction (a false positive races two or three private
+addresses that fail, concurrently) and is the status quo in the other.
 
 Whichever endpoint wins, the host key is still checked against the peer's pin.
 The endpoint is a hint; the key is the identity.

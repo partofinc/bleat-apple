@@ -958,7 +958,7 @@ at all.
 `PeerRegistry.addEndpoint` / `removeEndpoint` are targeted mutations like the
 rest.
 
-- **An added address is never written into `hostReportedEndpoints`**, which is
+- **An added address is never written into `hostReport`**, which is
   what makes it permanent: a refresh may only prune what the host once claimed,
   so an address the host has never mentioned survives every refresh there will
   ever be. That is the entire point of adding it.

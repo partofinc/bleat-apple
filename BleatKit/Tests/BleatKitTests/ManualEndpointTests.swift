@@ -30,6 +30,19 @@ struct ManualEndpointTests {
         deinit { try? FileManager.default.removeItem(at: directory) }
     }
 
+    /// A host self-report shaped per probe, the way a real refresh produces
+    /// one. Written out rather than flattened because pruning is per probe:
+    /// see `EndpointDiscovery.Report`.
+    private func report(
+        name: [String]? = nil,
+        interfaces: [String]? = nil
+    ) -> EndpointDiscovery.Report {
+        EndpointDiscovery.Report(
+            localHostName: name?.compactMap { Endpoint(string: $0) },
+            interfaces: interfaces?.compactMap { Endpoint(string: $0) }
+        )
+    }
+
     private func peer(_ endpoints: [String], lastGood: String? = nil) -> PairedPeer {
         PairedPeer(
             hostKey: Self.hostKey,
@@ -70,7 +83,7 @@ struct ManualEndpointTests {
         // the one that could prune with that attribution in hand.
         for _ in 0..<2 {
             try registry.recordDiscoveredEndpoints(
-                [Endpoint(host: "mac.local"), Endpoint(host: "192.168.1.20")],
+                report(name: ["mac.local"], interfaces: ["192.168.1.20"]),
                 forHostKey: Self.hostKey
             )
         }
@@ -120,7 +133,7 @@ struct ManualEndpointTests {
         #expect(stored?.lastGoodEndpoint == nil)
 
         try registry.recordDiscoveredEndpoints(
-            [Endpoint(host: "192.168.1.20")], forHostKey: Self.hostKey
+            report(name: [], interfaces: ["192.168.1.20"]), forHostKey: Self.hostKey
         )
         #expect(try registry.peer(hostKey: Self.hostKey)?
             .endpoints.map(\.host) == ["192.168.1.20"])
@@ -154,7 +167,7 @@ struct ManualEndpointTests {
         #expect(try registry.peer(hostKey: Self.hostKey)?.endpoints.count == 1)
 
         try registry.recordDiscoveredEndpoints(
-            [Endpoint(host: "mac.local"), Endpoint(host: "192.168.1.20")],
+            report(name: ["mac.local"], interfaces: ["192.168.1.20"]),
             forHostKey: Self.hostKey
         )
         #expect(try registry.peer(hostKey: Self.hostKey)?
@@ -170,7 +183,7 @@ struct ManualEndpointTests {
         try registry.save(peer(["mac.local", "10.9.9.9"]))
         try registry.removeEndpoint(Endpoint(host: "10.9.9.9"), forHostKey: Self.hostKey)
         try registry.recordDiscoveredEndpoints(
-            [Endpoint(host: "mac.local")], forHostKey: Self.hostKey
+            report(name: ["mac.local"], interfaces: []), forHostKey: Self.hostKey
         )
         #expect(try registry.peer(hostKey: Self.hostKey)?
             .endpoints.map(\.host) == ["mac.local"])

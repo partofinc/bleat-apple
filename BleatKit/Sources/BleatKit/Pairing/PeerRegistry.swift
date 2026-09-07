@@ -153,7 +153,7 @@ public struct PeerRegistry: Sendable {
     /// port-forward, a jump address, and a host that has moved somewhere the
     /// phone cannot reach until it is told where.
     ///
-    /// Deliberately **not** recorded in `hostReportedEndpoints`, which is what
+    /// Deliberately **not** recorded in `hostReport`, which is what
     /// makes it sticky: a refresh may only prune what the host once claimed, so
     /// an address the host has never mentioned survives every refresh. That is
     /// the whole point — it was added precisely because detection cannot see

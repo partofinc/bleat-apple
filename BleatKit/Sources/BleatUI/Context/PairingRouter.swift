@@ -27,12 +27,17 @@ public final class PairingRouter {
     /// A `bleat://` URL, from the system camera or anywhere else that can open
     /// one.
     ///
-    /// **Ignored when the sheet is already up**, and that is a refusal rather
-    /// than an omission. A pairing in flight holds a single-use enrollment key
-    /// that it is in the middle of redeeming; dropping a second code into the
-    /// same sheet would either race that redemption or silently discard the
-    /// work already done on the host. The sheet's own camera is running in the
-    /// only other case, so the user has a way through either way.
+    /// **Accepted even when the sheet is already up**, and handed to it rather
+    /// than dropped. This used to refuse, on the reasoning that the sheet's own
+    /// camera covers that case — which is false once the sheet is showing a
+    /// failure or a result, where there is no viewfinder. A pairing that failed
+    /// and then ignored the user going back to the system camera to scan again
+    /// was a dead end that looked like a broken app.
+    ///
+    /// Safety comes from the reader, not from here: `PairingModel` takes a code
+    /// only from an idle phase, so a redemption in flight — holding a
+    /// single-use enrollment key it is part way through spending — is never
+    /// raced.
     ///
     /// Codes that are not addressed to Bleat are dropped without opening
     /// anything. The app is registered for one scheme, so this should not
@@ -40,16 +45,19 @@ public final class PairingRouter {
     /// whatever the user was doing.
     @discardableResult
     public func open(code: String) -> Bool {
-        guard !isPresented, PairingPayload.looksLikeAPairingCode(code) else { return false }
+        guard PairingPayload.looksLikeAPairingCode(code) else { return false }
         incomingCode = code
         isPresented = true
         return true
     }
 
-    /// Cleared once the sheet has taken it, so dismissing and reopening by hand
-    /// does not silently re-run a pairing whose enrollment key is long gone.
-    public func takeIncomingCode() -> String? {
-        defer { incomingCode = nil }
-        return incomingCode
+    /// Called by the sheet once it has taken the code.
+    ///
+    /// Separate from reading it because the read happens in a view body and the
+    /// clear must not: mutating observable state during a view update is
+    /// undefined, and SwiftUI may evaluate a sheet's content in a pass it then
+    /// discards — which would consume the link and present an empty scanner.
+    public func clearIncomingCode() {
+        incomingCode = nil
     }
 }

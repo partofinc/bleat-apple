@@ -1,5 +1,6 @@
 import BleatKit
 import Foundation
+import Network
 import Testing
 @testable import BleatUI
 
@@ -54,29 +55,46 @@ struct LocalNetworkRetryTests {
     /// Starting `.unknown` is what keeps a permission from being blamed for an
     /// unrelated failure: the retry path is entered only from `.blocked`, which
     /// is set only when the system says so in as many words.
+    ///
+    /// `browsing: false` throughout this suite. Starting a real `NWBrowser` is
+    /// live Bonjour traffic, against CLAUDE.md's "no test touches the network",
+    /// and on a Mac it can raise the system's own local-network alert inside
+    /// `swift test` — which `ci_post_clone.sh` runs unattended.
     @Test("access starts unknown, so nothing is blamed on it by default")
     func startsUnknown() {
-        let access = LocalNetworkAccess()
+        let access = LocalNetworkAccess(browsing: false)
         #expect(access.state == .unknown)
         #expect(access.isAllowed == false)
     }
 
-    /// Priming is what raises the alert, and the sheet does it on appear — so
-    /// it must survive being called again when the sheet is reopened.
-    @Test("priming twice is harmless")
-    func primeIsIdempotent() {
-        let access = LocalNetworkAccess()
-        access.prime()
-        access.prime()
-        #expect(access.state != .allowed || access.isAllowed)
+    /// The two codes mDNSResponder returns when the permission is not granted.
+    /// This is the whole of the evidence the retry acts on, so a wrong constant
+    /// would mean either never retrying or retrying on unrelated DNS trouble.
+    @Test("only the permission refusal codes count as a refusal")
+    func refusalCodes() {
+        // kDNSServiceErr_NoAuth, kDNSServiceErr_PolicyDenied.
+        #expect(LocalNetworkAccess.isPermissionRefusal(.dns(-65555)))
+        #expect(LocalNetworkAccess.isPermissionRefusal(.dns(-65570)))
+        // Ordinary DNS trouble is not a permission problem.
+        #expect(LocalNetworkAccess.isPermissionRefusal(.dns(-65554)) == false)
+        #expect(LocalNetworkAccess.isPermissionRefusal(.posix(.ECONNREFUSED)) == false)
     }
 
     /// A zero-length wait must return rather than hang: the sheet is showing a
     /// spinner behind this, with the host's window ticking down.
     @Test("waiting returns even when permission never arrives")
     func waitTerminates() async {
-        let access = LocalNetworkAccess()
+        let access = LocalNetworkAccess(browsing: false)
         #expect(await access.allowed(within: 0) == false)
+    }
+
+    /// Same for the short settle the deep-link path pays on a failure. It runs
+    /// while the user is looking at a spinner, so it cannot depend on an answer
+    /// that may never come.
+    @Test("settling returns unknown rather than waiting forever")
+    func settleTerminates() async {
+        let access = LocalNetworkAccess(browsing: false)
+        #expect(await access.settled(within: 0) == .unknown)
     }
 
     /// The service type is declared in `Support/Info.plist`, and NWBrowser is

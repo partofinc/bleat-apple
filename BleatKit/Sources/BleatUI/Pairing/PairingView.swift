@@ -10,8 +10,8 @@ public struct PairingView: View {
     /// built in `init` and the sheet never has a state where it exists without
     /// one. Re-creating a model underneath an in-flight pairing would lose the
     /// result of a swap that has already happened on the host.
-    public init(store: PeerStore, localNetwork: LocalNetworkAccess, code: String? = nil) {
-        _model = State(wrappedValue: PairingModel(store: store, localNetwork: localNetwork, code: code))
+    public init(store: PeerStore, localNetwork: LocalNetworkAccess, router: PairingRouter) {
+        _model = State(wrappedValue: PairingModel(store: store, localNetwork: localNetwork, router: router))
     }
 
     public var body: some View {
@@ -27,7 +27,7 @@ public struct PairingView: View {
                 // fails it — which is what made every first pairing on a fresh
                 // install report a network error.
                 .onAppear(perform: model.primeLocalNetwork)
-                .task { await model.redeemIncomingCode() }
+                .task { await model.followIncomingCodes() }
                 // Disabling the button is only half of it: a sheet can also be
                 // swiped away, and that would abandon the swap just as
                 // silently.

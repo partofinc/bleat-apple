@@ -17,7 +17,7 @@ struct PairingFlow: ViewModifier {
                 PairingView(
                     store: context.peers,
                     localNetwork: context.localNetwork,
-                    code: pairing.takeIncomingCode()
+                    router: context.pairing
                 )
             }
             // Handled here rather than on the app's `WindowGroup` so the router

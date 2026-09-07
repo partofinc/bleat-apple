@@ -17,16 +17,16 @@ struct PairingRouterTests {
     /// decides whether to raise the sheet, and `PairingPayload` owns the rest.
     private let code = "bleat://pair?d=AQIDBA"
 
-    @Test("a pairing link raises the sheet and is handed to it once")
+    @Test("a pairing link raises the sheet and is handed to it")
     func opensOnALink() {
         let router = PairingRouter()
         #expect(router.open(code: code))
         #expect(router.isPresented)
-        #expect(router.takeIncomingCode() == code)
-        // Consumed: the sheet's `task` runs again whenever the view is
-        // re-attached, and the enrollment key is single-use — redeeming twice
-        // reports a failure for a pairing that already succeeded.
-        #expect(router.takeIncomingCode() == nil)
+        #expect(router.incomingCode == code)
+        // Consumed by the sheet, not by reading it: the read happens in a view
+        // body and a mutation there is undefined.
+        router.clearIncomingCode()
+        #expect(router.incomingCode == nil)
     }
 
     /// The app is registered for one scheme, so this should not arrive. "Should
@@ -38,19 +38,25 @@ struct PairingRouterTests {
         for other in ["https://herdr.dev", "bleat://something-else", "not a url at all", ""] {
             #expect(router.open(code: other) == false)
             #expect(router.isPresented == false)
+            #expect(router.incomingCode == nil)
         }
     }
 
-    /// A pairing in flight is holding a single-use enrollment key it is part
-    /// way through redeeming. A second code dropped into the same sheet would
-    /// either race that redemption or discard work already done on the host.
-    @Test("a link arriving while the sheet is up is refused, not queued")
-    func refusesWhileOpen() {
+    /// A code arriving while the sheet is up is **kept**, not dropped. The old
+    /// behaviour refused it on the grounds that the sheet's own camera covers
+    /// that case — false once the sheet is showing a failure or a result, where
+    /// there is no viewfinder, and a dead end that looks like a broken app.
+    ///
+    /// Safety lives in the reader: `PairingModel` takes a code only from an
+    /// idle phase, so a redemption in flight is never raced.
+    @Test("a link arriving while the sheet is up is kept for it")
+    func keepsCodeWhileOpen() {
         let router = PairingRouter()
         router.open()
+        #expect(router.incomingCode == nil)
+        #expect(router.open(code: code))
         #expect(router.isPresented)
-        #expect(router.open(code: code) == false)
-        #expect(router.takeIncomingCode() == nil)
+        #expect(router.incomingCode == code)
     }
 
     /// Opening by hand must not inherit a link from an earlier launch — the
@@ -63,7 +69,7 @@ struct PairingRouterTests {
         router.isPresented = false
         router.open()
         #expect(router.isPresented)
-        #expect(router.takeIncomingCode() == nil)
+        #expect(router.incomingCode == nil)
     }
 
     /// The plist and `BleatKit` have to agree on the scheme string, and no test

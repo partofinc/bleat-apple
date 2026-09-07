@@ -14,10 +14,14 @@ final class PairingModel {
     enum Phase: Equatable {
         /// Camera up, or waiting for a link to be pasted.
         case waiting
-        /// Carries what is being waited on. It was a bare case showing
-        /// "Reaching the host…", which became a lie the moment this could also
-        /// be waiting for the user to answer a permission alert.
-        case pairing(String)
+        /// Host work is in flight: a key is being installed, proven, and
+        /// another deleted. Abandoning this loses outcomes that matter.
+        case pairing
+        /// Waiting for the user to answer iOS's local network alert. A separate
+        /// case rather than a label on `pairing`, because **nothing is in
+        /// flight here** — no connection is open and the host has not been
+        /// touched — so unlike `pairing` this one must stay dismissable.
+        case awaitingPermission
         case paired(PairedPeer)
         /// Carries a message already fit to show: every `PairingError` case
         /// describes itself.
@@ -26,37 +30,35 @@ final class PairingModel {
 
     private(set) var phase: Phase = .waiting
 
-    /// True in any in-flight state, so callers do not have to match on the
-    /// label. Dismissal is disabled on this, not on one particular message.
-    var isPairing: Bool {
-        if case .pairing = phase { return true }
-        return false
-    }
+    /// Whether the sheet must not be dismissed. Deliberately **not** true while
+    /// waiting on the permission alert: that wait can last a minute, and
+    /// trapping the user behind a spinner they cannot cancel — with no route to
+    /// Settings — is worse than letting them out of a sheet that is holding
+    /// nothing.
+    var isPairing: Bool { phase == .pairing }
 
-    /// What the spinner says while the host is being reached.
-    static let reachingHost = "Reaching the host…"
-    /// …and while iOS's local network alert is unanswered.
-    static let awaitingLocalNetwork = "Waiting for permission to reach your local network…"
+    /// Whether a spinner belongs on screen.
+    var isBusy: Bool { phase == .pairing || phase == .awaitingPermission }
+
     /// The link, when the user pastes one instead of scanning.
     var typedCode = ""
 
     private let store: PeerStore
     private let localNetwork: LocalNetworkAccess
-    /// A link the app was opened with, redeemed once the sheet is on screen.
-    private var incomingCode: String?
+    /// Where links delivered by the system arrive. Read from here rather than
+    /// captured at init so a code that lands *while the sheet is already open*
+    /// is still picked up — a failed pairing used to be a dead end for anyone
+    /// who went back to the system camera and scanned again.
+    private let router: PairingRouter
     /// Codes already tried, so the camera reporting one sixty times a second
     /// produces one attempt — and a code that failed is not retried on the very
     /// next frame while the user is still pointing at it.
     private var attempted: Set<String> = []
 
-    init(store: PeerStore, localNetwork: LocalNetworkAccess, code: String? = nil) {
+    init(store: PeerStore, localNetwork: LocalNetworkAccess, router: PairingRouter) {
         self.store = store
         self.localNetwork = localNetwork
-        self.incomingCode = code
-        // Shown in the field as well as redeemed, so a failure leaves the user
-        // looking at the code that was actually tried rather than at an empty
-        // box and an error.
-        self.typedCode = code ?? ""
+        self.router = router
     }
 
     /// Ask iOS for the local network up front, when the sheet appears.
@@ -69,17 +71,42 @@ final class PairingModel {
         localNetwork.prime()
     }
 
-    /// Redeem the link the app was opened with, if there is one.
+    /// Redeem links the system delivers, for as long as the sheet is open.
     ///
-    /// Consumed rather than merely read: the sheet's `task` runs again when it
-    /// is re-attached, and the enrollment key is single-use — a second
-    /// redemption of the same code fails, so the user would be shown a failure
-    /// for a pairing that had already succeeded.
-    func redeemIncomingCode() async {
-        guard let code = incomingCode else { return }
-        incomingCode = nil
-        typedCode = code
-        await submitTypedCode()
+    /// A loop rather than a one-shot read, for two reasons. The code is
+    /// consumed **here**, in a task, instead of inside the sheet's `ViewBuilder`
+    /// — mutating observable state during a view update is undefined, and
+    /// SwiftUI may evaluate a sheet's content in a pass whose result it throws
+    /// away, which would swallow the very link the user tapped. And a code that
+    /// arrives while the sheet is already up is no longer dropped: after a
+    /// failure the user's obvious move is to go back to the system camera and
+    /// scan again, and that used to reach a sheet that ignored it.
+    ///
+    /// Only picked up from an idle phase. A pairing in flight holds a
+    /// single-use enrollment key it is part way through redeeming, and a second
+    /// redemption would race it; a finished one has already spent the key.
+    func followIncomingCodes() async {
+        while !Task.isCancelled {
+            if canAcceptACode, let code = router.incomingCode {
+                router.clearIncomingCode()
+                // Shown in the field as well as redeemed, so a failure leaves
+                // the user looking at the code that was actually tried rather
+                // than at an empty box and an error.
+                typedCode = code
+                phase = .pairing
+                await pair(with: code)
+            }
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        }
+    }
+
+    /// `.paired` is excluded as much as `.pairing`: the key is spent, and
+    /// redeeming again would replace a success with a confusing failure.
+    private var canAcceptACode: Bool {
+        switch phase {
+        case .waiting, .failed: true
+        case .pairing, .awaitingPermission, .paired: false
+        }
     }
 
     /// Whether a scanned code should be acted on at all.
@@ -110,7 +137,7 @@ final class PairingModel {
     func submitTypedCode() async {
         let code = typedCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty, phase == .waiting else { return }
-        phase = .pairing(Self.reachingHost)
+        phase = .pairing
         await pair(with: code)
     }
 
@@ -137,7 +164,7 @@ final class PairingModel {
     private func claim(_ code: String) -> Bool {
         guard shouldAttempt(code) else { return false }
         attempted.insert(code)
-        phase = .pairing(Self.reachingHost)
+        phase = .pairing
         return true
     }
 
@@ -167,11 +194,23 @@ final class PairingModel {
     /// completed swap — an attempt that never reached the host has consumed
     /// nothing, and the host holds the code open for five minutes.
     private func handle(_ error: any Error, forCode code: String) async {
-        guard localNetwork.state == .blocked, Self.mightBeLocalNetworkRefusal(error) else {
+        guard Self.mightBeLocalNetworkRefusal(error) else {
             phase = .failed(ErrorMessage.of(error))
             return
         }
-        phase = .pairing(Self.awaitingLocalNetwork)
+        // The browser may not have answered yet. A link opened from the system
+        // camera raises the sheet and redeems in the same breath, and a
+        // policy-denied lookup fails immediately — so on a fresh install the
+        // failure can land first, with `state` still `.unknown`. That is not
+        // evidence of a refusal and must not be read as one, but neither is it
+        // evidence against: give the first answer a moment to arrive.
+        var access = localNetwork.state
+        if access == .unknown { access = await localNetwork.settled(within: 2) }
+        guard access == .blocked else {
+            phase = .failed(ErrorMessage.of(error))
+            return
+        }
+        phase = .awaitingPermission
         guard await localNetwork.allowed(within: Self.localNetworkGrantWindow) else {
             // Still refused. Say what is actually wrong: "no address answered"
             // would send the user to check a network that is working fine.

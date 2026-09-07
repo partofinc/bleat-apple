@@ -48,6 +48,15 @@ public struct PeersView: View {
             }
         }
         .sheet(isPresented: $isShowingKey) { DeviceKeyView() }
+        // A `bleat://` link can arrive while this sheet is open — the user goes
+        // to the system camera and comes back — and SwiftUI will not raise the
+        // pairing sheet from the root over a sheet a descendant already has up.
+        // The request would be silently lost *and* leave `isPresented` true
+        // with nothing on screen, which makes the Pair button a no-op until the
+        // app is relaunched. Yield to it instead.
+        .onChange(of: context.pairing.isPresented) { _, isPairing in
+            if isPairing { isShowingKey = false }
+        }
         .task {
             context.peers.reload()
             // Being back at the root means no host is being browsed, so the SSH

@@ -35,6 +35,23 @@ public struct LinkState: Sendable, Hashable, Codable {
         self.tunnelActive = tunnelActive
     }
 
+    /// Just the part that decides which endpoints are candidates.
+    ///
+    /// On the local link every endpoint is a candidate whatever the tunnel is
+    /// doing — `Endpoint.isUsable(from:)` returns true for all four reach cases
+    /// — so `tunnelActive` cannot change the raced list there, and comparing it
+    /// would invalidate a perfectly good connection for nothing. An on-demand
+    /// VPN profile connecting and dropping while the app sits on Wi-Fi would
+    /// otherwise tear down the live SSH session and re-handshake on the next
+    /// request, repeatedly.
+    ///
+    /// The tunnel half earns its place in that comparison only off the link,
+    /// where it is the whole difference between racing a private address and
+    /// discarding it.
+    public var candidateIdentity: LinkState {
+        onLocalLink ? .localLink : self
+    }
+
     /// Cellular, no tunnel: only a globally routable address or a mesh address
     /// can work. The strictest case, and the one `bleat inspect` warns about.
     public static let offLink = LinkState(onLocalLink: false, tunnelActive: false)

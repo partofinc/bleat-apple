@@ -5,20 +5,35 @@ import Testing
 @Suite("Endpoint reachability")
 struct EndpointTests {
 
-    /// Multicast is scoped to the link it runs on, so no tunnel makes a
-    /// `.local` name resolvable. This is the half of the old `.lan` case that a
-    /// VPN cannot help with.
-    @Test("mDNS names need the link, and no tunnel changes that")
-    func multicastDNS() {
-        for host in ["rawillkair.local", "rawillkair.local.", "RawillkAir.Local"] {
+    /// The half of the old `.lan` case that no VPN can help with. Multicast is
+    /// scoped to its link; a loopback address names this device and a
+    /// link-local one names this wire. A tunnel routes none of them.
+    ///
+    /// Loopback belonging here rather than with the private addresses is the
+    /// load-bearing part: filed as private, `127.0.0.1:2222` — the address this
+    /// repo's own throwaway-sshd procedure uses, and one a user can add by hand
+    /// — would become a candidate the moment any tunnel came up and cost a full
+    /// TCP timeout in the race for a destination that cannot exist.
+    @Test("link-scoped names and addresses need the link, and no tunnel changes that")
+    func linkScoped() {
+        for host in [
+            "rawillkair.local", "rawillkair.local.", "RawillkAir.Local",
+            "127.0.0.1", "127.1.2.3", "localhost", "::1",
+            "169.254.1.1", "fe80::1",
+        ] {
             let endpoint = Endpoint(host: host)
-            #expect(endpoint.reach == .multicastDNS, "\(host)")
+            #expect(endpoint.reach == .linkScoped, "\(host)")
+            // Still usable on the link: `bleat redeem` against a throwaway sshd
+            // on 127.0.0.1:2222 is a documented flow.
             #expect(endpoint.isUsable(from: .localLink), "\(host)")
             #expect(!endpoint.isUsable(from: .offLink), "\(host)")
             #expect(
                 !endpoint.isUsable(from: LinkState(onLocalLink: false, tunnelActive: true)),
                 "\(host)"
             )
+            // And never a reason to blame a VPN, from anywhere.
+            #expect(!endpoint.needsTunnel(from: .localLink), "\(host)")
+            #expect(!endpoint.needsTunnel(from: .offLink), "\(host)")
         }
     }
 
@@ -31,8 +46,7 @@ struct EndpointTests {
     func privateAddresses() {
         for host in [
             "192.168.11.54", "10.0.0.5", "172.16.0.1", "172.31.255.254",
-            "169.254.1.1", "127.0.0.1", "localhost",
-            "fe80::1", "::1",
+            "fd00::1", "fc00::1",
         ] {
             let endpoint = Endpoint(host: host)
             #expect(endpoint.reach == .privateAddress, "\(host)")
@@ -45,15 +59,34 @@ struct EndpointTests {
         }
     }
 
+    /// `needsTunnel(from:)` is link-dependent, and that is the whole point of
+    /// it being a function. On Wi-Fi a private address is simply the network
+    /// the phone is standing on, so a failure there means the host is asleep —
+    /// blaming a VPN would send the user to fix something that is not broken.
+    /// A mesh address needs the tunnel from everywhere, including Wi-Fi, which
+    /// is the case a plain "are we off-link" flag got wrong.
+    @Test("whether an endpoint needs a tunnel depends on where the phone is")
+    func needsTunnelIsLinkDependent() {
+        let privateAddress = Endpoint(host: "192.168.11.54")
+        #expect(!privateAddress.needsTunnel(from: .localLink))
+        #expect(privateAddress.needsTunnel(from: .offLink))
+
+        let mesh = Endpoint(host: "100.101.102.103")
+        #expect(mesh.needsTunnel(from: .localLink))
+        #expect(mesh.needsTunnel(from: .offLink))
+
+        #expect(!Endpoint(host: "herdr.dev").needsTunnel(from: .offLink))
+    }
+
     /// `isUsableOffLink` is the strictest question — cellular, no tunnel — and
-    /// it is what `bleat inspect` warns on. Both of the old `.lan` cases fail
-    /// it, which is why that warning did not need rewording.
+    /// it is what `bleat inspect` warns on. Both of the old `.lan` kinds fail
+    /// it, which is why that warning still fires on the same hosts.
     @Test("both local-only kinds fail the unaided-cellular test")
     func unaidedCellular() {
         #expect(!Endpoint(host: "mac.local").isUsableOffLink)
         #expect(!Endpoint(host: "192.168.11.54").isUsableOffLink)
-        #expect(Endpoint(host: "mac.local").reach.isLocalOnly)
-        #expect(Endpoint(host: "192.168.11.54").reach.isLocalOnly)
+        #expect(!Endpoint(host: "127.0.0.1").isUsableOffLink)
+        #expect(Endpoint(host: "100.101.102.103").isUsableOffLink)
     }
 
     /// The case that makes this classification worth having. Tailscale's

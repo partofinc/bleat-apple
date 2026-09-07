@@ -12,13 +12,21 @@ struct PeerConnectorFailureTests {
     private func message(
         _ endpoints: [Endpoint],
         _ errors: [any Error] = [],
-        droppedUnroutable: Bool = true
+        everyCandidateNeedsATunnel: Bool = true
     ) -> String {
         let failures = zip(endpoints, errors).map { ($0, $1) }
         let error = PeerConnector.failure(
-            from: Array(failures), endpoints: endpoints, droppedUnroutable: droppedUnroutable
+            from: Array(failures), endpoints: endpoints,
+            everyCandidateNeedsATunnel: everyCandidateNeedsATunnel
         )
         return String(describing: error)
+    }
+
+    /// Exactly what `PeerConnection` computes before handing the verdict down.
+    /// Restated here rather than reached through `PeerConnection.connect`,
+    /// which would dial — and no test in this package touches the network.
+    private func verdict(_ endpoints: [Endpoint], from link: LinkState) -> Bool {
+        endpoints.allSatisfy { $0.needsTunnel(from: link) }
     }
 
     /// On cellular against a Tailscale-only host, `endpointsToTry` has already
@@ -41,12 +49,39 @@ struct PeerConnectorFailureTests {
     /// Blaming a VPN there would be a guess, and a misleading one.
     @Test("a mixed list gets the ordinary message")
     func mixedGetsTheOrdinaryMessage() {
-        let text = message([
+        let endpoints = [
             Endpoint(host: "somemac.local", port: 22),
             Endpoint(host: "100.114.119.30", port: 22),
-        ])
+        ]
+        #expect(!verdict(endpoints, from: .localLink))
+        let text = message(endpoints, everyCandidateNeedsATunnel: false)
         #expect(text.contains("none of 2"))
         #expect(!text.contains("VPN"))
+    }
+
+    /// **The case a plain "are we off-link" flag lost.** A peer paired over the
+    /// tailnet has one endpoint, a mesh address. The phone is on Wi-Fi with
+    /// Tailscale switched off, so nothing answers — and the remedy is the
+    /// tunnel, on Wi-Fi as much as on cellular. An earlier version suppressed
+    /// this message whenever `onLocalLink`, and sent the user to check a Wi-Fi
+    /// network that was working perfectly.
+    @Test("a mesh-only peer names the VPN even on Wi-Fi")
+    func meshOnlyPeerOnWiFiStillNamesTheVPN() {
+        let endpoints = [Endpoint(host: "somemac.tailexample.ts.net", port: 22)]
+        #expect(verdict(endpoints, from: .localLink))
+        #expect(message(endpoints, everyCandidateNeedsATunnel: true).contains("VPN"))
+    }
+
+    /// The mirror of it. On Wi-Fi a private address is simply the network the
+    /// phone is standing on, so a failure there means the host is asleep —
+    /// naming a VPN would send the user to set up something they do not need.
+    /// Off the link the same address is a candidate *only* because a tunnel was
+    /// detected, so there the advice is right.
+    @Test("a private address blames the VPN off the link and never on it")
+    func privateAddressDependsOnWhereThePhoneIs() {
+        let endpoints = [Endpoint(host: "192.168.11.54", port: 22)]
+        #expect(!verdict(endpoints, from: .localLink))
+        #expect(verdict(endpoints, from: LinkState(onLocalLink: false, tunnelActive: true)))
     }
 
     /// **The flag is the whole safety of that message**, and this is the case
@@ -61,7 +96,7 @@ struct PeerConnectorFailureTests {
     func narrowedListIsNotAVPNProblem() {
         let text = message(
             [Endpoint(host: "100.114.119.30", port: 22)],
-            droppedUnroutable: false
+            everyCandidateNeedsATunnel: false
         )
         #expect(!text.contains("VPN"))
         #expect(text.contains("none of 1"))
@@ -75,7 +110,9 @@ struct PeerConnectorFailureTests {
     @Test("the VPN failure is a distinct case, not a different sentence")
     func vpnFailureIsItsOwnCase() {
         let endpoints = [Endpoint(host: "100.114.119.30", port: 22)]
-        let error = PeerConnector.failure(from: [], endpoints: endpoints, droppedUnroutable: true)
+        let error = PeerConnector.failure(
+            from: [], endpoints: endpoints, everyCandidateNeedsATunnel: true
+        )
         guard case TransportError.overlayUnreachable = error else {
             Issue.record("expected overlayUnreachable, got \(error)")
             return

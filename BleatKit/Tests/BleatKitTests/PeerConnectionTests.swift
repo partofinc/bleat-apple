@@ -87,4 +87,42 @@ struct PeerConnectionTests {
             )
         }
     }
+
+    /// …and the *message* has to know it too. Advising "connect a VPN that
+    /// routes it" for a peer known only by its `.local` name contradicts the
+    /// rule the rest of this design rests on — multicast does not leave the
+    /// link, so no tunnel can carry that name — and sends the user to set up
+    /// something that could never have worked.
+    @Test("an mDNS-only peer is never told a VPN would help")
+    func mdnsOnlyPeerIsNotOfferedAVPN() async {
+        await #expect(throws: TransportError.self) {
+            try await PeerConnection.connect(
+                to: peer(["mac.local"]), deviceKey: SSHKeyPair(), link: .offLink
+            )
+        }
+        let text = await messageFromConnecting(peer(["mac.local"]), link: .offLink)
+        #expect(!text.contains("VPN"))
+    }
+
+    /// The mirror: a peer with a private address *can* be reached through a
+    /// tunnel that routes the subnet, so there the advice is right and worth
+    /// giving.
+    @Test("a peer with a private address is told a VPN would help")
+    func privateAddressPeerIsOfferedAVPN() async {
+        let text = await messageFromConnecting(peer(["192.168.1.20"]), link: .offLink)
+        #expect(text.contains("VPN"))
+    }
+
+    /// Nothing is dialled on either path — both peers are ruled out before the
+    /// race starts, which is exactly what these two tests are about.
+    private func messageFromConnecting(_ peer: PairedPeer, link: LinkState) async -> String {
+        do {
+            _ = try await PeerConnection.connect(
+                to: peer, deviceKey: SSHKeyPair(), link: link
+            )
+            return ""
+        } catch {
+            return String(describing: error)
+        }
+    }
 }

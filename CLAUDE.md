@@ -869,6 +869,12 @@ prompts, guesses, or trusts anything on first sight.
     before it connected was raced over a strictly smaller set; reusing it would
     pin the phone to that set for as long as the screen stays open — the same
     shape of bug the Wi-Fi/cellular half was added to fix.
+    - Compared through **`LinkState.candidateIdentity`**, not as a whole. On the
+      local link every endpoint is a candidate whatever the tunnel is doing, so
+      a tunnel change there cannot alter the raced list — and comparing it would
+      discard a working connection for nothing. An on-demand VPN profile
+      connecting and dropping while the app sits on Wi-Fi would otherwise tear
+      down the live SSH session and re-handshake on every request.
 - **"No address to try here" is not "nothing answered."** A LAN-only peer on
   cellular was not dialled and failed; it was ruled out, and the remedy is a
   different network or an overlay endpoint rather than a host that needs
@@ -1163,7 +1169,7 @@ differently:
 
 | reach | needs |
 |---|---|
-| `multicastDNS` (`.local`) | the attached link. Multicast is link-scoped, so **no tunnel makes one resolvable.** |
+| `linkScoped` (`.local`, loopback, link-local) | the attached link, and **nothing carries these off it** |
 | `privateAddress` (RFC1918, ULA) | the attached link **or** a tunnel routing that subnet |
 | `overlay` (Tailscale CGNAT/ULA/`.ts.net`) | the tunnel |
 | `routable` | nothing |
@@ -1172,24 +1178,59 @@ Dropping `privateAddress` on cellular is what made Twingate look unsupported:
 that overlay reaches a host by its ordinary `192.168.x` address, so the single
 endpoint that would have connected was discarded before it was dialled.
 
+**Loopback and link-local are `linkScoped`, not `privateAddress`, and that
+split is load-bearing.** A VPN routes `192.168.1.20`; none routes `127.0.0.1`,
+`::1` or `fe80::1`, which name this device or this wire. Filed with the private
+addresses, each would become a candidate the moment any tunnel came up and cost
+a full TCP timeout in the race for a destination that cannot exist —
+`127.0.0.1:2222` is not hypothetical, it is what this file's own throwaway-sshd
+procedure uses, and endpoints can be added by hand. They stay usable *on* the
+link, so `bleat redeem` against a loopback sshd still works.
+
 **Nothing here asks which subnets a split-tunnel client has claimed**, because
 nothing can — and it would still not answer for a private DNS name. Being wrong
 towards trying costs one slot in a concurrent race; being wrong towards refusing
 costs the connection. So a tunnel being up is enough.
 
-The same asymmetry reaches the failure message. `PeerConnector`'s
-`overlayUnreachable` fires when everything raced needed a tunnel, which now
-counts private addresses as well as mesh ones — off-link they survived the
-filter *only* because a tunnel was up. `PeerConnection` passes
-`droppedUnroutable: !link.onLocalLink` so it cannot fire on Wi-Fi, where nothing
-was dropped and a private address failing means the host is off, not that a VPN
-needs checking.
+**"Does this need a tunnel" is link-dependent, and only the caller can answer
+it.** `Endpoint.needsTunnel(from:)` is a function rather than a property for
+that reason: a mesh address always needs one, while a private address needs one
+only off the link — on Wi-Fi it is simply the network the phone is standing on,
+and a failure there means the host is asleep. `PeerConnection` computes
+`endpoints.allSatisfy { $0.needsTunnel(from: link) }` and hands the verdict to
+`PeerConnector.failure` as `everyCandidateNeedsATunnel`.
 
-**Unverified on device:** that Twingate's iOS client presents as `.other` to
-`NWPathMonitor`. The architecture is documented; that specific reading is
-reasoned from `NEPacketTunnelProvider` and needs measuring. The cost of it being
-wrong is small in one direction (a false positive races two or three private
-addresses that fail, concurrently) and is the status quo in the other.
+- It stays a **parameter**, not a computation inside `PeerConnector`, for the
+  reason the old `droppedUnroutable` flag existed: pairing hands the connector a
+  deliberately narrowed list — one endpoint, the one that just carried the
+  enrollment handshake — where every candidate is trivially a tunnel address. A
+  self-derived condition would tell the user to check a VPN that had
+  demonstrably just worked, at the moment the enrollment key may already be
+  spent.
+- **An earlier version passed `!link.onLocalLink` and lost a case.** A peer
+  whose only endpoint is a Tailscale address, reached from Wi-Fi with the tunnel
+  off, is exactly when the VPN advice is right — and exactly when that flag
+  suppressed it, sending the user to check a Wi-Fi network that was working.
+
+**The ruled-out message distinguishes the two kinds too.** Off the link with no
+candidates left, "connect a VPN that routes it" is right for a peer with a
+private address and wrong for one known only by its `.local` name — no tunnel
+carries multicast, so that would send the user to set up something that could
+never work. `bleat inspect`'s LAN-only note branches the same way.
+
+**Unverified on device, and the blast radius is wider than a missed VPN.**
+`NWInterface.InterfaceType.other` is documented as "virtual or otherwise
+unknown", not "VPN", and iOS can have `utun` interfaces up for iCloud Private
+Relay or an idle on-demand profile. If the monitor reports satisfied without a
+tunnel that routes anything useful, `tunnelActive` is stuck true and the
+cellular filter stops discarding private addresses at all: a LAN-only peer on
+cellular goes from an instant "only reachable on its local network" to a full
+TCP timeout per RFC1918 candidate, since cellular black-holes those rather than
+refusing them. Shipped that way deliberately — the alternative is the bug being
+fixed, and the failure is *slow* rather than *wrong*, since `overlayUnreachable`
+still names the right remedy (reaching a LAN-only host from cellular does take a
+VPN, whether or not one is up). **Wants measuring on a real phone, on cellular,
+with and without the tunnel.**
 
 Whichever endpoint wins, the host key is still checked against the peer's pin.
 The endpoint is a hint; the key is the identity.

@@ -39,6 +39,23 @@ public final class Reachability {
     /// a required interface type reports satisfied when an interface of that
     /// type exists and can carry traffic, which is the question actually being
     /// asked.
+    ///
+    /// **This is the unverified part, and its blast radius is wider than a
+    /// missed VPN.** `.other` is documented as "virtual or otherwise unknown",
+    /// not "VPN", and iOS can have `utun` interfaces up for iCloud Private
+    /// Relay or an idle on-demand profile. If this reports satisfied without a
+    /// tunnel that routes anything useful, `tunnelActive` is stuck true and the
+    /// cellular filter stops discarding private addresses at all: a LAN-only
+    /// peer on cellular goes from an instant "only reachable on its local
+    /// network" to a full TCP timeout per RFC1918 candidate, since cellular
+    /// black-holes those rather than refusing them.
+    ///
+    /// Shipped that way deliberately, because the alternative is the bug this
+    /// fixes — the one endpoint that works being discarded unseen — and because
+    /// the failure is slow rather than wrong: `overlayUnreachable` still names
+    /// the right remedy, since reaching a LAN-only host from cellular does take
+    /// a VPN whether or not one is currently up. **Wants measuring on a real
+    /// phone, on cellular, with and without the tunnel.**
     private let tunnelMonitor = NWPathMonitor(requiredInterfaceType: .other)
     private let queue = DispatchQueue(label: "team.partof.bleat.reachability")
 

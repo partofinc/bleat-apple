@@ -10,8 +10,24 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     public let host: String
     public let port: Int
 
+    /// The host is **lower-cased**, and that is not cosmetic.
+    ///
+    /// DNS is case-insensitive and `Equatable`/`Hashable` are not, so without
+    /// this `RawillkAir.local` and `rawillkair.local` are two endpoints for one
+    /// machine. Every comparison in the refresh path runs on that equality:
+    /// de-duplication, `Report.superseded`, `endpoints.contains`, the
+    /// `lastGoodEndpoint` match. A differently-cased duplicate is therefore
+    /// never pruned — the host reports one form, so the other looks like an
+    /// address it never claimed and is sticky forever — and every race from
+    /// then on dials the same host twice.
+    ///
+    /// Reachable two ways: a user typing an address by hand, and
+    /// `scutil --get LocalHostName`, which is not guaranteed to answer in the
+    /// same case twice. Normalising at the door closes both, and costs nothing
+    /// — the wire format round-trips through `description` either way, and
+    /// `reach` was already lower-casing to classify.
     public init(host: String, port: Int = Endpoint.defaultPort) {
-        self.host = host
+        self.host = host.lowercased()
         self.port = port
     }
 
@@ -169,6 +185,34 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
               let port = Int(parts[1]), (1...65535).contains(port)
         else { return nil }
         self.init(host: String(parts[0]), port: port)
+    }
+
+    /// Whether a string a *user typed* is plausibly a host at all.
+    ///
+    /// `Endpoint(string:)` is a parser, not a validator: anything with no colon
+    /// is taken as a hostname verbatim, so `ravil@mac.internal` — a very
+    /// natural paste — `ssh mac.local`, and `mac.local/foo` all sail through.
+    /// That matters more here than it looks. An address the user adds by hand
+    /// is invisible to detection, so it is **permanently sticky**: it can never
+    /// be pruned by a refresh, and it is dialled in every race from then on,
+    /// costing a full connect timeout each time and inflating the "none of N
+    /// address(es) could be reached" count that explains the failure.
+    ///
+    /// Deliberately a plausibility check rather than a grammar. The point is to
+    /// catch the shapes a person actually pastes — a `user@host`, a command, a
+    /// URL path — not to adjudicate hostname syntax, which would reject valid
+    /// internal names.
+    public static func isPlausibleHost(_ host: String) -> Bool {
+        guard !host.isEmpty, host.count <= 253 else { return false }
+        // A bare IPv6 literal is the one legitimate reason to hold colons, and
+        // `Endpoint(string:)` has already stripped any brackets and port.
+        let rejected: Set<Character> = ["@", "/", "\\", "?", "#", "%", "\"", "'", ",", "[", "]"]
+        guard !host.contains(where: { $0.isWhitespace || rejected.contains($0) }) else {
+            return false
+        }
+        if host.contains(":") { return true }   // IPv6 literal
+        guard host != ".", !host.hasPrefix("."), !host.hasSuffix("..") else { return false }
+        return !host.contains("..")
     }
 
     // MARK: - Classification

@@ -9,8 +9,14 @@ import SwiftUI
 /// they are worth reading is the moment the list above has failed.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
+    /// Always current: `RouteView` looks the peer up by host key on every body
+    /// evaluation and hands the stored value in, so an edit here is reflected
+    /// without this screen tracking the store itself — and a peer that has been
+    /// unpaired swaps the whole screen out one level up rather than needing a
+    /// fallback here.
     let peer: PairedPeer
     @State private var sessions: RemoteList<SessionInfo>
+    @State private var addingEndpoint = false
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
@@ -39,10 +45,49 @@ struct PeerDetailView: View {
                     .textSelection(.enabled)
             }
 
-            Section("Reachable at") {
+            Section {
                 ForEach(peer.endpoints, id: \.self) { endpoint in
                     EndpointRow(endpoint: endpoint, isLastGood: endpoint == peer.lastGoodEndpoint)
+                        // `allowsFullSwipe: false`, so removing takes a
+                        // deliberate tap. An address the user added by hand is
+                        // one detection can never report, so deleting it is
+                        // permanent and undone only by retyping it from memory
+                        // — and the peer list beside this one already refuses
+                        // to let a full swipe act rather than ask.
+                        .swipeActions(allowsFullSwipe: false) {
+                            // Hidden on the last one rather than shown and
+                            // refused. A peer with no addresses cannot be
+                            // connected to, and since nothing can add one back
+                            // without a connection, the only way out would be a
+                            // walk to the Mac. Unpairing is the deliberate way
+                            // to be rid of a peer, and it is right below.
+                            if peer.endpoints.count > 1 {
+                                Button("Remove", systemImage: "trash", role: .destructive) {
+                                    context.peers.removeEndpoint(endpoint, from: peer)
+                                }
+                            }
+                        }
                 }
+                Button("Add an address", systemImage: "plus") { addingEndpoint = true }
+                // Editing writes to disk, and a write can fail — an unwritable
+                // container, a full disk. Without this the row simply stays
+                // where it was and the swipe looks like it did nothing, because
+                // `PeerStore.failure` is only rendered a screen back on the
+                // peer list. The user swipes again, to the same effect.
+                if let failure = context.peers.failure {
+                    Label(failure, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                }
+            } header: {
+                Text("Reachable at")
+            } footer: {
+                // Says the two things a user would otherwise learn by being
+                // surprised: that this list maintains itself, and therefore
+                // that removing an address the host still reports will not
+                // stick. Which is also what "cannot know about itself" is
+                // pointing at — those are the ones worth adding by hand.
+                Text("Bleat asks \(peer.name) for its addresses each time it connects, so this list keeps itself up to date. Add one the host cannot know about itself — a VPN name that only resolves on this phone, or a port forward.")
             }
 
             // The other half of pairing, and the half that has to be visible.
@@ -66,6 +111,7 @@ struct PeerDetailView: View {
         .navigationTitle(peer.name)
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
+        .sheet(isPresented: $addingEndpoint) { AddEndpointView(peer: peer) }
     }
 }
 

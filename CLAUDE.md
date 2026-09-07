@@ -919,12 +919,20 @@ gains `hostReport`, the host's most recent self-report **kept per probe**.
   recycled DHCP lease that won one race would live in the peer forever — the
   very hazard the pruning exists for.
 
-**The port comes from the endpoint that just won**, not from the peer snapshot.
-That snapshot's `lastGoodEndpoint` is the *previous* winner, and on a host with
-mixed ports — a `--endpoint host:2222` extra beside port-22 detected addresses,
-which is exactly the throwaway-sshd flow this file documents — it would stamp
-every discovered address with the wrong port while pruning the right ones,
-replacing working endpoints with addresses nothing is listening on.
+**Discovery yields addresses, never ports**, so a refresh must not invent one.
+`scutil`, `ifconfig` and `tailscale` all report where a machine is found and
+none of them knows what port its sshd binds — that was settled once, by
+`bleat pair --port`. `PairedPeer.discoveryPort` is the port the peer already
+associates with the host: the most common one across its endpoints.
+
+The obvious alternative strands the peer. Taking the port of the endpoint that
+just won the race looks right — it demonstrably reached sshd — but the winner
+can be a hand-added port forward, which is the motivating reason to add one. A
+peer with three `:22` addresses plus a typed `home.example.com:2222` connects
+over the forward from cellular; the refresh then rebuilds every discovered
+address at 2222 and supersedes the three that worked. Back on Wi-Fi nothing
+connects, and since no connection succeeds no later refresh can repair it — a
+re-pair, caused by using the feature exactly as documented.
 
 **Pruning matters as much as adding, and it is the half that is easy to skip.**
 A list that only grows accumulates recycled DHCP leases and dead node
@@ -943,8 +951,72 @@ the newer record's `lastGoodEndpoint`, and this runs moments after
 **It is a hedge, not a guarantee.** A refresh only happens over a connection
 that still works, so a host whose every stored endpoint died at once is still a
 re-pair. What it removes is the far more common case where *one* of them
-changed. An endpoint from the QR that the host has since stopped reporting also
-lingers, since it was never attributed — removing one by hand is the answer.
+changed.
+
+### Addresses added by hand (Phase 2)
+
+The backstop under the other two. Pairing enumerates what the host can see about
+itself and a refresh asks it again on every connection, but **neither can
+produce an address the host does not know it has** — which is exactly a
+zero-trust overlay's private DNS name, held entirely on the client's side. It
+equally covers a port forward or a jump address, which have no discovery story
+at all.
+
+`PeerDetailView`'s "Reachable at" section adds and swipes-to-remove;
+`PeerRegistry.addEndpoint` / `removeEndpoint` are targeted mutations like the
+rest.
+
+- **An added address is never written into `hostReport`**, which is
+  what makes it permanent: a refresh may only prune what the host once claimed,
+  so an address the host has never mentioned survives every refresh there will
+  ever be. That is the entire point of adding it.
+- **Removing the last-good address clears `lastGoodEndpoint`, and that is
+  load-bearing.** `refreshingEndpoints` restores the last-good address
+  unconditionally — it completed a handshake, which outranks any report — so a
+  removal that left the field pointing at a deleted address would be silently
+  undone by the next connection's refresh, minutes later, with nothing on screen
+  to explain it.
+- **The last address cannot be removed**, and the swipe action is hidden rather
+  than shown and refused. A peer with none is unreachable *and* unrepairable
+  from the phone: nothing is left to connect over, so nothing can add one back.
+  Unpairing is the deliberate way to be rid of a peer.
+- **An address the host still reports comes back on the next refresh**, and the
+  section footer says the list maintains itself so this is not a surprise. A
+  tombstone would make removal stick, at the cost of a way to blind the app
+  permanently to a working address — racing one extra endpoint concurrently is
+  much the cheaper mistake. An address the host has *never* reported stays
+  removed, which is the case that matters: a stale entry from a QR.
+- The port defaults to **the peer's own**, not 22. An address typed without one
+  silently inheriting 22 on a host running sshd elsewhere produces an entry that
+  looks right in the list and refuses every connection — the same trap
+  `bleat inspect --endpoint` avoids by re-parsing against `--port`.
+- **`Endpoint(string:)` is a parser, not a validator**, and this is the first
+  place it is fed free text. Anything without a colon becomes a hostname
+  verbatim, so `ravil@mac.internal` — a very natural paste — `ssh mac.local` and
+  `mac.local/foo` would all enable the button and be stored. Permanently:
+  detection can never report them, so no refresh prunes them, and each is
+  dialled in every race from then on and counted in the message explaining the
+  failure. `Endpoint.isPlausibleHost` is the second half of the check, and it is
+  deliberately a plausibility test rather than a hostname grammar — rejecting a
+  valid internal name is the worse failure, since the user has no other way to
+  add it.
+- **`Endpoint` lower-cases its host.** DNS is case-insensitive and
+  `Equatable`/`Hashable` are not, and every comparison in the refresh path runs
+  on that equality: de-duplication, `Report.superseded`, `endpoints.contains`,
+  the `lastGoodEndpoint` match. `RawillkAir.local` beside `rawillkair.local`
+  would be two endpoints for one machine, and the second could never be pruned —
+  the host reports one form, so the other looks like an address it never claimed
+  — leaving every race dialling the host twice forever. Reachable both by typing
+  and from `scutil --get LocalHostName`.
+- **Removing takes a deliberate tap** (`allowsFullSwipe: false`) and failures
+  are shown *here*. An address added by hand is one detection can never report,
+  so deleting it is permanent and undone only by retyping it; and a failed write
+  would otherwise leave the row where it was with the message a screen back on
+  the peer list, so the swipe would look like it had simply done nothing.
+- `PeerDetailView` takes the peer as a plain value: `RouteView` looks it up by
+  host key on every body evaluation and swaps the whole screen for an
+  unpaired-message when the record goes, so tracking the store here would be
+  redundant.
 
 ### Connecting to a paired peer (Phase 2)
 

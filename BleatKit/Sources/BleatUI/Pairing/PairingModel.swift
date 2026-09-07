@@ -26,13 +26,33 @@ final class PairingModel {
     var typedCode = ""
 
     private let store: PeerStore
+    /// A link the app was opened with, redeemed once the sheet is on screen.
+    private var incomingCode: String?
     /// Codes already tried, so the camera reporting one sixty times a second
     /// produces one attempt — and a code that failed is not retried on the very
     /// next frame while the user is still pointing at it.
     private var attempted: Set<String> = []
 
-    init(store: PeerStore) {
+    init(store: PeerStore, code: String? = nil) {
         self.store = store
+        self.incomingCode = code
+        // Shown in the field as well as redeemed, so a failure leaves the user
+        // looking at the code that was actually tried rather than at an empty
+        // box and an error.
+        self.typedCode = code ?? ""
+    }
+
+    /// Redeem the link the app was opened with, if there is one.
+    ///
+    /// Consumed rather than merely read: the sheet's `task` runs again when it
+    /// is re-attached, and the enrollment key is single-use — a second
+    /// redemption of the same code fails, so the user would be shown a failure
+    /// for a pairing that had already succeeded.
+    func redeemIncomingCode() async {
+        guard let code = incomingCode else { return }
+        incomingCode = nil
+        typedCode = code
+        await submitTypedCode()
     }
 
     /// Whether a scanned code should be acted on at all.

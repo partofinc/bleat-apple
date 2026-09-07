@@ -10,13 +10,18 @@ public struct PairingView: View {
     /// built in `init` and the sheet never has a state where it exists without
     /// one. Re-creating a model underneath an in-flight pairing would lose the
     /// result of a swap that has already happened on the host.
-    public init(store: PeerStore) {
-        _model = State(wrappedValue: PairingModel(store: store))
+    public init(store: PeerStore, code: String? = nil) {
+        _model = State(wrappedValue: PairingModel(store: store, code: code))
     }
 
     public var body: some View {
         NavigationStack {
             PairingPhaseView(model: model)
+                // A link the app was opened with starts pairing straight away:
+                // the user already aimed their camera at the code once, and
+                // asking them to press a button in a sheet that is holding that
+                // exact code would be asking twice.
+                .task { await model.redeemIncomingCode() }
                 // Disabling the button is only half of it: a sheet can also be
                 // swiped away, and that would abandon the swap just as
                 // silently.

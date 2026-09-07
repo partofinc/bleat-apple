@@ -24,5 +24,9 @@ public struct RootView: View {
         // detail can both start an unpair, and a modifier on each would bind
         // two presentations to one piece of state.
         .unpairFlow()
+        // Here too, and not on `PeersView`: a `bleat://` link can arrive
+        // while the user is inside a host, where that screen is not being
+        // evaluated and its `onOpenURL` would never fire.
+        .pairingFlow()
     }
 }

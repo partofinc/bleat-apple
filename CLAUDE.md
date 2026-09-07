@@ -146,6 +146,7 @@ BleatKit/                   # the local Swift package
   Fixtures/
     schema.json             # output of `herdr api schema --json` (source of truth)
     *.json                  # captured CLI outputs for decoding tests
+Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 ```
 
@@ -872,11 +873,33 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
   keeps only the advice it alone can give — which `known_hosts` line to delete
   after an intentional rekey; the phone has no such file.
 - **The camera purpose string is `INFOPLIST_KEY_NSCameraUsageDescription`** on
-  the app target. There is no `INFOPLIST_KEY_` for `CFBundleURLTypes`, so
-  registering `bleat://` as a URL scheme — which would let the system camera
-  open the app straight from the QR — needs a real `Info.plist`, and that
-  fights `GENERATE_INFOPLIST_FILE`. Deferred deliberately; in-app scanning does
-  not depend on it.
+  the app target, and there is still no `INFOPLIST_KEY_` for `CFBundleURLTypes`
+  — the generated set covers a fixed list of keys and URL types is not on it.
+- **`bleat://` is registered, and a real `Info.plist` does *not* fight
+  `GENERATE_INFOPLIST_FILE`** (verified 7 Sept 2026). This file used to say it
+  did, which is why the scheme was deferred; the two compose. Setting
+  `INFOPLIST_FILE = Support/Info.plist` alongside `GENERATE_INFOPLIST_FILE = YES`
+  merges the generated keys *into* that file — checked in the built product,
+  where `CFBundleURLTypes` and `NSCameraUsageDescription` and the scene manifest
+  are all present. So `Support/Info.plist` carries the one key that cannot be a
+  build setting and nothing else, and it sits outside `App/` so the target's
+  synchronized group does not also copy it in as a resource.
+  - The scheme string is duplicated between that file and
+    `PairingPayload.urlScheme`, which is what `bleat pair` puts in the QR. No
+    test can read the app target's plist from the package, so the coupling is
+    stated in both places and here.
+  - **A registered scheme that leads nowhere is worse than none**, so the app
+    acts on it: `PairingRouter` is at the root next to the unpair flow, because
+    a link can arrive while the user is several screens deep inside a host —
+    where `PeersView` is not being evaluated and an `onOpenURL` on it would
+    never fire. A link arriving while the sheet is already up is **refused, not
+    queued**: a pairing in flight holds a single-use enrollment key it is part
+    way through redeeming.
+  - Verified end to end on the simulator: `simctl openurl bleat://pair?d=…`
+    launched the app, raised the sheet, redeemed the code without a second tap,
+    and reported the decode failure for the deliberately bogus payload. Note
+    iOS shows an "Open in Bleat?" confirmation when the app is *not* frontmost
+    and none when it is.
 
 ### Unpairing (Phase 2)
 

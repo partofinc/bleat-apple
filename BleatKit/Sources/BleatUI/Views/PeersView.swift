@@ -4,7 +4,6 @@ import SwiftUI
 /// The first screen: the hosts this phone has paired with.
 public struct PeersView: View {
     @Environment(AppContext.self) private var context
-    @State private var isPairing = false
     @State private var isShowingKey = false
 
     public init() {}
@@ -35,20 +34,19 @@ public struct PeersView: View {
                 } description: {
                     Text("Run `bleat pair` on the machine running Herdr, then scan the code it shows.")
                 } actions: {
-                    Button("Pair a host", systemImage: "qrcode.viewfinder") { isPairing = true }
+                    Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
                 }
             }
         }
         .navigationTitle("Bleat")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Pair a host", systemImage: "qrcode.viewfinder") { isPairing = true }
+                Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
             }
             ToolbarItem(placement: .secondaryAction) {
                 Button("This device's key", systemImage: "key") { isShowingKey = true }
             }
         }
-        .sheet(isPresented: $isPairing) { PairingView(store: context.peers) }
         .sheet(isPresented: $isShowingKey) { DeviceKeyView() }
         .task {
             context.peers.reload()

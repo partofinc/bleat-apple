@@ -35,6 +35,44 @@ public struct HostInspector: Sendable {
         "/etc/ssh/ssh_host_ecdsa_key.pub",
     ]
 
+    /// Where the `tailscale` CLI lives, in the order worth trying.
+    ///
+    /// Absolute paths because `run` does not search `PATH`, deliberately: this
+    /// runs as part of pairing, and resolving a tool through a user's `PATH`
+    /// is a way to execute something else entirely. The App Store build ships
+    /// the CLI inside the bundle; the standalone and Homebrew builds put a
+    /// link in one of the two `bin` directories.
+    static let tailscalePaths = [
+        "/usr/local/bin/tailscale",
+        "/opt/homebrew/bin/tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ]
+
+    /// Ask every `tailscale` on this machine until one answers.
+    ///
+    /// **Existing is not the same as working.** `brew install tailscale` puts a
+    /// CLI in `/opt/homebrew/bin` that cannot reach the App Store app's
+    /// sandboxed daemon, and both being installed is a common combination — so
+    /// taking the first path that exists would run that one, get a non-zero
+    /// exit, and silently drop the MagicDNS name while the bundled binary next
+    /// in the list would have answered. Which is the whole point of this code,
+    /// lost without a word.
+    func tailscaleEndpoints(port: Int) -> [Endpoint] {
+        for path in Self.tailscalePaths
+        where FileManager.default.isExecutableFile(atPath: path) {
+            // Bounded, because this now sits on `bleat pair`'s critical path
+            // *before* anything is printed: `run` blocks until the child closes
+            // stdout, so a wedged or half-started `tailscaled` would hang
+            // pairing at a blank terminal with no explanation. `readHostKey`
+            // passes `ssh-keyscan -T 5` for the same hazard; `tailscale` has no
+            // such flag, so the timeout is imposed from outside.
+            guard let json = run(path, ["status", "--json"], timeout: 5) else { continue }
+            let endpoints = TailscaleStatus.endpoints(fromStatusJSON: Data(json.utf8), port: port)
+            if !endpoints.isEmpty { return endpoints }
+        }
+        return []
+    }
+
     public init() {}
 
     /// - Parameters:
@@ -53,6 +91,12 @@ public struct HostInspector: Sendable {
         if let text = run("/sbin/ifconfig", []) {
             endpoints.append(contentsOf: InterfaceAddresses.endpoints(ifconfigOutput: text, port: port))
         }
+        // After `ifconfig`, because the tunnel's `utun` addresses usually come
+        // from there and the de-duplication below keeps whichever arrived
+        // first. What this adds that `ifconfig` cannot is the MagicDNS name.
+        endpoints.append(contentsOf: tailscaleEndpoints(port: port))
+        var seen = Set<Endpoint>()
+        endpoints = endpoints.filter { seen.insert($0).inserted }
         for endpoint in extraEndpoints where !endpoints.contains(endpoint) {
             endpoints.append(endpoint)
         }
@@ -112,7 +156,7 @@ public struct HostInspector: Sendable {
     /// A missing optional tool is not an error here: `tailscale` and even
     /// `scutil` may be absent, and pairing should proceed with whatever
     /// endpoints were found rather than fail outright.
-    func run(_ executable: String, _ arguments: [String]) -> String? {
+    func run(_ executable: String, _ arguments: [String], timeout: TimeInterval? = nil) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -125,9 +169,20 @@ public struct HostInspector: Sendable {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         do { try process.run() } catch { return nil }
+        // A child that never exits would block the read below forever. Killing
+        // it closes the pipe, which is what lets that read return at all.
+        var watchdog: DispatchSourceTimer?
+        if let timeout {
+            let timer = DispatchSource.makeTimerSource(queue: .global())
+            timer.schedule(deadline: .now() + timeout)
+            timer.setEventHandler { if process.isRunning { process.terminate() } }
+            timer.resume()
+            watchdog = timer
+        }
         // Read before waiting: a full pipe buffer would deadlock the child.
         let data = out.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        watchdog?.cancel()
         guard process.terminationStatus == 0 else { return nil }
         return String(data: data, encoding: .utf8)
     }

@@ -5,6 +5,13 @@ import Foundation
 public enum TransportError: Error, Sendable, Equatable {
     case notConnected
     case connectionFailed(String)
+    /// Nothing answered, and every address that could have been tried was a
+    /// mesh VPN's. Separate from `connectionFailed` because the remedy is
+    /// different — check the tunnel, not the network — and because callers
+    /// classify on the case rather than on the sentence: `PairingModel` treats
+    /// a plain `connectionFailed` as possibly iOS's local network permission,
+    /// which cannot be the cause when no local address was dialled at all.
+    case overlayUnreachable(String)
     case channelClosed
     case hostKeyMismatch(expected: String, actual: String)
     case authenticationFailed(String)
@@ -24,6 +31,8 @@ extension TransportError: CustomStringConvertible {
         case .notConnected:
             "not connected"
         case .connectionFailed(let detail):
+            "could not connect: \(detail)"
+        case .overlayUnreachable(let detail):
             "could not connect: \(detail)"
         case .channelClosed:
             "the connection closed"

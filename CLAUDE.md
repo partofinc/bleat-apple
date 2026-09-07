@@ -10,7 +10,7 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 2 — one gate item left, and it needs Tailscale installed
+## Current phase: 2 — gate met, 7 Sept 2026
 
 **Pairing verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned
 with an iPhone: the host key pinned out of band matched
@@ -27,12 +27,45 @@ this gate open is settled; see **`--cols` crops** below. Unpairing revokes the
 device key from the host, and `bleat keys` can see and remove one from the Mac
 side.
 
-**What is left of the Phase 2 gate is "runs on a real phone over Tailscale",
-and it has never been tried.** Tailscale is not installed on the dev Mac, so
-`bleat pair`'s Tailscale endpoint detection (`tailscale status --json` →
-`Self.DNSName`, `Self.TailscaleIPs`) is written and unverified. Everything so
-far has been on the LAN. Do not call the gate met on the strength of the
-screens alone.
+**Runs on a real phone over Tailscale — verified 7 Sept 2026, and this closes
+the Phase 2 gate.** Paired and connected from an iPhone **on cellular with
+Wi-Fi off**, which is the test that matters: on Wi-Fi the LAN endpoints are
+live and usually win the race, so a success there proves nothing about the
+tunnel. With Wi-Fi off there is nothing left to win but the overlay address.
+
+**It did not work the way this file claimed, and the difference matters.** The
+old text said `bleat pair` detects Tailscale by running `tailscale status
+--json` for `Self.DNSName` and `Self.TailscaleIPs`, and called that "written and
+unverified" — the last item on the gate. **It had never been written.** What
+made Tailscale work was `ifconfig`: the tunnel's `utun` interface holds the
+addresses and they pass every filter, and `Endpoint.reach` classifies them.
+
+The CLI **is** consulted now, for the one thing no interface carries — the
+MagicDNS name. See the endpoint list under **A peer is a host key, not an
+address**. `bleat inspect` on this Mac with the tunnel up:
+
+```
+rawillkair.local                           lan       — same network only
+192.168.11.54                              lan       — same network only
+100.114.119.30                             overlay   — works over the tunnel
+[fd7a:115c:a1e0::42a:771f]                 overlay   — works over the tunnel
+rawillk.tail2a3bab.ts.net                  overlay   — works over the tunnel
+```
+
+**The classification is the load-bearing part.** Tailscale's CGNAT range is not
+RFC1918 and its v6 range is a ULA, so the ordinary private-address tests call
+both private — and `endpointsToTry` drops private addresses the moment the
+phone leaves Wi-Fi. That would discard the one endpoint that works. `reach`
+matches the two Tailscale ranges *before* the private checks for exactly this
+reason.
+
+**A stored Tailscale address survives reconnects on both ends.** The
+`100.64.0.0/10` and `fd7a:115c:a1e0::/48` addresses are assigned by the control
+plane and bound to the node's identity rather than its session, so they persist
+across logout, reboot, and moving between networks. What does invalidate one is
+removing the machine from the tailnet and re-adding it, or re-registering it as
+a new node: that is a new node record with a new address, and since endpoints
+are captured at pair time and never re-discovered, it costs a re-pair.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
@@ -437,10 +470,27 @@ peer with two endpoints*, not two peers.
 - `bleat pair` enumerates what it can and accepts `--endpoint` for the rest:
   - mDNS name (`scutil --get LocalHostName` + `.local`) — LAN only
   - routable interface addresses from `ifconfig` — LAN v4, global v6
-  - Tailscale MagicDNS name and IPs, when the CLI is present
-    (`tailscale status --json` → `Self.DNSName`, `Self.TailscaleIPs`).
-    **Unverified — Tailscale is not installed on the dev Mac.** Confirm the JSON
-    shape against a real install before relying on it.
+  - Tailscale addresses arrive **via `ifconfig`** — the tunnel's `utun`
+    interface holds them and they pass every filter, then `Endpoint.reach`
+    classifies them `.overlay`. Verified on device over cellular, 7 Sept 2026.
+    This is how it worked before any Tailscale-specific code existed.
+  - The **MagicDNS name** does need the CLI (`tailscale status --json` →
+    `Self.DNSName`), because no interface carries it. `TailscaleStatus` parses
+    it and `HostInspector` runs the command, from an absolute path — `run` does
+    not search `PATH` deliberately, since resolving a tool through the user's
+    `PATH` during pairing is a way to execute something else entirely.
+    - **`DNSName` comes back fully qualified, with a trailing dot.** Verified
+      live: `rawillk.tail2a3bab.ts.net.`
+    - Taken only when `BackendState` is `Running` — a stopped or logged-out
+      Tailscale still reports the last state it knew, and an endpoint recorded
+      from a tailnet the machine may have left is indistinguishable later from
+      a host that is merely switched off.
+    - …and only when `CurrentTailnet.MagicDNSEnabled` is true, or the name does
+      not resolve and every race spends a timeout on it.
+    - It earns its place because a node's address is stable only while its node
+      record lives: removing the machine from the tailnet and re-adding it
+      mints a new one, and endpoints are captured at pair time and never
+      re-discovered. The name follows the machine across that.
   - Twingate and similar overlays do not tell the host its own resolvable name.
     Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
 
@@ -566,6 +616,26 @@ Measured across these changes on the three-endpoint case: the URL went
 **411 → 383 → 350 → 221** characters and the rendered code **85 → 77 → 73 → 61**
 columns, 43 → 31 rows.
 
+**Tailscale spends some of that back, and it is worth knowing how much.**
+Measured 7 Sept 2026 at level L with a 4-module quiet zone, and pinned by
+`QRPayloadSizeTests`:
+
+**Measure at `quietZone: 3`, which is what `bleat pair` renders.** The
+parameter is *extra* modules on top of the one `CIQRCodeGenerator` emits, so 3
+draws the 4 the spec wants. Measuring at 4 inflates every figure by a row — a
+wrong-but-plausible number, which a first version of the table below had.
+
+| endpoints | modules | rows |
+|---|---|---|
+| 4 — LAN plus both Tailscale addresses | 61 | 31 |
+| 5 — and the MagicDNS name | 65 | 33 |
+| 7 — everything this Mac offers | 73 | 37 |
+
+So the name costs two rows and a Tailscale-connected Mac costs six over a
+LAN-only one. With three rows of chrome the worst case needs **40** — one row
+inside the reduced-margin threshold this file measured earlier. A shorter window
+falls back to the link. `QRPayloadSizeTests` defends that row.
+
 **Height is the binding constraint, so nothing is spent on it carelessly.**
 Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
 own quiet zone already separates it from the text, and on a 141×47 window the
@@ -678,6 +748,32 @@ proves TCP, the host key, key exchange and authentication, which is everything
 stdout exactly — but `.zshenv` is sourced for every non-interactive zsh, so
 anything a user's startup file prints would have made every healthy endpoint
 fail, and the message blames the network.
+
+**When every endpoint left is an overlay address, the message names the VPN** —
+`TransportError.overlayUnreachable`. On cellular against a Tailscale-only host,
+`endpointsToTry` has already dropped the `.local` name and the LAN addresses as
+unroutable, so if nothing answered the likeliest cause is the tunnel being down
+on the *phone*, and "none of N address(es) could be reached" sends the user to
+check a network that is working perfectly. `PeerConnector` cannot see the VPN's
+state (`Network` is Apple-only and that file compiles for Linux), so it names
+the possibility rather than asserting it. A mixed list keeps the ordinary
+message: a LAN address among the candidates means the phone is on Wi-Fi and the
+host is simply off, asleep, or elsewhere.
+
+- **It fires only when the caller passes `droppedUnroutable`, and that flag is
+  load-bearing.** Only `PeerConnection.connect` can vouch for it, because only
+  it filtered. Pairing calls the connector a second time with a deliberately
+  narrowed list — one endpoint, the one that just carried the enrollment
+  handshake — to ask whether this host accepts the new device key, and every
+  candidate there is trivially an overlay address. Without the flag the user
+  would be told to check a VPN that had demonstrably just worked, at the one
+  moment in the flow where the enrollment key may already be spent and
+  rescanning is not an option.
+- **It is its own error case rather than a `connectionFailed` with different
+  words**, because callers classify on the case. `PairingModel` reads a plain
+  `connectionFailed` as possibly iOS's local network permission and waits a
+  minute for an answer — which cannot be the cause when no local address was
+  dialled at all.
 
 A host key mismatch is promoted over every other failure when nothing wins — it
 is the only outcome that is not about the network, and reporting it as "no

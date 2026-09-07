@@ -53,7 +53,8 @@ public enum PeerConnector {
         hostKey: String,
         privateKey: SSHKeyPair,
         herdrPath: String = "herdr",
-        session: String? = nil
+        session: String? = nil,
+        droppedUnroutable: Bool = false
     ) async throws -> Connection {
         guard !endpoints.isEmpty else {
             throw TransportError.connectionFailed("no endpoint to try")
@@ -101,7 +102,10 @@ public enum PeerConnector {
                             }
                         }
                     }
-                    _ = finish(.failure(failure(from: failures, endpoints: endpoints)))
+                    _ = finish(.failure(failure(
+                        from: failures, endpoints: endpoints,
+                        droppedUnroutable: droppedUnroutable
+                    )))
                 }
             }
         }
@@ -114,9 +118,10 @@ public enum PeerConnector {
     /// it was not the one the pairing code describes — either the code is for a
     /// different machine, or something is standing in for it. Reporting that as
     /// "no address answered" sends the user to check their Wi-Fi.
-    private static func failure(
+    static func failure(
         from failures: [(Endpoint, any Error)],
-        endpoints: [Endpoint]
+        endpoints: [Endpoint],
+        droppedUnroutable: Bool = false
     ) -> any Error {
         for (_, error) in failures {
             if case TransportError.hostKeyMismatch = error { return error }
@@ -129,9 +134,34 @@ public enum PeerConnector {
         for (_, error) in failures {
             if case TransportError.authenticationFailed = error { return error }
         }
+        let addresses = endpoints.map(\.description).joined(separator: ", ")
+        // Every candidate was a mesh VPN address *and the caller ruled the rest
+        // out*, which is the cellular case: `endpointsToTry` dropped the
+        // `.local` name and the LAN addresses as unroutable, so the tunnel is
+        // the only way in and the likeliest reason nothing answered is that it
+        // is down on this device. "No address could be reached" would send the
+        // user to check a network that is working perfectly.
+        //
+        // **The flag is load-bearing, not decoration.** Pairing hands this a
+        // deliberately narrowed list — one endpoint, the one that just carried
+        // the enrollment handshake — to ask whether *that* host accepts the new
+        // key. If that single attempt fails on a tunnel address, telling the
+        // user to check a VPN that demonstrably just worked would be false, at
+        // the one moment in the flow where the enrollment key may already be
+        // spent. Without the flag this branch fires there.
+        //
+        // Nothing here can see the VPN's state — `Network` is Apple-only and
+        // this file compiles for Linux — so it names the possibility rather
+        // than asserting it.
+        if droppedUnroutable, !endpoints.isEmpty, endpoints.allSatisfy({ $0.reach == .overlay }) {
+            return TransportError.overlayUnreachable(
+                "this host is only reachable over a mesh VPN from here, and "
+                + "nothing answered — check the VPN is connected on this device: "
+                + addresses
+            )
+        }
         return TransportError.connectionFailed(
-            "none of \(endpoints.count) address(es) could be reached: "
-            + endpoints.map(\.description).joined(separator: ", ")
+            "none of \(endpoints.count) address(es) could be reached: " + addresses
         )
     }
 

@@ -119,6 +119,32 @@ public struct PeerRegistry: Sendable {
         try write(peers)
     }
 
+    /// Folds a fresh report of the host's own addresses into the stored record.
+    ///
+    /// A targeted mutation for the reason `recordHerdrPath` is one, and here it
+    /// matters more: `save` merges, and merging takes the *newer* record's
+    /// `lastGoodEndpoint`. A copy edited from a peer loaded before this
+    /// connection carries the previous winner, so saving it would undo the one
+    /// just recorded — and this runs moments after `recordSuccess`.
+    ///
+    /// - Returns: the record as stored, or nil for an unknown peer. Like
+    ///   `recordSuccess`, an unknown peer is silence rather than an error: this
+    ///   runs on the success path of a connection, in the background, and a
+    ///   peer removed while it was in flight is a race with no consequence.
+    @discardableResult
+    public func recordDiscoveredEndpoints(
+        _ discovered: [Endpoint],
+        forHostKey hostKey: String
+    ) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        let refreshed = peers[index].refreshingEndpoints(discovered: discovered)
+        guard refreshed != peers[index] else { return peers[index] }
+        peers[index] = refreshed
+        try write(peers)
+        return refreshed
+    }
+
     /// Forgets a peer.
     ///
     /// This does **not** remove the device key from the host — nothing here can

@@ -489,8 +489,7 @@ peer with two endpoints*, not two peers.
       not resolve and every race spends a timeout on it.
     - It earns its place because a node's address is stable only while its node
       record lives: removing the machine from the tailnet and re-adding it
-      mints a new one, and endpoints are captured at pair time and never
-      re-discovered. The name follows the machine across that.
+      mints a new one. The name follows the machine across that.
   - **Twingate and similar zero-trust overlays give the host no address of its
     own, and this is a different shape from Tailscale rather than a gap in the
     detection.** A mesh puts an address on every node's own interface, which is
@@ -812,6 +811,88 @@ sends the user to run `bleat pair` again rather than back to a dead QR.
 second network merges into the record that exists. `HostRegistry` is keyed by a
 user-chosen name and cannot do that; it predates pairing and stays as the
 console tool's own list.
+
+### Endpoints are refreshed on connect, not captured once (Phase 2)
+
+Endpoints used to be read at pair time and never looked at again, so a Mac that
+moved network, a Tailscale node removed and re-added, or a tunnel set up after
+pairing each cost a full re-pair — walking back to the Mac to run `bleat pair`.
+The host is the authority on its own addresses and the phone is already talking
+to it, so it asks.
+
+**This is safe because of what authenticated it.** Anything learned over a
+connection already verified against the pinned host key is exactly as
+trustworthy as the pin, which is what lets a refresh happen silently with
+nothing to confirm.
+
+`EndpointDiscovery` in `BleatKit` holds both the three probes and the assembly
+of their answers, and **both ends use it**: `HostInspector` runs the commands
+locally with `Process` while `bleat pair` mints a QR, and `PeerStore` runs them
+over an exec channel on a connection it already has. Two copies of "which
+addresses does this machine offer" would drift silently — the phone would keep
+folding a peer into a shape `bleat pair` would never have produced.
+
+- Every probe ends in `|| true`, for the reason `HerdrLookup.command` does:
+  absence is a normal answer. Without it a host without `scutil` produces a
+  *failed command* and the user is told "the host rejected a command (exit 1)"
+  about a machine that is working perfectly.
+- The `tailscale` probe is the same loop as `HostInspector.tailscaleStatusJSON`
+  — absolute paths, in order, first that *answers* — plus a `kill` after five
+  seconds. `tailscale` has no timeout flag and a wedged `tailscaled` would
+  otherwise hold the exec channel open for the life of the connection. **The
+  watchdog's own output goes to `/dev/null` so it is not a writer on the
+  channel**; left attached it would hold the command open for the full five
+  seconds on every run, including the ordinary case where `tailscale` answered
+  at once. Verified in both `zsh` and `sh` on this Mac: sub-second.
+- The probes run **serially**, not with `async let`. Three concurrent exec
+  channels would save a few hundred milliseconds of work nobody waits for, in
+  exchange for exercising concurrent use of `SSHTransport` — which wraps a
+  Citadel client that is not `Sendable`-audited and is lock-guarded for exactly
+  that reason.
+- It runs **after** the connection is installed and is never awaited, so a list
+  screen draws at the same speed it always did — and only on a fresh dial, since
+  a reused connection returns before reaching it. `ConnectionStore` holds the
+  task only to cancel it, on `release()` and before starting another: it runs on
+  a transport the store is about to disconnect, and one that outlived its
+  connection would also write endpoints for a peer the user has left.
+
+**What a refresh may change, and the three rules that bound it.** `PairedPeer`
+gains `hostReportedEndpoints`, the host's most recent self-report.
+
+- **`nil` is not the empty list.** `nil` means never refreshed, so nothing on
+  the record can be attributed to the host and the first refresh may add but
+  must not prune. Without that distinction every `--endpoint` extra baked into
+  a QR would vanish the first time the phone connected after this shipped.
+- **An empty report changes nothing.** A probe answers empty when it could not
+  run at all, which is not the host saying it has no addresses. Reading it as
+  one would empty the peer and strand the phone with a record it can never
+  connect through again.
+- **Only what the host previously claimed may be pruned.** Everything else is
+  sticky — `--endpoint` extras, anything added by hand — because detection
+  cannot see them and their absence from a report is not evidence of anything.
+  This is what protects a Twingate private DNS name.
+- **`lastGoodEndpoint` always survives**, even if the report drops it. It
+  completed a handshake minutes ago, which outranks any report about it.
+
+**Pruning matters as much as adding, and it is the half that is easy to skip.**
+A list that only grows accumulates recycled DHCP leases and dead node
+addresses, each dialled on every connection afterwards. Worse than the wasted
+race slot: a recycled address reaches an unrelated machine and fails *host key
+verification*, and `PeerConnector` promotes a mismatch over every other failure
+— so a sleeping Mac plus one stale address reports a security warning instead of
+"could not reach it". `InterfaceAddresses.ignoredPrefixes` exists to avoid the
+identical hazard from virtual interfaces.
+
+`PeerRegistry.recordDiscoveredEndpoints` is a **targeted mutation**, for the
+reason `recordHerdrPath` is one and more urgently: `save` merges, a merge takes
+the newer record's `lastGoodEndpoint`, and this runs moments after
+`recordSuccess`.
+
+**It is a hedge, not a guarantee.** A refresh only happens over a connection
+that still works, so a host whose every stored endpoint died at once is still a
+re-pair. What it removes is the far more common case where *one* of them
+changed. An endpoint from the QR that the host has since stopped reporting also
+lingers, since it was never attributed — removing one by hand is the answer.
 
 ### Connecting to a paired peer (Phase 2)
 

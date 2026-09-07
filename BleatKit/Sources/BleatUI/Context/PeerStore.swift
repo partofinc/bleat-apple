@@ -86,6 +86,35 @@ public final class PeerStore {
         reload()
     }
 
+    /// Asks the host what its addresses are now, and folds the answer in.
+    ///
+    /// **Why this exists:** endpoints were captured once, at pair time, and
+    /// never looked at again. A Mac that moved to a new network, a Tailscale
+    /// node removed and re-added, a tunnel set up after pairing — each of them
+    /// cost a full re-pair, walking back to the Mac to run `bleat pair`. The
+    /// host is the authority on its own addresses and the phone is already
+    /// talking to it, so asking costs three exec channels on a connection that
+    /// is already open.
+    ///
+    /// It is a hedge, not a guarantee, and worth being honest about: a refresh
+    /// only happens over a connection that still works, so a host whose every
+    /// stored endpoint died at once is still a re-pair. What this removes is
+    /// the far more common case where *one* of them changed.
+    ///
+    /// Deliberately silent on every failure. Nothing here is worth showing a
+    /// user — they did not ask for it, and the whole of the downside is that
+    /// the endpoints stay as they were.
+    public func refreshEndpoints(for peer: PairedPeer, over shell: any ShellRunner) async {
+        // The peer's own port, not 22. A host reached on 2222 must have its
+        // refreshed addresses recorded on 2222 or every one of them is a new,
+        // wrong endpoint alongside the working ones.
+        let port = peer.lastGoodEndpoint?.port ?? peer.endpoints.first?.port ?? Endpoint.defaultPort
+        let discovered = await EndpointDiscovery.probe(shell, port: port)
+        guard !discovered.isEmpty else { return }
+        try? registry.recordDiscoveredEndpoints(discovered, forHostKey: peer.hostKey)
+        reload()
+    }
+
     // MARK: - Device key
 
     /// The device's key, created on first read.

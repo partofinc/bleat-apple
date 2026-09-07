@@ -41,6 +41,15 @@ public final class ConnectionStore {
     /// A dial in flight, so two screens asking at once do not race every
     /// endpoint twice and leak whichever transport loses the assignment.
     private var connecting: (hostKey: String, task: Task<PeerConnection.Connected, any Error>)?
+    /// The background endpoint refresh, held only so it can be cancelled.
+    ///
+    /// Cancelled on `release()` and before starting another, because it runs on
+    /// a transport this store is about to disconnect. Letting one outlive its
+    /// connection would leave it awaiting a channel that is being torn down —
+    /// harmless in itself, since every failure here is swallowed, but it would
+    /// also write back endpoints for a peer the user has left, on top of
+    /// whatever the next screen recorded.
+    private var refresh: Task<Void, Never>?
 
     public init(peers: PeerStore, reachability: Reachability) {
         self.peers = peers
@@ -128,6 +137,21 @@ public final class ConnectionStore {
         if let path = connected.discoveredHerdrPath {
             peers.recordHerdrPath(path, for: peer)
         }
+
+        // Ask the host what its addresses are now, so a Mac that moved network
+        // or gained a tunnel does not cost a re-pair. Started here rather than
+        // awaited, and after the connection is installed, for two reasons: the
+        // caller is a screen waiting to draw a list, and this is bookkeeping
+        // nobody asked for. Three exec channels behind a list load is invisible;
+        // three in front of it is a stall on every drill-down.
+        //
+        // Only on a fresh dial. A reused connection returns above without
+        // reaching here, which is what keeps this to once per screen rather
+        // than once per request.
+        refresh?.cancel()
+        refresh = Task { [peers] in
+            await peers.refreshEndpoints(for: peer, over: connected.transport)
+        }
         return connected
     }
 
@@ -150,6 +174,8 @@ public final class ConnectionStore {
     /// Closes whatever is open, including a dial that has not finished.
     /// Idempotent.
     public func release() async {
+        refresh?.cancel()
+        refresh = nil
         let pending = connecting
         connecting = nil
         pending?.task.cancel()

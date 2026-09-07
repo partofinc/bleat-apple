@@ -40,6 +40,23 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// Session to select by default, once the user has picked one.
     public var session: String?
 
+    /// The host's most recent report about its own addresses.
+    ///
+    /// **`nil` is not the empty list here, and the difference is what makes a
+    /// refresh safe.** `nil` means this record has never been refreshed — every
+    /// endpoint on it came from the QR, and none of them can be attributed to
+    /// the host's self-report, so a refresh may add but must not prune. A
+    /// non-nil value is a set the phone watched the host produce, so anything
+    /// in it that the host no longer reports has genuinely gone.
+    ///
+    /// Kept so a refresh can tell an address the host has dropped from one it
+    /// never claimed in the first place. The second kind is sticky: a private
+    /// DNS name given with `--endpoint`, or anything added by hand, is
+    /// invisible to detection, and pruning it for being absent from a report
+    /// that could never have contained it would delete the one endpoint that
+    /// works for a zero-trust overlay.
+    public var hostReportedEndpoints: [Endpoint]?
+
     public var id: String { hostKey }
 
     /// `SHA256:…` for showing the user. Never used for comparison.
@@ -53,7 +70,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         herdrPath: String? = nil,
         lastGoodEndpoint: Endpoint? = nil,
         deviceMarker: String? = nil,
-        session: String? = nil
+        session: String? = nil,
+        hostReportedEndpoints: [Endpoint]? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -63,6 +81,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.lastGoodEndpoint = lastGoodEndpoint
         self.deviceMarker = deviceMarker
         self.session = session
+        self.hostReportedEndpoints = hostReportedEndpoints
     }
 
     public init(payload: PairingPayload) {
@@ -113,7 +132,59 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
             merged.endpoints.append(endpoint)
         }
         if let session = other.session { merged.session = session }
+        merged.hostReportedEndpoints = other.hostReportedEndpoints ?? hostReportedEndpoints
         return merged
+    }
+
+    /// Folds a fresh report of the host's own addresses into this record.
+    ///
+    /// Runs after a successful connection, over the connection that just
+    /// succeeded — so it is exactly as trustworthy as the host key pin that
+    /// authenticated it, which is what lets it happen silently with nothing to
+    /// confirm.
+    ///
+    /// Three rules, and each of them is a way this would otherwise go wrong:
+    ///
+    /// - **An empty report changes nothing.** A probe answers with no endpoints
+    ///   when it could not run at all — an older macOS without `scutil`, a
+    ///   restricted shell, a command that timed out — and that is not the host
+    ///   saying it has no addresses. Treating it as one would empty the peer
+    ///   and strand the phone with a record it can never connect through again.
+    /// - **Only what the host previously claimed may be pruned.** Everything
+    ///   else is sticky: entries from the QR, `--endpoint` extras, anything
+    ///   added by hand. Detection cannot see them, so their absence from a
+    ///   report is not evidence of anything.
+    /// - **`lastGoodEndpoint` always survives.** It completed a handshake
+    ///   minutes ago, which outranks any report about it, and dropping the one
+    ///   address known to work would be the worst possible outcome of a
+    ///   bookkeeping pass nobody asked for.
+    ///
+    /// Pruning matters as much as adding, and this is the half that is easy to
+    /// skip. A list that only ever grows accumulates recycled DHCP leases and
+    /// dead node addresses, and each one is dialled on every connection from
+    /// then on. Worse than the wasted slot: a recycled address reaches an
+    /// unrelated machine, which fails *host key verification* — and
+    /// `PeerConnector` promotes a mismatch over every other failure, so a
+    /// sleeping Mac plus one stale address reports a security warning instead
+    /// of "could not reach it". `InterfaceAddresses.ignoredPrefixes` exists to
+    /// avoid the identical hazard from virtual interfaces.
+    public func refreshingEndpoints(discovered: [Endpoint]) -> PairedPeer {
+        guard !discovered.isEmpty else { return self }
+        var updated = self
+        let previouslyReported = Set(hostReportedEndpoints ?? [])
+        var kept = endpoints.filter { !previouslyReported.contains($0) }
+        for endpoint in discovered where !kept.contains(endpoint) {
+            kept.append(endpoint)
+        }
+        // After the merge, not before: the winner may be one the host has just
+        // stopped reporting, and it is still the only address demonstrated to
+        // work from where this phone is standing.
+        if let last = lastGoodEndpoint, !kept.contains(last) {
+            kept.append(last)
+        }
+        updated.endpoints = kept
+        updated.hostReportedEndpoints = discovered
+        return updated
     }
 
     /// The endpoints to try, in order, given where the phone is standing.

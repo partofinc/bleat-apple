@@ -57,20 +57,23 @@ public struct HostInspector: Sendable {
     /// exit, and silently drop the MagicDNS name while the bundled binary next
     /// in the list would have answered. Which is the whole point of this code,
     /// lost without a word.
-    func tailscaleEndpoints(port: Int) -> [Endpoint] {
+    ///
+    /// `EndpointDiscovery.tailscaleStatusCommand` is the same loop as a shell
+    /// command, for the phone to run over an exec channel. The two have to keep
+    /// agreeing — the order of the paths and the five-second bound especially.
+    func tailscaleStatusJSON() -> String? {
         for path in Self.tailscalePaths
         where FileManager.default.isExecutableFile(atPath: path) {
-            // Bounded, because this now sits on `bleat pair`'s critical path
+            // Bounded, because this sits on `bleat pair`'s critical path
             // *before* anything is printed: `run` blocks until the child closes
             // stdout, so a wedged or half-started `tailscaled` would hang
             // pairing at a blank terminal with no explanation. `readHostKey`
             // passes `ssh-keyscan -T 5` for the same hazard; `tailscale` has no
             // such flag, so the timeout is imposed from outside.
             guard let json = run(path, ["status", "--json"], timeout: 5) else { continue }
-            let endpoints = TailscaleStatus.endpoints(fromStatusJSON: Data(json.utf8), port: port)
-            if !endpoints.isEmpty { return endpoints }
+            return json
         }
-        return []
+        return nil
     }
 
     public init() {}
@@ -84,19 +87,23 @@ public struct HostInspector: Sendable {
         guard let herdrPath = locateHerdr() else { throw PairingError.herdrNotFound }
         guard let hostKey = readHostKey(port: port) else { throw PairingError.noSupportedHostKey }
 
-        var endpoints: [Endpoint] = []
-        if let local = trimmedOutput("/usr/sbin/scutil", ["--get", "LocalHostName"]) {
-            endpoints.append(Endpoint(host: "\(local).local", port: port))
-        }
-        if let text = run("/sbin/ifconfig", []) {
-            endpoints.append(contentsOf: InterfaceAddresses.endpoints(ifconfigOutput: text, port: port))
-        }
-        // After `ifconfig`, because the tunnel's `utun` addresses usually come
-        // from there and the de-duplication below keeps whichever arrived
-        // first. What this adds that `ifconfig` cannot is the MagicDNS name.
-        endpoints.append(contentsOf: tailscaleEndpoints(port: port))
-        var seen = Set<Endpoint>()
-        endpoints = endpoints.filter { seen.insert($0).inserted }
+        // The ordering and the de-duplication are `EndpointDiscovery`'s, not
+        // this type's, because the phone assembles the same three answers from
+        // the same three commands run over SSH. Two copies of that would drift,
+        // and the drift would be silent: a refresh would fold the peer into a
+        // shape `bleat pair` would never have produced.
+        var endpoints = EndpointDiscovery.endpoints(
+            from: EndpointDiscovery.Outputs(
+                localHostName: trimmedOutput("/usr/sbin/scutil", ["--get", "LocalHostName"]),
+                ifconfig: run("/sbin/ifconfig", []),
+                tailscaleStatusJSON: tailscaleStatusJSON()
+            ),
+            port: port
+        )
+        // Appended after, and deliberately outside what `EndpointDiscovery`
+        // knows about: these are what detection *cannot* find, so they are not
+        // part of the host's own report and a later refresh must not prune them
+        // for being absent from it.
         for endpoint in extraEndpoints where !endpoints.contains(endpoint) {
             endpoints.append(endpoint)
         }

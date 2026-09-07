@@ -189,7 +189,7 @@ platform guard: anything that cannot compile for both platforms gets its own
 target, and the iOS app simply does not link it. Verify with
 `cd BleatKit && xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`
 (the package is no longer at the repo root, so this fails from there). Use
-`-scheme bleat-Package` to compile every target at once, which is the check
+`-scheme BleatKit-Package` to compile every target at once, which is the check
 that actually catches a target the app would break on.
 
 **Linux is a planned host platform for the console tool.** The `#if os(macOS)`
@@ -1871,7 +1871,7 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   a green run because nothing mechanical ever laid the view out. It needs a
   simulator destination — `swift test` runs the parts that compile for macOS
   and skips the UIKit ones — so the full check is
-  `xcodebuild test -scheme bleat-Package -destination 'platform=iOS Simulator,…'`
+  `xcodebuild test -scheme BleatKit-Package -destination 'platform=iOS Simulator,…'`
   from `BleatKit/`. `PaneLayout` and its lookup are covered from the captured
   fixtures, including a real split tab.
 
@@ -1997,6 +1997,22 @@ behaviour when it moves across the seam.
     would pull the base branch out from under a stacked PR the moment its
     parent merged. Delete merged branches deliberately instead, once nothing
     is stacked on them.
+- **The package is named `BleatKit`, not `bleat`, and the reason is a
+  filesystem collision.** It used to be `bleat`, against an `.xcodeproj` named
+  `Bleat` — and macOS is case-insensitive, so Xcode's two intermediates
+  directories, `Intermediates.noindex/bleat.build` (the package) and
+  `Bleat.build` (the project), were **the same directory**. Verified by inode:
+  both `stat` calls returned `298112417`. The app target's own build directory
+  therefore sat inside the package's, alongside `BleatKit.build` and
+  `BleatUI.build`. Reproduced from a clean `-derivedDataPath`, so it was
+  structural rather than a corrupted cache. Renaming the package separates them
+  — the executable *product* is still `bleat`, so the CLI is unchanged.
+  - The autocreated package scheme is `BleatKit-Package` now, and it resolves
+    only from `BleatKit/`, not from the project.
+  - Two schemes still differ only in case (`bleat`, the tool, and `Bleat`, the
+    app). That is tolerable where the build directories were not, but it is
+    worth knowing when something in Xcode behaves oddly.
+
 - **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
   Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
   open Xcode is using. Interleaving configurations and destinations there —

@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import BleatKit
+#endif
 
 /// Whichever of the sheet's four states is current.
 struct PairingPhaseView: View {
@@ -34,3 +37,48 @@ struct PairingPhaseView: View {
         }
     }
 }
+
+#if DEBUG
+/// The camera state. **This one really does open the camera** when access has
+/// already been granted, because that is what the screen does — `.waiting`
+/// builds a `PairingCaptureView` that asks `CameraAccess` and mounts a capture
+/// session on a yes. `PairingCaptureView`'s own previews answer for it instead;
+/// this one is here because the phase switch is what is being previewed.
+#Preview("Waiting", traits: .sampleData) {
+    NavigationStack {
+        PairingPhaseView(model: PairingModel(previewing: .waiting))
+    }
+}
+
+#Preview("Pairing", traits: .sampleData) {
+    NavigationStack {
+        PairingPhaseView(model: PairingModel(previewing: .pairing))
+    }
+}
+
+/// A different wait, and it says so: the user has an iOS alert in front of them
+/// and nothing else on this screen would explain the stall.
+#Preview("Awaiting permission", traits: .sampleData) {
+    NavigationStack {
+        PairingPhaseView(model: PairingModel(previewing: .awaitingPermission))
+    }
+}
+
+#Preview("Paired", traits: .sampleData) {
+    NavigationStack {
+        PairingPhaseView(model: PairingModel(previewing: .paired(.preview)))
+    }
+}
+
+#Preview("Failed", traits: .sampleData) {
+    NavigationStack {
+        PairingPhaseView(model: PairingModel(previewing: .failed(
+            """
+            Bleat could not reach your local network. iOS asks for that permission the first \
+            time the app connects to a Mac on it. Allow it when iOS asks, or turn it on in \
+            Settings › Privacy & Security › Local Network, then pair again.
+            """
+        )))
+    }
+}
+#endif

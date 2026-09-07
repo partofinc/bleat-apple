@@ -31,3 +31,7 @@ struct PairingFlow: ViewModifier {
 extension View {
     func pairingFlow() -> some View { modifier(PairingFlow()) }
 }
+
+// No `#Preview` of its own: a modifier that presents a sheet has nothing to
+// show on its own, and it is attached to the stack rather than to a screen —
+// so `RootView`'s preview is the one that exercises it.

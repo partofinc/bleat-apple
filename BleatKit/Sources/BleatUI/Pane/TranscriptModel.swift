@@ -59,6 +59,34 @@ final class TranscriptModel {
     /// overwrite a newer one that already succeeded.
     private var generation = 0
 
+    #if DEBUG
+    /// Preview-only: `load` and `follow` both return early, so nothing dials.
+    private var isPreview = false
+
+    /// Parked in one phase, for `#Preview`.
+    ///
+    /// `capturedAt` defaults to now because the screen keys its first load on
+    /// that being nil — a preview with no timestamp would go and fetch.
+    convenience init(
+        previewing phase: Phase,
+        status: AgentStatus? = .idle,
+        capturedAt: Date? = .now,
+        step: String? = nil
+    ) {
+        let peers = PeerStore(registry: .sample())
+        self.init(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            session: "work",
+            target: "w2:p1"
+        )
+        isPreview = true
+        self.phase = phase
+        self.status = status
+        self.capturedAt = capturedAt
+        self.step = step
+    }
+    #endif
+
     init(connections: ConnectionStore, session: String?, target: String) {
         self.connections = connections
         self.session = session
@@ -74,6 +102,9 @@ final class TranscriptModel {
 
     /// Loads, joining a load already in flight rather than starting a second.
     func load(for peer: PairedPeer) async {
+        #if DEBUG
+        if isPreview { return }
+        #endif
         if let loadTask {
             await loadTask.value
             return
@@ -175,6 +206,9 @@ extension TranscriptModel {
     /// Cancelled by the `task` modifier when the screen goes away, which closes
     /// the exec channel the wait is holding.
     func follow(for peer: PairedPeer) async {
+        #if DEBUG
+        if isPreview { return }
+        #endif
         // Bounded rather than indefinite. An unbounded `agent wait` pins an
         // exec channel open on the host forever, and a phone that sleeps
         // mid-wait would leave it there.

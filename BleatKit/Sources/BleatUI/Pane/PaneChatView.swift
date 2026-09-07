@@ -171,3 +171,65 @@ private struct ChatTurn: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Conversation", traits: .sampleData) {
+    NavigationStack {
+        PaneChatView(
+            phase: .loaded(TranscriptEntry.samples), status: .idle, step: nil,
+            capturedAt: .now, reload: {}, showTerminal: {}
+        )
+    }
+}
+
+/// Working: a spinner in the footer and a line saying the view will update when
+/// the agent settles. Both, because either alone misleads — there is no stream
+/// behind this, only a long poll.
+#Preview("Working", traits: .sampleData) {
+    PaneChatView(
+        phase: .loaded(TranscriptEntry.samples), status: .working, step: nil,
+        capturedAt: .now, reload: {}, showTerminal: {}
+    )
+}
+
+#Preview("Blocked", traits: .sampleData) {
+    PaneChatView(
+        phase: .loaded(TranscriptEntry.samples), status: .blocked, step: nil,
+        capturedAt: .now, reload: {}, showTerminal: {}
+    )
+}
+
+/// The step matters: four round trips and a couple of hundred kilobytes behind
+/// a bare spinner is indistinguishable from a hang.
+#Preview("Loading", traits: .sampleData) {
+    PaneChatView(
+        phase: .loading, status: nil, step: "reading the transcript…",
+        capturedAt: nil, reload: {}, showTerminal: {}
+    )
+}
+
+/// A plain shell pane has no transcript and never will, so this is worded as a
+/// fact rather than as a failure — and offers the terminal instead of a retry.
+#Preview("No conversation", traits: .sampleData) {
+    PaneChatView(
+        phase: .unavailable("This pane is a shell, not an agent, so there is no conversation to read."),
+        status: nil, step: nil, capturedAt: nil, reload: {}, showTerminal: {}
+    )
+}
+
+#Preview("Failed", traits: .sampleData) {
+    PaneChatView(
+        phase: .failed("the connection closed before this finished"),
+        status: nil, step: nil, capturedAt: nil, reload: {}, showTerminal: {}
+    )
+}
+
+/// A refresh that dropped over a chat that had already arrived. The turns stay.
+#Preview("Stale", traits: .sampleData) {
+    PaneChatView(
+        phase: .stale(TranscriptEntry.samples, "the connection closed"),
+        status: .idle, step: nil, capturedAt: .now.addingTimeInterval(-1_200),
+        reload: {}, showTerminal: {}
+    )
+}
+#endif

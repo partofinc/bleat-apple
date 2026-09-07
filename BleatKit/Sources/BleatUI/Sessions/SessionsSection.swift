@@ -48,3 +48,45 @@ struct SessionsSection: View {
         }
     }
 }
+
+#if DEBUG
+/// The section has five states of its own, and three of them are only reachable
+/// from a host that is misbehaving — which is precisely why they want a canvas.
+#Preview("Loaded", traits: .sampleData) {
+    Form {
+        SessionsSection(peer: .preview, model: RemoteList(previewing: .loaded(SessionInfo.samples)))
+    }
+}
+
+#Preview("Loading", traits: .sampleData) {
+    Form {
+        SessionsSection(peer: .preview, model: RemoteList(previewing: .loading))
+    }
+}
+
+#Preview("No sessions", traits: .sampleData) {
+    Form {
+        SessionsSection(peer: .preview, model: RemoteList(previewing: .loaded([])))
+    }
+}
+
+#Preview("Failed", traits: .sampleData) {
+    Form {
+        SessionsSection(
+            peer: .preview,
+            model: RemoteList(previewing: .failed("none of 3 addresses could be reached"))
+        )
+    }
+}
+
+/// A refresh that dropped, over rows that had already arrived. They stay; the
+/// failure sits above them.
+#Preview("Stale", traits: .sampleData) {
+    Form {
+        SessionsSection(
+            peer: .preview,
+            model: RemoteList(previewing: .stale(SessionInfo.samples, "the connection closed"))
+        )
+    }
+}
+#endif

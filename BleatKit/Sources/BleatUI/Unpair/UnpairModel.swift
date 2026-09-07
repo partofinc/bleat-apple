@@ -48,6 +48,25 @@ public final class UnpairModel {
         self.navigation = navigation
     }
 
+    #if DEBUG
+    /// Parked in one phase, for `#Preview`.
+    ///
+    /// The two failure phases are the reason this flow is a sheet rather than
+    /// an alert — a command to copy, an explanation of what is still true if it
+    /// is not run, and a way out named for what it leaves behind — and neither
+    /// can be reached without a host that refuses.
+    convenience init(previewing phase: Phase) {
+        let peers = PeerStore(registry: .sample())
+        let reachability = Reachability()
+        self.init(
+            peers: peers,
+            connections: ConnectionStore(peers: peers, reachability: reachability),
+            navigation: NavigationRouter()
+        )
+        self.phase = phase
+    }
+    #endif
+
     public var peerBeingUnpaired: PairedPeer? {
         switch phase {
         case .idle: nil

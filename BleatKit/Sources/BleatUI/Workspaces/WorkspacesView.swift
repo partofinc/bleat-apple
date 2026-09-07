@@ -19,6 +19,15 @@ struct WorkspacesView: View {
         })
     }
 
+    #if DEBUG
+    /// Preview-only: the workspaces are handed in and nothing is fetched.
+    init(peer: PairedPeer, session: String?, previewing state: Loadable<[Workspace]>) {
+        self.peer = peer
+        self.session = session
+        _workspaces = State(wrappedValue: RemoteList(previewing: state))
+    }
+    #endif
+
     var body: some View {
         RemoteListView(
             state: workspaces.state,
@@ -34,3 +43,37 @@ struct WorkspacesView: View {
         .task { await workspaces.load(for: peer) }
     }
 }
+
+#if DEBUG
+#Preview("Workspaces", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
+    }
+}
+
+#Preview("Empty", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(peer: .preview, session: "work", previewing: .loaded([]))
+    }
+}
+
+#Preview("Failed", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .preview, session: "work",
+            previewing: .failed("none of 3 addresses could be reached")
+        )
+    }
+}
+
+/// A refresh that failed over rows that had already arrived — the state the
+/// four-case `Loadable` exists for, and the one easiest to get wrong.
+#Preview("Stale", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .preview, session: "work",
+            previewing: .stale(Workspace.samples, "the connection closed before this finished")
+        )
+    }
+}
+#endif

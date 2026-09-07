@@ -189,7 +189,7 @@ platform guard: anything that cannot compile for both platforms gets its own
 target, and the iOS app simply does not link it. Verify with
 `cd BleatKit && xcodebuild -scheme BleatKit -destination 'generic/platform=iOS' build`
 (the package is no longer at the repo root, so this fails from there). Use
-`-scheme bleat-Package` to compile every target at once, which is the check
+`-scheme BleatKit-Package` to compile every target at once, which is the check
 that actually catches a target the app would break on.
 
 **Linux is a planned host platform for the console tool.** The `#if os(macOS)`
@@ -1136,6 +1136,55 @@ failure needs a way back, and neither should look like the other.
   starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
   part that distinguishes one checkout from another.
 
+### Previews (Phase 2)
+
+Every view has a `#Preview`, and they all take `traits: .sampleData`. The trait
+injects an `AppContext` — which every screen above a row reads from the
+environment, so without one a preview of anything crashes on the missing value.
+`.noHosts` is the same context with nothing paired, for the empty state that is
+the first screen on a fresh install.
+
+- **The context is real; the registry is not.** `PeerRegistry.sample()` writes
+  the sample hosts into a fresh directory under `NSTemporaryDirectory()`, one
+  per call. Never `applicationSupport()`: `AddEndpointView` and the unpair flow
+  both *write*, so a preview pointed at the real registry edits the device's own
+  peer list from the canvas. An earlier `AddEndpointView` preview built a plain
+  `PeerStore()`, which is exactly that. A fresh directory per call rather than
+  one wiped and reused, because Xcode keeps more than one preview alive and a
+  shared path means the one being edited has its file rebuilt underneath it the
+  moment another renders.
+- **No preview reaches the network**, and that needs a seam rather than a
+  promise: `ConnectionStore` is real, and every list screen loads in `.task`.
+  `RemoteList.init(previewing:)` hands the rows in and makes `load` a no-op, and
+  the screens that own one take a `#if DEBUG` initialiser that uses it. The
+  guard is the **first** thing `load` does — after `state = .loading` it would
+  show a spinner where a seeded `.failed` was meant to be. `PaneModel`,
+  `TranscriptModel`, `PairingModel` and `UnpairModel` take the same treatment,
+  parked in a phase; `PaneModel.start()` and `TranscriptModel.follow` return
+  early, since a canvas that opened an `observe` stream would hold an exec
+  channel on the Mac for as long as the preview lived.
+- **The states worth previewing are the ones a working host never produces.**
+  A failed refresh over rows that already arrived, a `done` agent, a host that
+  refused the device key, a pane whose stream ended, a `bleat pair` that could
+  not reach the local network. Those are most of the writing on these screens
+  and none of them can be reached by pointing the app at a healthy Mac.
+- **`PreviewSmokeTests` lays every one of them out**, in `BleatUITests`, for the
+  reason `PaneGeometryTests` exists: a preview that compiles can still trap at
+  render, and nothing mechanical would catch it. It also pins the promise —
+  `ConnectionStore.endpoint` stays nil through every render, which is what says
+  no screen dialled.
+- Sample data lives in `Previews/`, `#if DEBUG`, in `BleatUI` rather than
+  `BleatKit` so the domain layer ships none. It is hand-written rather than read
+  from `Fixtures/` — those are not bundled with the app — but shaped like the
+  captured output: `pane_id` already carrying its workspace, opaque workspace
+  ids of both lengths, and all five agent states, since a sample list that was
+  all `idle` would leave the screen this app is organised around with nothing to
+  show.
+- Four files have no preview and say why in place: `QRScannerView` and
+  `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
+  `PairingFlow`/`UnpairFlow` present rather than draw — `RootView` exercises
+  them.
+
 ### The pairing UI (Phase 2)
 
 `PeersView` is the app's first screen and there is no manual host list any more.
@@ -1273,10 +1322,13 @@ fixed nothing visible; the user had to know to tap "Try again".
   conclude "blocked" and never retry. It names `_ssh._tcp`, which is honestly
   what Bleat connects to, and the string must match
   `LocalNetworkAccess.serviceType`.
-- Both keys live in `Support/Info.plist` rather than as build settings:
-  `NSBonjourServices` is an array, which the generated set cannot express, and
-  splitting the pair would put the purpose string far from the service it
-  explains.
+- **`NSBonjourServices` lives in `Support/Info.plist`** — it is an array, which
+  the generated set cannot express — alongside `CFBundleURLTypes`, which is not
+  in that set either. `NSLocalNetworkUsageDescription` is an
+  `INFOPLIST_KEY_` build setting on the app target. The pair is split, which
+  this file previously argued against; the plist's own comment carries the
+  explanation so the two halves are still findable from each other. Look in the
+  project, not the plist, for the purpose string.
 - **Only "nothing answered" is retried.** A host key mismatch or a refused key
   means a machine *was* reached, so waiting on a permission would hide what the
   user has to see. Retrying is safe because the enrollment key is spent only by
@@ -1819,7 +1871,7 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   a green run because nothing mechanical ever laid the view out. It needs a
   simulator destination — `swift test` runs the parts that compile for macOS
   and skips the UIKit ones — so the full check is
-  `xcodebuild test -scheme bleat-Package -destination 'platform=iOS Simulator,…'`
+  `xcodebuild test -scheme BleatKit-Package -destination 'platform=iOS Simulator,…'`
   from `BleatKit/`. `PaneLayout` and its lookup are covered from the captured
   fixtures, including a real split tab.
 
@@ -1874,6 +1926,27 @@ behaviour when it moves across the seam.
 | Xcode targets | `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` |
 | package | `swiftLanguageModes: [.v6]`, `.enableUpcomingFeature("MemberImportVisibility")` on every target, `.defaultIsolation(MainActor.self)` on `BleatUI` only |
 
+- **`RemoteList` writes an empty `deinit`, and deleting it breaks the archive.**
+  `swift-frontend` 6.3.3 segfaults optimising `BleatUI` without it — `pass
+  SILFunctionTransform "EarlyPerfInliner" on SILFunction
+  "@$s7BleatUI10RemoteListCfD"`, which is that class's *synthesized*
+  deallocating destructor. Writing the destructor out, even empty, avoids
+  whatever shape the inliner chokes on; the members are released exactly as
+  before, so nothing changes at runtime.
+  - **It is invisible to the ordinary loop.** `swift build`, `swift test` and
+    every debug run on a device pass with it removed; only `-O` fails, so the
+    first thing it breaks is the archive — the last step before TestFlight and
+    the slowest place to find out. `ci_scripts/ci_post_clone.sh` now runs
+    `swift build -c release --target BleatUI` for exactly this, four seconds.
+  - Not caused by the previews work: verified on `main` at `5bdf5ae`, same pass
+    and same symbol. `@Observable` is not the trigger either — removing it still
+    crashes. `RemoteList` is the module's only *generic* class, which is the
+    obvious suspect, but a standalone package reproducing its shape (generic
+    `@Observable final class`, a generic enum payload, an optional class
+    reference, a `@Sendable` async closure, the same `load` body) compiles
+    clean, so the trigger needs the whole module and is not characterised
+    further.
+
 - **`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately.** Its
   package half, `NonisolatedNonsendingByDefault`, reproducibly segfaults the
   test bundle on Swift 6.3.3: `swift test` dies with signal 11, while
@@ -1924,6 +1997,34 @@ behaviour when it moves across the seam.
     would pull the base branch out from under a stacked PR the moment its
     parent merged. Delete merged branches deliberately instead, once nothing
     is stacked on them.
+- **The package is named `BleatKit`, not `bleat`, and the reason is a
+  filesystem collision.** It used to be `bleat`, against an `.xcodeproj` named
+  `Bleat` — and macOS is case-insensitive, so Xcode's two intermediates
+  directories, `Intermediates.noindex/bleat.build` (the package) and
+  `Bleat.build` (the project), were **the same directory**. Verified by inode:
+  both `stat` calls returned `298112417`. The app target's own build directory
+  therefore sat inside the package's, alongside `BleatKit.build` and
+  `BleatUI.build`. Reproduced from a clean `-derivedDataPath`, so it was
+  structural rather than a corrupted cache. Renaming the package separates them
+  — the executable *product* is still `bleat`, so the CLI is unchanged.
+  - The autocreated package scheme is `BleatKit-Package` now, and it resolves
+    only from `BleatKit/`, not from the project.
+  - Two schemes still differ only in case (`bleat`, the tool, and `Bleat`, the
+    app). That is tolerable where the build directories were not, but it is
+    worth knowing when something in Xcode behaves oddly.
+
+- **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
+  Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
+  open Xcode is using. Interleaving configurations and destinations there —
+  Debug simulator, Debug device, Release device, in one sitting — leaves the
+  build database and the products on disk out of step, and the first thing that
+  notices is **previews**, which JIT-link per-file object files:
+  `FailedToLaunchAppError` wrapping `ShellCouldNotValidatePathExists: Could not
+  validate that build product path exists to link: …/BleatUI.build/
+  Objects-normal/arm64/AgentLink.o`. The file was there; the build description
+  disagreed. It cost a 2.2 GB DerivedData deletion and a full rebuild to clear.
+  Build into a scratch path instead, and let Xcode keep its own.
+
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

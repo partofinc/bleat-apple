@@ -9,7 +9,6 @@ import SwiftUI
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
-    private let connections: ConnectionStore
 
     @State private var model: PaneModel
     /// The pane's text, loaded on demand.
@@ -43,7 +42,6 @@ struct PaneView: View {
     ) {
         self.title = title
         self.peer = peer
-        self.connections = connections
         _model = State(wrappedValue: PaneModel(
             connections: connections, peer: peer, session: session, target: target
         ))
@@ -56,6 +54,42 @@ struct PaneView: View {
             connections: connections, session: session, target: target
         ))
     }
+
+    #if DEBUG
+    /// Preview-only: every model is handed in already settled, so no stream is
+    /// opened and nothing is fetched.
+    ///
+    /// `capturedAt` is seeded alongside the reader's lines for the same reason
+    /// `TranscriptModel`'s is: the screen keys its first load on that being
+    /// nil, and a preview without one would go and read the pane.
+    ///
+    /// The models default to **nil** and are built in the body rather than in
+    /// the argument list. A default argument is evaluated on every call, and
+    /// `State(wrappedValue:)` keeps only the first — so defaulting them to
+    /// `PaneModel(previewing:)` meant every re-evaluation of a parent body
+    /// seeded a temporary directory and started two `NWPathMonitor`s, then
+    /// discarded them.
+    init(
+        peer: PairedPeer,
+        title: String,
+        mode: PaneMode,
+        pane: PaneModel? = nil,
+        text: Loadable<[String]> = .loaded(PreviewPaneText.lines),
+        capturedAt: Date? = .now,
+        transcript: TranscriptModel? = nil
+    ) {
+        self.title = title
+        self.peer = peer
+        _model = State(wrappedValue: pane ?? PaneModel(previewing: .live))
+        _text = State(wrappedValue: RemoteList(previewing: text))
+        _transcript = State(
+            wrappedValue: transcript ?? TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
+        )
+        _mode = State(wrappedValue: mode)
+        _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
+        _capturedAt = State(wrappedValue: capturedAt)
+    }
+    #endif
 
     var body: some View {
         ZStack {
@@ -151,3 +185,31 @@ struct PaneView: View {
         if case .loaded = text.state { capturedAt = .now }
     }
 }
+
+#if DEBUG
+/// The default mode, and the reason it is the default: the transcript never
+/// went through a terminal, so it is the one reading of a pane that reflows to
+/// a phone.
+#Preview("Chat", traits: .sampleData) {
+    NavigationStack {
+        PaneView(peer: .preview, title: "Auditing the migration", mode: .chat)
+    }
+}
+
+/// The reader: the pane's own output, wrapped to the device. Monospaced on
+/// purpose — an agent's indentation is structural.
+#Preview("Reader", traits: .sampleData) {
+    NavigationStack {
+        PaneView(peer: .preview, title: "swift test", mode: .reader)
+    }
+}
+
+/// The terminal mounts SwiftTerm and, in a canvas, has no stream feeding it —
+/// so what this shows is the chrome around an empty grid: the badge, the
+/// read-only marker, and the mode picker.
+#Preview("Terminal", traits: .sampleData) {
+    NavigationStack {
+        PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
+    }
+}
+#endif

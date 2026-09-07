@@ -60,3 +60,42 @@ struct PaneSurface: View {
         #endif
     }
 }
+
+#if DEBUG
+/// The terminal's own states. Three of the four are only reachable from a host
+/// that stops answering, and each is a `ContentUnavailableView` over a black
+/// terminal — which is a combination worth seeing before it happens on a phone.
+#Preview("Live", traits: .sampleData) {
+    PaneSurface(model: PaneModel(previewing: .live), isActive: true)
+}
+
+#Preview("Opening", traits: .sampleData) {
+    PaneSurface(model: PaneModel(previewing: .opening), isActive: true)
+}
+
+/// Not a failure: herdr simply stopped sending frames, because the pane went
+/// away or the session stopped.
+#Preview("Ended", traits: .sampleData) {
+    PaneSurface(model: PaneModel(previewing: .ended), isActive: true)
+}
+
+#Preview("Failed", traits: .sampleData) {
+    PaneSurface(
+        model: PaneModel(previewing: .failed("the connection closed before this finished")),
+        isActive: true
+    )
+}
+
+/// The host would not report a layout, so the stream was opened at the phone's
+/// width against a wider pane — the one case where something really is hidden.
+#Preview("Cropped", traits: .sampleData) {
+    PaneSurface(
+        model: PaneModel(
+            previewing: .live,
+            grid: TerminalGrid(cols: 53, rows: 40),
+            paneGrid: nil
+        ),
+        isActive: true
+    )
+}
+#endif

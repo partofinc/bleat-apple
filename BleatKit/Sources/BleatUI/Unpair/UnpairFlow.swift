@@ -45,3 +45,6 @@ struct UnpairFlow: ViewModifier {
 extension View {
     func unpairFlow() -> some View { modifier(UnpairFlow()) }
 }
+
+// No `#Preview` of its own: like `PairingFlow`, it presents rather than draws.
+// `RootView` previews it in place, and `UnpairSheet` previews what it presents.

@@ -44,3 +44,17 @@ struct GridBadge: View {
             : "\(grid.cols) columns by \(grid.rows) rows."
     }
 }
+
+#if DEBUG
+/// Both readings. The plain one says how big the thing on screen is; the orange
+/// one says output is actually being hidden, which happens only when the host
+/// would not report a layout and `observe --cols` fell back to cropping.
+#Preview("Grid badge", traits: .sampleData) {
+    VStack(alignment: .trailing, spacing: 12) {
+        GridBadge(grid: TerminalGrid(cols: 142, rows: 47), isCropped: false)
+        GridBadge(grid: TerminalGrid(cols: 53, rows: 40), isCropped: true)
+    }
+    .padding()
+    .background(.black)
+}
+#endif

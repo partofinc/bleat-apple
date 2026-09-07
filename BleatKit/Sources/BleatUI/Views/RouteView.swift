@@ -59,3 +59,14 @@ struct RouteView: View {
         )
     }
 }
+
+#if DEBUG
+/// The one state of this view that has no other way in: a host unpaired while
+/// one of its screens was pushed. Every other route is previewed on the screen
+/// it resolves to.
+#Preview("Unpaired", traits: .sampleData) {
+    NavigationStack {
+        RouteView(route: .peer(peer: "ssh-ed25519 a-host-key-that-is-not-in-the-list"))
+    }
+}
+#endif

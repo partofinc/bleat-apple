@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D51B8BE6FD3343248EF259F5 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA6E6623F32448A79D178D4D /* BleatKit */; };
 		9DECFFD3737B4877834F708D /* BleatUI in Frameworks */ = {isa = PBXBuildFile; productRef = BF272107744E47FD9B53DCC9 /* BleatUI */; };
+		D51B8BE6FD3343248EF259F5 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA6E6623F32448A79D178D4D /* BleatKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -16,7 +16,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		11C77B934E994327A73DC460 /* App */ = {isa = PBXFileSystemSynchronizedRootGroup; path = App; sourceTree = "<group>"; };
+		11C77B934E994327A73DC460 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,20 +36,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		2613D8676F3E4D08A7751CF3 = {
-			isa = PBXGroup;
-			children = (
-				11C77B934E994327A73DC460 /* App */,
-				1FBDBD56747D4343AFEF1C68 /* Products */,
-			);
-			sourceTree = "<group>";
-		};
 		1FBDBD56747D4343AFEF1C68 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				20E20555DDB3457D8B6F0FBF /* Bleat.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2613D8676F3E4D08A7751CF3 = {
+			isa = PBXGroup;
+			children = (
+				11C77B934E994327A73DC460 /* App */,
+				1FBDBD56747D4343AFEF1C68 /* Products */,
+			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -194,54 +198,26 @@
 			};
 			name = Release;
 		};
-		D8B9FB0A07DB4C5294E75561 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4N6MH577X7;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Support/Info.plist;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Bleat reads the pairing code that \"bleat pair\" shows on the machine running Herdr. Nothing is recorded or sent anywhere.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
 		6835229ED0774401AEF87938 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4N6MH577X7;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 4N6MH577X7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Support/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Bleat reads the pairing code that \"bleat pair\" shows on the machine running Herdr. Nothing is recorded or sent anywhere.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -253,6 +229,38 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		D8B9FB0A07DB4C5294E75561 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 4N6MH577X7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Support/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Bleat reads the pairing code that \"bleat pair\" shows on the machine running Herdr. Nothing is recorded or sent anywhere.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
@@ -285,13 +293,13 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		FA6E6623F32448A79D178D4D /* BleatKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = BleatKit;
-		};
 		BF272107744E47FD9B53DCC9 /* BleatUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BleatUI;
+		};
+		FA6E6623F32448A79D178D4D /* BleatKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BleatKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

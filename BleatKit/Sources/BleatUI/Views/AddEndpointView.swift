@@ -124,13 +124,18 @@ struct AddEndpointView: View {
 }
 
 #if DEBUG
-#Preview {
-    AddEndpointView(peer: PairedPeer(
-        hostKey: "ssh-ed25519 AAAAC3Nz",
-        name: "Mac",
-        username: "ravil",
-        endpoints: [Endpoint(host: "mac.local")]
-    ))
-    .environment(AppContext(peers: PeerStore()))
+/// On `.sampleData`, so "Add" writes to a throwaway registry in the temporary
+/// directory. The previous version of this preview built a plain `PeerStore()`,
+/// which is the **real** one — `applicationSupport()` — so tapping Add in the
+/// canvas edited the device's own peer list.
+#Preview("Add an address", traits: .sampleData) {
+    AddEndpointView(peer: .preview)
+}
+
+/// The peer whose sshd is on 2222: the footer has to name *that* port, not 22.
+/// An address typed without one and silently stored on 22 looks right in the
+/// list and refuses every connection.
+#Preview("Non-default port", traits: .sampleData) {
+    AddEndpointView(peer: .previewOverlayOnly)
 }
 #endif

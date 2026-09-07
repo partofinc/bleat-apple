@@ -30,3 +30,16 @@ public struct RootView: View {
         .pairingFlow()
     }
 }
+
+#if DEBUG
+/// The whole app, from the top. The stack, the unpair flow and the pairing
+/// sheet are all attached here, so this is the only preview in which a push or
+/// a `bleat://` link behaves the way it does on the device.
+#Preview("Root", traits: .sampleData) {
+    RootView()
+}
+
+#Preview("Fresh install", traits: .noHosts) {
+    RootView()
+}
+#endif

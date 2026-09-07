@@ -13,7 +13,10 @@ import Observation
 final class RemoteList<Item: Sendable> {
     private(set) var state: Loadable<[Item]> = .loading
 
-    private let connections: ConnectionStore
+    /// Optional for exactly one reason: `init(previewing:)` below, which is
+    /// `#if DEBUG` and is the only thing that ever leaves it nil. Production
+    /// callers all pass one.
+    private let connections: ConnectionStore?
     /// The Herdr session these items belong to. Applied to the connection
     /// before every fetch, because it is a command prefix — `HERDR_SESSION` —
     /// rather than anything the handshake settles.
@@ -24,6 +27,22 @@ final class RemoteList<Item: Sendable> {
     /// lands *after* a successful pull-to-refresh and puts an error banner over
     /// rows that arrived perfectly well.
     private var generation = 0
+
+    /// **This empty deinit is load-bearing. Do not delete it.**
+    ///
+    /// Without it, `swift-frontend` 6.3.3 segfaults building this module with
+    /// optimisation on — `SILFunctionTransform "EarlyPerfInliner" on
+    /// SILFunction "@$s7BleatUI10RemoteListCfD"`, which is this class's
+    /// *synthesized* deallocating destructor. Writing the destructor out, even
+    /// empty, is enough to avoid whatever shape the inliner chokes on; the
+    /// members are still released exactly as before, so this changes nothing at
+    /// runtime.
+    ///
+    /// It only bites in a release build, so `swift build`, `swift test` and
+    /// every debug run on a device are all green with it removed. What it
+    /// actually blocks is archiving the app — TestFlight and the App Store.
+    /// Reproduce in six seconds with `swift build -c release --target BleatUI`.
+    deinit {}
 
     init(
         connections: ConnectionStore,
@@ -43,6 +62,11 @@ final class RemoteList<Item: Sendable> {
     /// retried, so the next attempt races the peer's addresses again instead of
     /// asking a socket the network moved out from under.
     func load(for peer: PairedPeer) async {
+        // A preview: the rows were handed in, and there is nothing to fetch.
+        // First, before the state is touched — a seeded `.failed` is a state
+        // somebody wants to look at, and moving it to `.loading` on the way out
+        // would show a spinner instead.
+        guard let connections else { return }
         generation += 1
         let generation = generation
 
@@ -76,6 +100,21 @@ final class RemoteList<Item: Sendable> {
             report(ErrorMessage.of(error), over: previous)
         }
     }
+
+    #if DEBUG
+    /// A list that is already loaded and will never connect, for `#Preview`.
+    ///
+    /// The seam that keeps previews off the network. Every screen here loads in
+    /// `.task`, so a preview built the ordinary way would race a real peer's
+    /// endpoints from the canvas — spending a connect timeout and then drawing
+    /// a connection error over the layout somebody was trying to look at.
+    init(previewing state: Loadable<[Item]>) {
+        self.connections = nil
+        self.session = nil
+        self.fetch = { _ in [] }
+        self.state = state
+    }
+    #endif
 
     /// A failure keeps whatever had already arrived, so one dropped packet on a
     /// pull-to-refresh does not replace a good list with an error page.

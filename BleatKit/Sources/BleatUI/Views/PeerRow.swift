@@ -25,9 +25,14 @@ struct PeerRow: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview("Peer rows", traits: .sampleData) {
     List {
-        PeerRow(peer: .preview)
+        // The three cover the address line's fallbacks: one with a last-good
+        // endpoint, one with none — where the first stored address is the best
+        // guess — and a non-default port, which has to be visible.
+        ForEach(PairedPeer.samples) { peer in
+            PeerRow(peer: peer)
+        }
     }
 }
 #endif

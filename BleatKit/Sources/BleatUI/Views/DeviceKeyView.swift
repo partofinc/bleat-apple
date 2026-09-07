@@ -83,3 +83,13 @@ struct DeviceKeyView: View {
         }
     }
 }
+
+#if DEBUG
+/// Reads the real Keychain, which on a simulator means it mints a preview-only
+/// device key on first run. That is the honest preview: the fingerprint is the
+/// thing being compared by eye against `bleat keys list`, and a fabricated one
+/// would not be the same shape as a real one.
+#Preview("Device key", traits: .sampleData) {
+    DeviceKeyView()
+}
+#endif

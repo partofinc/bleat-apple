@@ -45,17 +45,25 @@ struct AgentRow: View {
 }
 
 #if DEBUG
-#Preview {
+/// All five states, and the two title fallbacks: an agent with no title falls
+/// back to its kind, one with neither to its pane id. Neither may render blank.
+#Preview("Every state", traits: .sampleData) {
     List {
-        AgentRow(agent: Agent(
-            paneID: "p1", workspaceID: "w2", tabID: "t1", agentStatus: .blocked,
-            agent: "claude", cwd: "/Users/ravil/Developer/rawillk/bleat-apple",
-            terminalTitleStripped: "Waiting for approval"
-        ))
-        AgentRow(agent: Agent(
-            paneID: "p2", workspaceID: "w2", tabID: "t1", agentStatus: .working,
-            agent: "claude", cwd: "/Users/ravil/Developer/rawillk/herdr"
-        ))
+        ForEach(Agent.samples) { agent in
+            AgentRow(agent: agent)
+        }
     }
+}
+
+/// The paths are what this row is mostly made of, and they are truncated at the
+/// head so the end — the part that tells two checkouts apart — survives. A
+/// narrow width is where that shows.
+#Preview("Narrow", traits: .sampleData) {
+    List {
+        ForEach(Agent.samples) { agent in
+            AgentRow(agent: agent)
+        }
+    }
+    .frame(width: 260)
 }
 #endif

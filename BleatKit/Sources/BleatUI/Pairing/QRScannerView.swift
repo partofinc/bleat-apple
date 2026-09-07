@@ -22,3 +22,8 @@ struct QRScannerView: UIViewControllerRepresentable {
     }
 }
 #endif
+
+// No `#Preview`: this mounts a live `AVCaptureSession`, which a canvas has
+// nothing to give — it would render a black rectangle and nothing else. The
+// layout around it previews in `CameraSection`, whose `nil` and `false` states
+// are the ones a preview can honestly show.

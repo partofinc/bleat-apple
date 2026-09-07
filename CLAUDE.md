@@ -142,6 +142,7 @@ BleatKit/                   # the local Swift package
     BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
+  Tests/BleatUITests/       # lays views out for real; needs a simulator
   Fixtures/
     schema.json             # output of `herdr api schema --json` (source of truth)
     *.json                  # captured CLI outputs for decoding tests
@@ -219,9 +220,29 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
   `HERDR_SESSION=<name>` and `HERDR_SOCKET_PATH=<path>`. Over SSH, Bleat must
   set those in the command environment. `session list --json` gives the
   `socket_path` for each session.
-- Agent states seen live: `idle`, `working`, `unknown` (`blocked`, `done`
-  documented but not yet captured). Unknown values must decode, never throw.
-  Sort order in UI: blocked → working → idle → done → unknown.
+- **All five agent states have now been captured live** (7 Sept 2026), in an
+  isolated probe workspace in the `phone` session: `idle`, `working`,
+  `unknown`, plus `blocked` and `done` in `Fixtures/agent-list-blocked.json`
+  and `Fixtures/agent-list-done.json`. Unknown values must still decode, never
+  throw.
+- **`done` is not "finished". It is "finished, and nobody has looked."** Herdr
+  defines it (`herdr --skill`) as "the same underlying idle state after unseen
+  background work finishes", so `idle` and `done` differ by exactly one thing:
+  whether the tab has been seen. Confirmed live in both directions — prompting
+  an agent in an unfocused tab settled it to `done`, and `agent focus`
+  collapsed it straight back to `idle`.
+  - **Sort order in the UI is blocked → done → working → idle → unknown**, and
+    this file used to say `done` came *last*. That buried the one row worth
+    opening beneath every agent already dealt with. `blocked` and `done` are
+    both waiting on a person; a `working` agent is making progress without one.
+  - **Bleat must never call `agent focus`.** It is what marks a tab seen, so
+    focusing from the phone would silently clear the `done` marker for whoever
+    is at the Mac. A CLI *read* does not mark it seen — verified — which is
+    what makes a read-only phone client safe here.
+- A `blocked` row carries **no `agent_session` and no `interactive_ready`**;
+  neither is known until the agent is past its dialog. It has `launch_pending`
+  instead, which nothing reads. A required `agentSession` would have thrown on
+  precisely the row the app most needs to show.
 - **`agent list` needs no join.** Each row carries `pane_id`, `workspace_id`,
   `tab_id`, `cwd`, `foreground_cwd`, `terminal_title`(`_stripped`), `revision`,
   `state_change_seq`, and `agent_session` — the latter holding the agent's own
@@ -1320,9 +1341,14 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   indicator that appears only once you already know to drag is not an
   affordance on its own; the indicators are also flashed once when there is
   something off-screen to find.
-- `BleatUI` has no test target, so the cell arithmetic above is verified on
-  device rather than in a test. `PaneLayout` and its lookup are covered from the
-  captured fixture.
+- **`BleatUI` has a test target now** (`Tests/BleatUITests`), which is what the
+  cell arithmetic above needed: several sizing bugs on this screen shipped past
+  a green run because nothing mechanical ever laid the view out. It needs a
+  simulator destination — `swift test` runs the parts that compile for macOS
+  and skips the UIKit ones — so the full check is
+  `xcodebuild test -scheme bleat-Package -destination 'platform=iOS Simulator,…'`
+  from `BleatKit/`. `PaneLayout` and its lookup are covered from the captured
+  fixtures, including a real split tab.
 
 Not taken: fitting the full width to the screen (~2.8pt type, not viable), or
 keeping the crop and merely labelling it. A genuine resize via `control` is not
@@ -1436,14 +1462,24 @@ behaviour when it moves across the seam.
 
 ## Open questions (resolve against the live host, then delete)
 
-- Capturing a `blocked` and a `done` agent row into `Fixtures/`. Only `idle`,
-  `working` and `unknown` have been seen live so far.
 - Whether the host ever sends a non-`terminal.frame` record on stdout. Only
   frames have been observed; `TerminalRecord.unknown` covers the rest.
-- **A split tab's `pane layout`.** Never captured: `herdr session attach`
-  refuses from inside a herdr pane ("nested herdr is disabled by default"), and
-  creating a split in the live `work` session is out of bounds. The lookup is
-  tested against a layout derived from the real fixture, which is weaker.
+
+Resolved (7 Sept 2026): **a split tab's `pane layout`**, captured at last —
+`Fixtures/pane-layout-split.json`. Both blockers turned out to be avoidable: a
+`herdr pane split` needs no `session attach`, so the nested-herdr guard never
+came into it, and an isolated probe workspace in the `phone` session meant the
+live `work` session was never touched. The numbers justify the design — the
+tab's `area` is 54 columns and **each pane is 27** — so a client that rendered a
+split pane at `area.width` would wrap every line at double the real width.
+Looking the pane up by id is what avoids that, and the test now runs against the
+host's own bytes instead of a synthesised sibling. The reply also carries a
+`splits` array, a field nothing reads and no fixture had ever contained: the
+first real exercise of "unknown keys are ignored, never fatal" on this command.
+
+Resolved (7 Sept 2026): **`blocked` and `done` agent rows**, and with them what
+`done` actually means — see the agent-state bullets under **Herdr facts**. The
+sort order recorded there was wrong and has been corrected.
 
 Resolved (6 Sept 2026): `observe` ignores `terminal.scroll`, so there is no
 host-side scrollback for a reader; and `agent prompt --wait` is documented on the

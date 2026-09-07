@@ -30,3 +30,15 @@ defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES
 # with something that looks nothing like the actual problem.
 cd "${CI_PRIMARY_REPOSITORY_PATH:?set by Xcode Cloud; run this from a workflow}/BleatKit"
 swift test
+
+# **A release build, because a debug one cannot see this class of failure.**
+# `swift-frontend` 6.3.3 segfaults optimising BleatUI unless `RemoteList` writes
+# its deinit out — see the comment on it — and nothing in the ordinary loop
+# would notice: `swift build`, `swift test` and every debug run on a device are
+# green either way. The first thing it breaks is the archive, which is the last
+# step before TestFlight and the slowest place to find out.
+#
+# Four seconds, and only the module that has been bitten. Not `swift build -c
+# release` for the whole package: the console tool and its dependencies add
+# minutes for no extra coverage of the thing being guarded.
+swift build -c release --target BleatUI

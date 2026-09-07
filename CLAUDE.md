@@ -1926,6 +1926,27 @@ behaviour when it moves across the seam.
 | Xcode targets | `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` |
 | package | `swiftLanguageModes: [.v6]`, `.enableUpcomingFeature("MemberImportVisibility")` on every target, `.defaultIsolation(MainActor.self)` on `BleatUI` only |
 
+- **`RemoteList` writes an empty `deinit`, and deleting it breaks the archive.**
+  `swift-frontend` 6.3.3 segfaults optimising `BleatUI` without it — `pass
+  SILFunctionTransform "EarlyPerfInliner" on SILFunction
+  "@$s7BleatUI10RemoteListCfD"`, which is that class's *synthesized*
+  deallocating destructor. Writing the destructor out, even empty, avoids
+  whatever shape the inliner chokes on; the members are released exactly as
+  before, so nothing changes at runtime.
+  - **It is invisible to the ordinary loop.** `swift build`, `swift test` and
+    every debug run on a device pass with it removed; only `-O` fails, so the
+    first thing it breaks is the archive — the last step before TestFlight and
+    the slowest place to find out. `ci_scripts/ci_post_clone.sh` now runs
+    `swift build -c release --target BleatUI` for exactly this, four seconds.
+  - Not caused by the previews work: verified on `main` at `5bdf5ae`, same pass
+    and same symbol. `@Observable` is not the trigger either — removing it still
+    crashes. `RemoteList` is the module's only *generic* class, which is the
+    obvious suspect, but a standalone package reproducing its shape (generic
+    `@Observable final class`, a generic enum payload, an optional class
+    reference, a `@Sendable` async closure, the same `load` body) compiles
+    clean, so the trigger needs the whole module and is not characterised
+    further.
+
 - **`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately.** Its
   package half, `NonisolatedNonsendingByDefault`, reproducibly segfaults the
   test bundle on Swift 6.3.3: `swift test` dies with signal 11, while

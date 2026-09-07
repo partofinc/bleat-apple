@@ -28,6 +28,22 @@ final class RemoteList<Item: Sendable> {
     /// rows that arrived perfectly well.
     private var generation = 0
 
+    /// **This empty deinit is load-bearing. Do not delete it.**
+    ///
+    /// Without it, `swift-frontend` 6.3.3 segfaults building this module with
+    /// optimisation on — `SILFunctionTransform "EarlyPerfInliner" on
+    /// SILFunction "@$s7BleatUI10RemoteListCfD"`, which is this class's
+    /// *synthesized* deallocating destructor. Writing the destructor out, even
+    /// empty, is enough to avoid whatever shape the inliner chokes on; the
+    /// members are still released exactly as before, so this changes nothing at
+    /// runtime.
+    ///
+    /// It only bites in a release build, so `swift build`, `swift test` and
+    /// every debug run on a device are all green with it removed. What it
+    /// actually blocks is archiving the app — TestFlight and the App Store.
+    /// Reproduce in six seconds with `swift build -c release --target BleatUI`.
+    deinit {}
+
     init(
         connections: ConnectionStore,
         session: String?,

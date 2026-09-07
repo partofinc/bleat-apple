@@ -14,7 +14,11 @@ struct PairingFlow: ViewModifier {
         @Bindable var pairing = context.pairing
         content
             .sheet(isPresented: $pairing.isPresented) {
-                PairingView(store: context.peers, code: pairing.takeIncomingCode())
+                PairingView(
+                    store: context.peers,
+                    localNetwork: context.localNetwork,
+                    code: pairing.takeIncomingCode()
+                )
             }
             // Handled here rather than on the app's `WindowGroup` so the router
             // is read from the environment the same way everything else is.

@@ -10,8 +10,8 @@ public struct PairingView: View {
     /// built in `init` and the sheet never has a state where it exists without
     /// one. Re-creating a model underneath an in-flight pairing would lose the
     /// result of a swap that has already happened on the host.
-    public init(store: PeerStore, code: String? = nil) {
-        _model = State(wrappedValue: PairingModel(store: store, code: code))
+    public init(store: PeerStore, localNetwork: LocalNetworkAccess, code: String? = nil) {
+        _model = State(wrappedValue: PairingModel(store: store, localNetwork: localNetwork, code: code))
     }
 
     public var body: some View {
@@ -21,11 +21,17 @@ public struct PairingView: View {
                 // the user already aimed their camera at the code once, and
                 // asking them to press a button in a sheet that is holding that
                 // exact code would be asking twice.
+                // Before anything else: raise iOS's local network alert now,
+                // while the user is still lining up the camera. Left until the
+                // first connection, it lands *during* the endpoint race and
+                // fails it — which is what made every first pairing on a fresh
+                // install report a network error.
+                .onAppear(perform: model.primeLocalNetwork)
                 .task { await model.redeemIncomingCode() }
                 // Disabling the button is only half of it: a sheet can also be
                 // swiped away, and that would abandon the swap just as
                 // silently.
-                .interactiveDismissDisabled(model.phase == .pairing)
+                .interactiveDismissDisabled(model.isPairing)
                 .navigationTitle("Pair a host")
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
@@ -40,7 +46,7 @@ public struct PairingView: View {
                             // out-of-band pin exists to catch — and a peer the
                             // host accepted but this device could not record.
                             // The wait is bounded by the connection attempt.
-                            .disabled(model.phase == .pairing)
+                            .disabled(model.isPairing)
                     }
                 }
         }

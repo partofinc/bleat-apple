@@ -901,6 +901,46 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
     iOS shows an "Open in Bleat?" confirmation when the app is *not* frontmost
     and none when it is.
 
+### iOS's local network permission (Phase 2, found on device 7 Sept 2026)
+
+**The first pairing on a fresh install always failed, and the message blamed
+the network.** iOS gates any connection to a `.local` name or a LAN address
+behind a permission alert, raised the first time something tries — and it does
+not hold that connection open while it waits for an answer. So every endpoint
+in `PeerConnector`'s race failed while the alert was still on screen, and
+pairing reported `none of N address(es) could be reached`. Granting permission
+fixed nothing visible; the user had to know to tap "Try again".
+
+- **The real fix is to ask before there is anything to lose.**
+  `LocalNetworkAccess.prime()` runs from the pairing sheet's `onAppear`, so the
+  alert arrives while the user is still lining up the camera. Not at launch:
+  a cold first-launch prompt with no context is what teaches people to tap
+  Don't Allow.
+- **There is no API that reports this permission.** It is inferred from an
+  `NWBrowser`, which the same permission gates: `.ready` means it is running,
+  which it cannot do without access. A `.waiting` or `.failed` carrying DNS
+  `-65555`/`-65570` (`NoAuth`/`PolicyDenied`) is the system positively
+  refusing, which covers both "the alert is unanswered" and "the user said
+  no". **Everything else stays `.unknown` on purpose** — blaming a permission
+  for an unrelated failure sends the user to Settings to fix what is not
+  broken. Verified on the simulator that the browser does reach `.ready`;
+  the refusal path is reasoned from the documented codes, not observed.
+- **`NSBonjourServices` is not optional here.** Without the declaration the
+  browser is refused before the permission is ever consulted, so the app would
+  conclude "blocked" and never retry. It names `_ssh._tcp`, which is honestly
+  what Bleat connects to, and the string must match
+  `LocalNetworkAccess.serviceType`.
+- Both keys live in `Support/Info.plist` rather than as build settings:
+  `NSBonjourServices` is an array, which the generated set cannot express, and
+  splitting the pair would put the purpose string far from the service it
+  explains.
+- **Only "nothing answered" is retried.** A host key mismatch or a refused key
+  means a machine *was* reached, so waiting on a permission would hide what the
+  user has to see. Retrying is safe because the enrollment key is spent only by
+  a **completed** swap — an attempt that never reached the host consumed
+  nothing — and `bleat pair` holds the code for five minutes, which is why the
+  wait is capped at 60s.
+
 ### Unpairing (Phase 2)
 
 Unpairing is two things, and the app used to do only the easy one. Dropping the

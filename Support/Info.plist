@@ -20,6 +20,25 @@
 	  a package test — this file belongs to the app target — so it is stated in
 	  both places and in CLAUDE.md.
 	-->
+	<!--
+	  Local networking. Both keys are here rather than as INFOPLIST_KEY_ build
+	  settings: NSBonjourServices is an array, which the generated set cannot
+	  express, and separating the pair would leave the purpose string far from
+	  the service it explains.
+
+	  Herdr runs on a Mac on the same network, reached over SSH at a `.local`
+	  name or a LAN address — both of which iOS gates behind the local network
+	  permission. Without the usage description the system alert carries no
+	  explanation of why a terminal client wants the network; without the
+	  Bonjour service declaration, NWBrowser cannot ask the question at all,
+	  which is how the app finds out whether permission was granted.
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ssh._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

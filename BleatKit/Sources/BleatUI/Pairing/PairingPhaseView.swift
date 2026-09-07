@@ -8,12 +8,13 @@ struct PairingPhaseView: View {
         switch model.phase {
         case .waiting:
             PairingCaptureView(model: model)
-        case .pairing:
-            // The host is being reached, a key installed and proven, and
-            // another deleted. It is worth saying that it involves the host
-            // rather than showing a bare spinner.
-            ProgressView("Reaching the host…")
+        case .pairing(let label):
+            // Worth saying what is being waited on rather than showing a bare
+            // spinner — and it is not always the host. A first pairing can sit
+            // here waiting for iOS's local network alert to be answered.
+            ProgressView(label)
                 .controlSize(.large)
+                .multilineTextAlignment(.center)
         case .paired(let peer):
             PairedResultView(peer: peer)
         case .failed(let message):

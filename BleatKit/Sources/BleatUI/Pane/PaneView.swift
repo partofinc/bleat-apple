@@ -62,20 +62,29 @@ struct PaneView: View {
     /// `capturedAt` is seeded alongside the reader's lines for the same reason
     /// `TranscriptModel`'s is: the screen keys its first load on that being
     /// nil, and a preview without one would go and read the pane.
+    ///
+    /// The models default to **nil** and are built in the body rather than in
+    /// the argument list. A default argument is evaluated on every call, and
+    /// `State(wrappedValue:)` keeps only the first — so defaulting them to
+    /// `PaneModel(previewing:)` meant every re-evaluation of a parent body
+    /// seeded a temporary directory and started two `NWPathMonitor`s, then
+    /// discarded them.
     init(
         peer: PairedPeer,
         title: String,
         mode: PaneMode,
-        pane: PaneModel = PaneModel(previewing: .live),
+        pane: PaneModel? = nil,
         text: Loadable<[String]> = .loaded(PreviewPaneText.lines),
         capturedAt: Date? = .now,
-        transcript: TranscriptModel = TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
+        transcript: TranscriptModel? = nil
     ) {
         self.title = title
         self.peer = peer
-        _model = State(wrappedValue: pane)
+        _model = State(wrappedValue: pane ?? PaneModel(previewing: .live))
         _text = State(wrappedValue: RemoteList(previewing: text))
-        _transcript = State(wrappedValue: transcript)
+        _transcript = State(
+            wrappedValue: transcript ?? TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
+        )
         _mode = State(wrappedValue: mode)
         _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
         _capturedAt = State(wrappedValue: capturedAt)

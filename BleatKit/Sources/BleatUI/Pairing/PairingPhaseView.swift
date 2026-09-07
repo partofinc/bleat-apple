@@ -39,9 +39,11 @@ struct PairingPhaseView: View {
 }
 
 #if DEBUG
-/// The camera state. In a canvas the capture device is unavailable, so what
-/// this actually shows is the refused-camera branch — which is the one worth
-/// looking at anyway, since it is the only way back from a denied permission.
+/// The camera state. **This one really does open the camera** when access has
+/// already been granted, because that is what the screen does — `.waiting`
+/// builds a `PairingCaptureView` that asks `CameraAccess` and mounts a capture
+/// session on a yes. `PairingCaptureView`'s own previews answer for it instead;
+/// this one is here because the phase switch is what is being previewed.
 #Preview("Waiting", traits: .sampleData) {
     NavigationStack {
         PairingPhaseView(model: PairingModel(previewing: .waiting))

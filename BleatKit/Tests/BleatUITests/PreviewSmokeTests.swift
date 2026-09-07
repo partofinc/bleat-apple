@@ -14,9 +14,15 @@ import UIKit
 /// are invisible to `swift build` and neither shows up until the canvas is
 /// opened, one preview at a time.
 ///
-/// It also pins the promise the previews are built on: **none of them reaches
-/// the network.** `ConnectionStore.endpoint` stays nil through every render
-/// below, which is what says no screen dialled.
+/// The seam itself — a seeded `RemoteList` that does not fetch, a parked
+/// `PaneModel` that does not open a stream — is asserted directly, in
+/// `previewingListIsInert` and `parkedModels`. The render tests are the second
+/// half of that: they put each screen through a **real appearance lifecycle**,
+/// so the `.task` modifiers that do the fetching actually run. Without a window
+/// they do not run at all, which made an earlier version of this suite pass
+/// whether the seam worked or not — verified with a probe view whose only
+/// content was a `.task`: false before and after a sleep, hosted bare; true
+/// immediately, hosted in a key window.
 @Suite("Previews render", .serialized)
 @MainActor
 struct PreviewSmokeTests {
@@ -28,12 +34,36 @@ struct PreviewSmokeTests {
         return AppContext(peers: store)
     }
 
-    /// Hosts a view at iPhone size and forces a layout pass — which is what
-    /// actually evaluates the body.
+    /// Gives anything the tasks started a moment to land, then checks nothing
+    /// connected.
+    ///
+    /// The wait is what gives this teeth. A dial is asynchronous, so asserting
+    /// the instant a render returns would pass even for a screen that had just
+    /// started one — and `PairedPeer.preview` carries this Mac's real LAN
+    /// address, so on the network these tests run on, a broken seam really does
+    /// reach a host that answers.
+    private func settle(_ context: AppContext) async {
+        try? await Task.sleep(for: .milliseconds(750))
+        #expect(context.connections.endpoint == nil, "a preview screen opened a connection")
+    }
+
+    /// Hosts a view at iPhone size, in a key window, and forces a layout pass.
+    ///
+    /// **The window is what makes this a test.** A hosting controller whose
+    /// view is merely given a frame evaluates the body but never appears, so
+    /// its `.task` modifiers never run — and `.task` is where every screen here
+    /// loads. In a key window they run, synchronously enough that they have
+    /// already started by the time `layoutIfNeeded` returns.
+    ///
+    /// Which is also why the seam has to hold: `PairedPeer.preview` has this
+    /// Mac's real LAN address on it, so a broken seam would not merely fail —
+    /// it would open an SSH connection from the test suite. No test touches the
+    /// network.
     private func render(_ context: AppContext, _ view: some View) {
-        let controller = UIHostingController(rootView: view.environment(context))
-        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 759)
-        controller.view.layoutIfNeeded()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
+        window.rootViewController = UIHostingController(rootView: view.environment(context))
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
     }
 
     @Test("the sample context has the hosts the previews are drawn against")
@@ -41,11 +71,23 @@ struct PreviewSmokeTests {
         let context = sampleContext()
         #expect(context.peers.peers.count == 3)
         #expect(context.peers.failure == nil)
-        // The trait writes to the temporary directory, never the real registry.
-        // A preview that edited the device's own peer list would be a bug with
-        // consequences outside the canvas — an earlier `AddEndpointView`
-        // preview built a plain `PeerStore()`, which is precisely that.
         #expect(context.peers.peers.contains { $0.name == "rawillk.air" })
+    }
+
+    /// **The location, not the contents.** `AddEndpointView` and the unpair
+    /// flow both write, so a preview pointed at `applicationSupport()` edits
+    /// the device's own peer list from the canvas — which an earlier version of
+    /// that view's preview did. Asserting on the peers cannot catch it: they
+    /// are seeded into whatever registry `sample()` is handed, so the same
+    /// three hosts appear either way. Only the path tells the two apart.
+    @Test("the sample registry is in the temporary directory, never the app's own")
+    func sampleRegistryIsThrowaway() {
+        let path = PeerRegistry.sample().fileURL.path
+        #expect(path.hasPrefix(NSTemporaryDirectory()), "sample registry at \(path)")
+        #expect(path != PeerRegistry.applicationSupport().fileURL.path)
+        // Distinct per call, so one preview does not rebuild the file another
+        // is editing.
+        #expect(PeerRegistry.sample().fileURL != PeerRegistry.sample().fileURL)
     }
 
     @Test("the empty trait has nothing paired")
@@ -69,8 +111,24 @@ struct PreviewSmokeTests {
         #expect(failed.state.failureMessage == "nothing answered")
     }
 
+    /// **The load-bearing assumption of every render test below.**
+    ///
+    /// They are only worth anything if the `.task` modifiers run, and hosting a
+    /// controller without a window does not run them — measured: a probe view
+    /// whose only content was `Text("hi").task { ran = true }` reported false
+    /// immediately and still false after a second. If SwiftUI ever changes when
+    /// tasks fire, this fails loudly rather than quietly turning the rest of
+    /// the suite back into a compile check.
+    @Test("rendering runs the screens' tasks")
+    func renderRunsTasks() {
+        final class Ran: @unchecked Sendable { var value = false }
+        let ran = Ran()
+        render(sampleContext(), Text("probe").task { ran.value = true })
+        #expect(ran.value, "`.task` did not run — the render tests below prove nothing")
+    }
+
     @Test("the peer screens render")
-    func peerScreens() {
+    func peerScreens() async {
         let context = sampleContext()
         render(context, NavigationStack { PeersView() })
         render(sampleContext(peers: []), NavigationStack { PeersView() })
@@ -81,11 +139,14 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        await settle(context)
+        // Weak on its own — a dial that failed would also leave this nil — but
+        // it is free, and `previewingListIsInert` covers the seam properly.
         #expect(context.connections.endpoint == nil)
     }
 
     @Test("the list screens render in every state")
-    func listScreens() {
+    func listScreens() async {
         let context = sampleContext()
         render(context, NavigationStack {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
@@ -105,11 +166,11 @@ struct PreviewSmokeTests {
                 previewing: .loaded([])
             )
         })
-        #expect(context.connections.endpoint == nil)
+        await settle(context)
     }
 
     @Test("the pane screens render")
-    func paneScreens() {
+    func paneScreens() async {
         let context = sampleContext()
         render(context, PaneChatView(
             phase: .loaded(TranscriptEntry.samples), status: .working, step: nil,
@@ -130,16 +191,19 @@ struct PreviewSmokeTests {
         render(context, NavigationStack {
             PaneView(peer: .preview, title: "w2:p1", mode: .reader)
         })
-        #expect(context.connections.endpoint == nil)
+        await settle(context)
     }
 
     /// The modal flows, whose interesting states are the ones a working host
     /// never produces.
     @Test("the pairing and unpair sheets render")
-    func sheets() {
+    func sheets() async {
         let context = sampleContext()
+        // `.waiting` is rendered through `PairingCaptureView` with the camera
+        // answered rather than asked: the phase's own preview mounts a capture
+        // session where access is already granted, and a test must not.
         render(context, NavigationStack {
-            PairingPhaseView(model: PairingModel(previewing: .waiting))
+            PairingCaptureView(model: PairingModel(previewing: .waiting), previewCamera: false)
         })
         render(context, NavigationStack {
             PairingPhaseView(model: PairingModel(previewing: .paired(.preview)))

@@ -56,6 +56,10 @@ public struct PairingView: View {
 #if DEBUG
 /// The sheet as it is presented, chrome included — the "Done" button that is
 /// disabled mid-swap is part of what this screen is.
+///
+/// It builds its own model, so it opens on `.waiting` and, where camera access
+/// is already granted, mounts a real capture session. `PairingPhaseView` is
+/// where the other four states are previewed without one.
 #Preview("Pairing sheet", traits: .sampleData) {
     PreviewContext { context in
         PairingView(

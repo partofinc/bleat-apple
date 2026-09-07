@@ -2,6 +2,31 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  This file exists for the two keys that cannot be build settings.
+
+	  Everything else in Bleat's Info.plist is generated: the target sets
+	  GENERATE_INFOPLIST_FILE and a handful of INFOPLIST_KEY_* build settings,
+	  which is the house style and means there is no plist to drift. But the
+	  generated set covers a fixed list of keys, and neither CFBundleURLTypes
+	  nor NSBonjourServices is on it — the second because it is an array, which
+	  a build setting cannot express. Xcode merges the generated keys *into*
+	  this file when both settings are present, so everything else, including
+	  NSLocalNetworkUsageDescription, lives in the project as an
+	  INFOPLIST_KEY_.
+
+	  The scheme string must match PairingPayload.urlScheme in BleatKit, which
+	  is what `bleat pair` puts in the QR. There is no way to assert that from
+	  a package test — this file belongs to the app target — so it is stated in
+	  both places and in CLAUDE.md.
+
+	  NSBonjourServices is not optional. Herdr runs on a Mac reached over SSH
+	  at a `.local` name or a LAN address, both of which iOS gates behind the
+	  local network permission; without this declaration NWBrowser is refused
+	  before the permission is ever consulted, and LocalNetworkAccess — which
+	  infers the permission from that browser — would conclude "blocked" and
+	  never retry. The string must match LocalNetworkAccess.serviceType.
+	-->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

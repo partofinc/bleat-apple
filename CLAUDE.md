@@ -1322,10 +1322,13 @@ fixed nothing visible; the user had to know to tap "Try again".
   conclude "blocked" and never retry. It names `_ssh._tcp`, which is honestly
   what Bleat connects to, and the string must match
   `LocalNetworkAccess.serviceType`.
-- Both keys live in `Support/Info.plist` rather than as build settings:
-  `NSBonjourServices` is an array, which the generated set cannot express, and
-  splitting the pair would put the purpose string far from the service it
-  explains.
+- **`NSBonjourServices` lives in `Support/Info.plist`** — it is an array, which
+  the generated set cannot express — alongside `CFBundleURLTypes`, which is not
+  in that set either. `NSLocalNetworkUsageDescription` is an
+  `INFOPLIST_KEY_` build setting on the app target. The pair is split, which
+  this file previously argued against; the plist's own comment carries the
+  explanation so the two halves are still findable from each other. Look in the
+  project, not the plist, for the purpose string.
 - **Only "nothing answered" is retried.** A host key mismatch or a refused key
   means a machine *was* reached, so waiting on a permission would hide what the
   user has to see. Retrying is safe because the enrollment key is spent only by

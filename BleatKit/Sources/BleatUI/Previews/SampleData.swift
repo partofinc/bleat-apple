@@ -46,19 +46,44 @@ extension PreviewTrait where T == Preview.ViewTraits {
 /// `@State` rather than building one in `body`: a fresh `AppContext` on every
 /// pass would reset the navigation path and the routers, so pushing a screen in
 /// the canvas would immediately undo itself.
+///
+/// The context comes from a cache rather than being built here, because
+/// `State(wrappedValue:)` keeps only the first one while `init` runs on every
+/// re-evaluation. Built inline, each pass would create a `Reachability` — two
+/// `NWPathMonitor`s, never cancelled — and seed a fresh temporary directory,
+/// then throw all of it away.
 private struct SampleContextHost<Content: View>: View {
     @State private var context: AppContext
     private let content: Content
 
     init(peers: [PairedPeer], @ViewBuilder content: () -> Content) {
-        let store = PeerStore(registry: .sample(peers))
-        store.reload()
-        _context = State(wrappedValue: AppContext(peers: store))
+        _context = State(wrappedValue: SampleContexts.shared(for: peers))
         self.content = content()
     }
 
     var body: some View {
         content.environment(context)
+    }
+}
+
+/// One context per seed, for the life of the process.
+///
+/// Which is also the right semantics: `PreviewModifier.makeSharedContext()`
+/// exists to be called once and shared, and previews of the same trait should
+/// be looking at the same hosts. It cannot be used here only because it is
+/// `static` and so cannot vary by seed.
+@MainActor
+private enum SampleContexts {
+    private static var contexts: [String: AppContext] = [:]
+
+    static func shared(for peers: [PairedPeer]) -> AppContext {
+        let key = peers.map(\.hostKey).joined(separator: "|")
+        if let existing = contexts[key] { return existing }
+        let store = PeerStore(registry: .sample(peers))
+        store.reload()
+        let context = AppContext(peers: store)
+        contexts[key] = context
+        return context
     }
 }
 

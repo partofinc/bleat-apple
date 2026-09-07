@@ -10,7 +10,7 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 2 — one gate item left, and it needs Tailscale installed
+## Current phase: 2 — gate met, 7 Sept 2026
 
 **Pairing verified on device, 5 Sept 2026.** `bleat pair` on the Mac, scanned
 with an iPhone: the host key pinned out of band matched
@@ -27,12 +27,44 @@ this gate open is settled; see **`--cols` crops** below. Unpairing revokes the
 device key from the host, and `bleat keys` can see and remove one from the Mac
 side.
 
-**What is left of the Phase 2 gate is "runs on a real phone over Tailscale",
-and it has never been tried.** Tailscale is not installed on the dev Mac, so
-`bleat pair`'s Tailscale endpoint detection (`tailscale status --json` →
-`Self.DNSName`, `Self.TailscaleIPs`) is written and unverified. Everything so
-far has been on the LAN. Do not call the gate met on the strength of the
-screens alone.
+**Runs on a real phone over Tailscale — verified 7 Sept 2026, and this closes
+the Phase 2 gate.** Paired and connected from an iPhone **on cellular with
+Wi-Fi off**, which is the test that matters: on Wi-Fi the LAN endpoints are
+live and usually win the race, so a success there proves nothing about the
+tunnel. With Wi-Fi off there is nothing left to win but the overlay address.
+
+**How it works is not what this file used to claim.** The old text said
+`bleat pair` detects Tailscale by running `tailscale status --json` and reading
+`Self.DNSName` and `Self.TailscaleIPs`, and called that "written and
+unverified". **It was never written.** Nothing in the package invokes the
+`tailscale` CLI. The addresses arrive through `ifconfig`, which sees the `utun`
+interface like any other, and the classification in `Endpoint.reach` is what
+makes them usable — so the feature worked by a different route than the one
+documented, and the documented route did not exist to be verified.
+
+`bleat inspect` on this Mac, with the tunnel up:
+
+```
+rawillkair.local                           lan       — same network only
+192.168.11.54                              lan       — same network only
+100.114.119.30                             overlay   — works over the tunnel
+[fd7a:115c:a1e0::42a:771f]                 overlay   — works over the tunnel
+```
+
+**The classification is the load-bearing part.** Tailscale's CGNAT range is not
+RFC1918 and its v6 range is a ULA, so the ordinary private-address tests call
+both private — and `endpointsToTry` drops private addresses the moment the
+phone leaves Wi-Fi. That would discard the one endpoint that works. `reach`
+matches the two Tailscale ranges *before* the private checks for exactly this
+reason.
+
+**A stored Tailscale address survives reconnects on both ends.** The
+`100.64.0.0/10` and `fd7a:115c:a1e0::/48` addresses are assigned by the control
+plane and bound to the node's identity rather than its session, so they persist
+across logout, reboot, and moving between networks. What does invalidate one is
+removing the machine from the tailnet and re-adding it, or re-registering it as
+a new node: that is a new node record with a new address, and since endpoints
+are captured at pair time and never re-discovered, it costs a re-pair.
 
 The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
@@ -437,10 +469,12 @@ peer with two endpoints*, not two peers.
 - `bleat pair` enumerates what it can and accepts `--endpoint` for the rest:
   - mDNS name (`scutil --get LocalHostName` + `.local`) — LAN only
   - routable interface addresses from `ifconfig` — LAN v4, global v6
-  - Tailscale MagicDNS name and IPs, when the CLI is present
-    (`tailscale status --json` → `Self.DNSName`, `Self.TailscaleIPs`).
-    **Unverified — Tailscale is not installed on the dev Mac.** Confirm the JSON
-    shape against a real install before relying on it.
+  - Tailscale addresses, **via `ifconfig`, not via the `tailscale` CLI**. The
+    tunnel's `utun` interface holds them and passes every filter, so they are
+    enumerated like any other address and then classified `.overlay` by
+    `Endpoint.reach`. Verified on device over cellular, 7 Sept 2026. Nothing
+    here shells out to `tailscale`; an earlier version of this file said it
+    did.
   - Twingate and similar overlays do not tell the host its own resolvable name.
     Those endpoints are user-supplied via `--endpoint`; do not try to detect them.
 

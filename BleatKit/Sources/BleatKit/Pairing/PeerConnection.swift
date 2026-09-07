@@ -44,6 +44,10 @@ public enum PeerConnection {
             )
         }
 
+        // The only caller that vouches for this: `endpoints` is what survived
+        // `endpointsToTry`, so anything unroutable from here has already been
+        // ruled out and "all that is left is the tunnel" is a fact rather than
+        // an accident of what the caller happened to pass.
         let connection = try await PeerConnector.connect(
             endpoints: endpoints,
             username: peer.username,
@@ -53,7 +57,8 @@ public enum PeerConnection {
             // `herdr` call would fail on it, which is why the path is settled
             // before a client is handed out.
             herdrPath: peer.herdrPath ?? "herdr",
-            session: session ?? peer.session
+            session: session ?? peer.session,
+            droppedUnroutable: true
         )
 
         var discovered: String?

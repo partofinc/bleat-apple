@@ -46,11 +46,26 @@ public struct TailscaleStatus: Decodable, Sendable {
     public let backendState: String?
     public let node: Node?
     public let tailnet: Tailnet?
+    /// The same answer in a second place, and the fallback when `CurrentTailnet`
+    /// is missing — an older CLI, or something else speaking this format. Its
+    /// presence *is* the signal: the suffix is what MagicDNS resolves names
+    /// under, so an empty one means there is nothing to resolve them with.
+    /// Failing closed on a missing object would drop the name and say nothing,
+    /// which is the silent failure this file is otherwise built against.
+    public let magicDNSSuffix: String?
 
     enum CodingKeys: String, CodingKey {
         case backendState = "BackendState"
         case node = "Self"
         case tailnet = "CurrentTailnet"
+        case magicDNSSuffix = "MagicDNSSuffix"
+    }
+
+    /// Whether a MagicDNS name would resolve. `CurrentTailnet` is believed
+    /// outright when it is there, including when it says no.
+    var resolvesMagicDNS: Bool {
+        if let stated = tailnet?.magicDNSEnabled { return stated }
+        return !(magicDNSSuffix ?? "").isEmpty
     }
 
     /// Endpoints for this machine, or none.
@@ -71,7 +86,7 @@ public struct TailscaleStatus: Decodable, Sendable {
         else { return [] }
 
         var endpoints: [Endpoint] = []
-        if status.tailnet?.magicDNSEnabled == true, let name = status.node?.dnsName {
+        if status.resolvesMagicDNS, let name = status.node?.dnsName {
             let trimmed = name.hasSuffix(".") ? String(name.dropLast()) : name
             if !trimmed.isEmpty { endpoints.append(Endpoint(host: trimmed, port: port)) }
         }

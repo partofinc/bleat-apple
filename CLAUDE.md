@@ -33,22 +33,23 @@ Wi-Fi off**, which is the test that matters: on Wi-Fi the LAN endpoints are
 live and usually win the race, so a success there proves nothing about the
 tunnel. With Wi-Fi off there is nothing left to win but the overlay address.
 
-**How it works is not what this file used to claim.** The old text said
-`bleat pair` detects Tailscale by running `tailscale status --json` and reading
-`Self.DNSName` and `Self.TailscaleIPs`, and called that "written and
-unverified". **It was never written.** Nothing in the package invokes the
-`tailscale` CLI. The addresses arrive through `ifconfig`, which sees the `utun`
-interface like any other, and the classification in `Endpoint.reach` is what
-makes them usable — so the feature worked by a different route than the one
-documented, and the documented route did not exist to be verified.
+**It did not work the way this file claimed, and the difference matters.** The
+old text said `bleat pair` detects Tailscale by running `tailscale status
+--json` for `Self.DNSName` and `Self.TailscaleIPs`, and called that "written and
+unverified" — the last item on the gate. **It had never been written.** What
+made Tailscale work was `ifconfig`: the tunnel's `utun` interface holds the
+addresses and they pass every filter, and `Endpoint.reach` classifies them.
 
-`bleat inspect` on this Mac, with the tunnel up:
+The CLI **is** consulted now, for the one thing no interface carries — the
+MagicDNS name. See the endpoint list under **A peer is a host key, not an
+address**. `bleat inspect` on this Mac with the tunnel up:
 
 ```
 rawillkair.local                           lan       — same network only
 192.168.11.54                              lan       — same network only
 100.114.119.30                             overlay   — works over the tunnel
 [fd7a:115c:a1e0::42a:771f]                 overlay   — works over the tunnel
+rawillk.tail2a3bab.ts.net                  overlay   — works over the tunnel
 ```
 
 **The classification is the load-bearing part.** Tailscale's CGNAT range is not
@@ -619,16 +620,21 @@ columns, 43 → 31 rows.
 Measured 7 Sept 2026 at level L with a 4-module quiet zone, and pinned by
 `QRPayloadSizeTests`:
 
-| endpoints | URL chars | modules | rows |
-|---|---|---|---|
-| 4 — LAN plus both Tailscale addresses | 227 | 63 | 32 |
-| 5 — and the MagicDNS name | 262 | 67 | 34 |
-| 7 — everything this Mac offers | 363 | 75 | 38 |
+**Measure at `quietZone: 3`, which is what `bleat pair` renders.** The
+parameter is *extra* modules on top of the one `CIQRCodeGenerator` emits, so 3
+draws the 4 the spec wants. Measuring at 4 inflates every figure by a row — a
+wrong-but-plausible number, which a first version of the table below had.
+
+| endpoints | modules | rows |
+|---|---|---|
+| 4 — LAN plus both Tailscale addresses | 61 | 31 |
+| 5 — and the MagicDNS name | 65 | 33 |
+| 7 — everything this Mac offers | 73 | 37 |
 
 So the name costs two rows and a Tailscale-connected Mac costs six over a
-LAN-only one. With three rows of chrome the worst case needs **41**, which is
-exactly the reduced-margin threshold this file measured earlier — inside it,
-with nothing spare. A shorter window falls back to the link.
+LAN-only one. With three rows of chrome the worst case needs **40** — one row
+inside the reduced-margin threshold this file measured earlier. A shorter window
+falls back to the link. `QRPayloadSizeTests` defends that row.
 
 **Height is the binding constraint, so nothing is spent on it carelessly.**
 Chrome is three rows — title, host key, footer — with no blank spacers: the QR's
@@ -743,15 +749,31 @@ stdout exactly — but `.zshenv` is sourced for every non-interactive zsh, so
 anything a user's startup file prints would have made every healthy endpoint
 fail, and the message blames the network.
 
-**When every endpoint left is an overlay address, the message names the VPN.**
-On cellular against a Tailscale-only host, `endpointsToTry` has already dropped
-the `.local` name and the LAN addresses as unroutable — so if nothing answered,
-the likeliest cause is the tunnel being down on the *phone*, and "none of N
-address(es) could be reached" sends the user to check a network that is working
-perfectly. `PeerConnector` cannot see the VPN's state (`Network` is Apple-only
-and that file compiles for Linux), so it names the possibility rather than
-asserting it. A mixed list keeps the ordinary message: a LAN address in it means
-the phone is on Wi-Fi and the host is simply off, asleep, or elsewhere.
+**When every endpoint left is an overlay address, the message names the VPN** —
+`TransportError.overlayUnreachable`. On cellular against a Tailscale-only host,
+`endpointsToTry` has already dropped the `.local` name and the LAN addresses as
+unroutable, so if nothing answered the likeliest cause is the tunnel being down
+on the *phone*, and "none of N address(es) could be reached" sends the user to
+check a network that is working perfectly. `PeerConnector` cannot see the VPN's
+state (`Network` is Apple-only and that file compiles for Linux), so it names
+the possibility rather than asserting it. A mixed list keeps the ordinary
+message: a LAN address among the candidates means the phone is on Wi-Fi and the
+host is simply off, asleep, or elsewhere.
+
+- **It fires only when the caller passes `droppedUnroutable`, and that flag is
+  load-bearing.** Only `PeerConnection.connect` can vouch for it, because only
+  it filtered. Pairing calls the connector a second time with a deliberately
+  narrowed list — one endpoint, the one that just carried the enrollment
+  handshake — to ask whether this host accepts the new device key, and every
+  candidate there is trivially an overlay address. Without the flag the user
+  would be told to check a VPN that had demonstrably just worked, at the one
+  moment in the flow where the enrollment key may already be spent and
+  rescanning is not an option.
+- **It is its own error case rather than a `connectionFailed` with different
+  words**, because callers classify on the case. `PairingModel` reads a plain
+  `connectionFailed` as possibly iOS's local network permission and waits a
+  minute for an answer — which cannot be the cause when no local address was
+  dialled at all.
 
 A host key mismatch is promoted over every other failure when nothing wins — it
 is the only outcome that is not about the network, and reporting it as "no

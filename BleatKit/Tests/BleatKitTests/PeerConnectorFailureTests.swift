@@ -9,9 +9,15 @@ import Testing
 @Suite("Explaining a race nothing won")
 struct PeerConnectorFailureTests {
 
-    private func message(_ endpoints: [Endpoint], _ errors: [any Error] = []) -> String {
+    private func message(
+        _ endpoints: [Endpoint],
+        _ errors: [any Error] = [],
+        droppedUnroutable: Bool = true
+    ) -> String {
         let failures = zip(endpoints, errors).map { ($0, $1) }
-        let error = PeerConnector.failure(from: Array(failures), endpoints: endpoints)
+        let error = PeerConnector.failure(
+            from: Array(failures), endpoints: endpoints, droppedUnroutable: droppedUnroutable
+        )
         return String(describing: error)
     }
 
@@ -41,6 +47,39 @@ struct PeerConnectorFailureTests {
         ])
         #expect(text.contains("none of 2"))
         #expect(!text.contains("VPN"))
+    }
+
+    /// **The flag is the whole safety of that message**, and this is the case
+    /// it protects. Pairing calls the connector a second time with a
+    /// deliberately narrowed list — one endpoint, the one that just carried the
+    /// enrollment handshake — to ask whether this host accepts the new device
+    /// key. Every candidate is trivially an overlay address there, but the
+    /// tunnel demonstrably just worked, so telling the user to check their VPN
+    /// would be false. And it lands at the worst moment in the flow: the
+    /// enrollment key may already be spent, so the user cannot simply rescan.
+    @Test("a narrowed list is not read as a VPN problem")
+    func narrowedListIsNotAVPNProblem() {
+        let text = message(
+            [Endpoint(host: "100.114.119.30", port: 22)],
+            droppedUnroutable: false
+        )
+        #expect(!text.contains("VPN"))
+        #expect(text.contains("none of 1"))
+    }
+
+    /// It is its own error case rather than a `connectionFailed` with different
+    /// words, because callers classify on the case. `PairingModel` treats a
+    /// plain `connectionFailed` as possibly iOS's local network permission and
+    /// waits a minute for an answer — which cannot be the cause when no local
+    /// address was dialled at all.
+    @Test("the VPN failure is a distinct case, not a different sentence")
+    func vpnFailureIsItsOwnCase() {
+        let endpoints = [Endpoint(host: "100.114.119.30", port: 22)]
+        let error = PeerConnector.failure(from: [], endpoints: endpoints, droppedUnroutable: true)
+        guard case TransportError.overlayUnreachable = error else {
+            Issue.record("expected overlayUnreachable, got \(error)")
+            return
+        }
     }
 
     /// Identity outranks the network. A machine answered and was not the one

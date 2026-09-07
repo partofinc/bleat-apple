@@ -243,6 +243,13 @@ final class PairingModel {
     /// Only "nothing answered" qualifies. A host key mismatch or a refused key
     /// means a machine *was* reached, so permission is not the story and
     /// retrying would paper over the thing the user needs to see.
+    /// `TransportError.overlayUnreachable` is excluded, and that is the point
+    /// of it being its own case. Nothing local was dialled in that race — every
+    /// candidate was a mesh VPN address — so the local network permission
+    /// cannot be the cause, and treating it as one would make a user who had
+    /// once denied that permission wait out the whole minute and then be told
+    /// their local network is unreachable, for a failure that was about a
+    /// tunnel.
     static func mightBeLocalNetworkRefusal(_ error: any Error) -> Bool {
         if case TransportError.connectionFailed = error { return true }
         return false

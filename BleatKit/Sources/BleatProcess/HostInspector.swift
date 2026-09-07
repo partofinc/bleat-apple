@@ -48,8 +48,29 @@ public struct HostInspector: Sendable {
         "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     ]
 
-    static func locateTailscale() -> String? {
-        tailscalePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+    /// Ask every `tailscale` on this machine until one answers.
+    ///
+    /// **Existing is not the same as working.** `brew install tailscale` puts a
+    /// CLI in `/opt/homebrew/bin` that cannot reach the App Store app's
+    /// sandboxed daemon, and both being installed is a common combination — so
+    /// taking the first path that exists would run that one, get a non-zero
+    /// exit, and silently drop the MagicDNS name while the bundled binary next
+    /// in the list would have answered. Which is the whole point of this code,
+    /// lost without a word.
+    func tailscaleEndpoints(port: Int) -> [Endpoint] {
+        for path in Self.tailscalePaths
+        where FileManager.default.isExecutableFile(atPath: path) {
+            // Bounded, because this now sits on `bleat pair`'s critical path
+            // *before* anything is printed: `run` blocks until the child closes
+            // stdout, so a wedged or half-started `tailscaled` would hang
+            // pairing at a blank terminal with no explanation. `readHostKey`
+            // passes `ssh-keyscan -T 5` for the same hazard; `tailscale` has no
+            // such flag, so the timeout is imposed from outside.
+            guard let json = run(path, ["status", "--json"], timeout: 5) else { continue }
+            let endpoints = TailscaleStatus.endpoints(fromStatusJSON: Data(json.utf8), port: port)
+            if !endpoints.isEmpty { return endpoints }
+        }
+        return []
     }
 
     public init() {}
@@ -73,11 +94,7 @@ public struct HostInspector: Sendable {
         // After `ifconfig`, because the tunnel's `utun` addresses usually come
         // from there and the de-duplication below keeps whichever arrived
         // first. What this adds that `ifconfig` cannot is the MagicDNS name.
-        if let path = Self.locateTailscale(), let json = run(path, ["status", "--json"]) {
-            endpoints.append(contentsOf: TailscaleStatus.endpoints(
-                fromStatusJSON: Data(json.utf8), port: port
-            ))
-        }
+        endpoints.append(contentsOf: tailscaleEndpoints(port: port))
         var seen = Set<Endpoint>()
         endpoints = endpoints.filter { seen.insert($0).inserted }
         for endpoint in extraEndpoints where !endpoints.contains(endpoint) {
@@ -139,7 +156,7 @@ public struct HostInspector: Sendable {
     /// A missing optional tool is not an error here: `tailscale` and even
     /// `scutil` may be absent, and pairing should proceed with whatever
     /// endpoints were found rather than fail outright.
-    func run(_ executable: String, _ arguments: [String]) -> String? {
+    func run(_ executable: String, _ arguments: [String], timeout: TimeInterval? = nil) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -152,9 +169,20 @@ public struct HostInspector: Sendable {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         do { try process.run() } catch { return nil }
+        // A child that never exits would block the read below forever. Killing
+        // it closes the pipe, which is what lets that read return at all.
+        var watchdog: DispatchSourceTimer?
+        if let timeout {
+            let timer = DispatchSource.makeTimerSource(queue: .global())
+            timer.schedule(deadline: .now() + timeout)
+            timer.setEventHandler { if process.isRunning { process.terminate() } }
+            timer.resume()
+            watchdog = timer
+        }
         // Read before waiting: a full pipe buffer would deadlock the child.
         let data = out.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        watchdog?.cancel()
         guard process.terminationStatus == 0 else { return nil }
         return String(data: data, encoding: .utf8)
     }

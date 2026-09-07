@@ -12,19 +12,25 @@ import Testing
 /// bytes in the payload and bytes are modules, so anything that adds one is
 /// spending the user's terminal rows.
 ///
-/// Measured 7 Sept 2026, at correction level L with a 4-module quiet zone:
+/// **`quietZone: 3` is what `bleat pair` actually renders**, and the parameter
+/// is *extra* modules on top of the one `CIQRCodeGenerator` emits — so 3 draws
+/// the 4 the spec asks for. Measuring at 4 would quietly add a module of border
+/// all round and inflate every number here by a row, which is exactly the kind
+/// of wrong-but-plausible figure a test like this exists to prevent.
 ///
-/// | endpoints | URL chars | modules | rows |
-/// |---|---|---|---|
-/// | 4 (LAN + Tailscale addresses) | 227 | 63 | 32 |
-/// | 5 (+ the MagicDNS name) | 262 | 67 | 34 |
-/// | 7 (everything this Mac offers) | 363 | 75 | 38 |
+/// Measured 7 Sept 2026, correction level L:
+///
+/// | endpoints | modules | rows |
+/// |---|---|---|
+/// | 4 (LAN + Tailscale addresses) | 61 | 31 |
+/// | 5 (+ the MagicDNS name) | 65 | 33 |
+/// | 7 (everything this Mac offers) | 73 | 37 |
 ///
 /// So the MagicDNS name costs two terminal rows, and a Tailscale-connected Mac
 /// costs six over a LAN-only one. Three rows of chrome sit above and below, so
-/// the worst case here needs 41 rows — inside the 47 a full-screen window has,
-/// and inside the 41 that CLAUDE.md measured as the reduced-margin threshold,
-/// with nothing to spare. That is the number this test exists to defend.
+/// the worst case needs 40 — one row inside the 41 that CLAUDE.md measured as
+/// the reduced-margin threshold, and well inside the 47 a full-screen window
+/// has. That single row of headroom is what this test defends.
 @Suite("Pairing QR size")
 struct QRPayloadSizeTests {
 
@@ -36,7 +42,7 @@ struct QRPayloadSizeTests {
             enrollmentSeed: Data(repeating: 7, count: 32),
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB8x2Vw0jKQe5vJ0aXqE1YQ7pQ0mZ8Nn4T6cLd9RfKpP"
         )
-        return try #require(QRCodeGenerator.matrix(for: try payload.urlString(), quietZone: 4))
+        return try #require(QRCodeGenerator.matrix(for: try payload.urlString(), quietZone: 3))
     }
 
     /// Every endpoint a Tailscale-connected Mac offers: mDNS name, a global v6,
@@ -56,7 +62,7 @@ struct QRPayloadSizeTests {
         ])
         let rows = (matrix.size + 1) / 2
         // 3 rows of chrome — title, host key, footer — and no blank spacers.
-        #expect(rows + 3 <= 41, "\(matrix.size) modules is \(rows) rows, past the reduced-margin threshold")
+        #expect(rows + 3 <= 40, "\(matrix.size) modules is \(rows) rows, past the reduced-margin threshold")
         #expect(matrix.size <= 100, "too wide for an ordinary terminal")
     }
 

@@ -43,6 +43,19 @@ struct LocalNetworkRetryTests {
         ) == false)
     }
 
+    /// A race in which every candidate was a mesh VPN address dialled nothing
+    /// local, so the local network permission cannot be why it failed. Reading
+    /// it as one would make a user who had previously denied that permission
+    /// wait out the full minute and then be told their *local network* is
+    /// unreachable — for a tunnel problem, on cellular, where there is no local
+    /// network in play at all.
+    @Test("a tunnel failure is never read as a local network refusal")
+    func overlayFailureIsNotAPermissionProblem() {
+        #expect(PairingModel.mightBeLocalNetworkRefusal(
+            TransportError.overlayUnreachable("nothing answered — check the VPN")
+        ) == false)
+    }
+
     /// The window has to sit inside the host's, or the wait outlives the code
     /// it is waiting to redeem. `bleat pair` holds the enrollment key open for
     /// five minutes and sshd expires it sixty seconds after that.

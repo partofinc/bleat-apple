@@ -16,3 +16,15 @@ struct SessionLink: View {
         .buttonStyle(.plain)
     }
 }
+
+#if DEBUG
+#Preview("Session links", traits: .sampleData) {
+    NavigationStack {
+        List {
+            ForEach(SessionInfo.samples) { session in
+                SessionLink(peer: .preview, session: session)
+            }
+        }
+    }
+}
+#endif

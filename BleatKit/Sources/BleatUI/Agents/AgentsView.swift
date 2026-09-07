@@ -37,6 +37,23 @@ struct AgentsView: View {
         })
     }
 
+    #if DEBUG
+    /// Preview-only: the agents are handed in and nothing is fetched.
+    init(
+        peer: PairedPeer,
+        session: String?,
+        workspace: String?,
+        title: String,
+        previewing state: Loadable<[Agent]>
+    ) {
+        self.peer = peer
+        self.session = session
+        self.workspace = workspace
+        self.title = title
+        _agents = State(wrappedValue: RemoteList(previewing: state))
+    }
+    #endif
+
     var body: some View {
         RemoteListView(
             state: agents.state,
@@ -52,3 +69,32 @@ struct AgentsView: View {
         .task { await agents.load(for: peer) }
     }
 }
+
+#if DEBUG
+#Preview("Agents", traits: .sampleData) {
+    NavigationStack {
+        AgentsView(
+            peer: .preview, session: "work", workspace: "w2", title: "bleat-apple",
+            previewing: .loaded(Agent.samples)
+        )
+    }
+}
+
+#Preview("Empty", traits: .sampleData) {
+    NavigationStack {
+        AgentsView(
+            peer: .preview, session: "work", workspace: "w2", title: "bleat-apple",
+            previewing: .loaded([])
+        )
+    }
+}
+
+#Preview("Failed", traits: .sampleData) {
+    NavigationStack {
+        AgentsView(
+            peer: .preview, session: "work", workspace: "w2", title: "bleat-apple",
+            previewing: .failed("this host is only reachable over a VPN from here")
+        )
+    }
+}
+#endif

@@ -47,11 +47,17 @@ struct EndpointRow: View {
 }
 
 #if DEBUG
-#Preview {
+/// One row per `Endpoint.Reach`, because the only thing this row says is which
+/// one it is — and "local network" against "local network or VPN" is the
+/// distinction the whole Twingate fix turns on.
+#Preview("Every reach", traits: .sampleData) {
     List {
         EndpointRow(endpoint: Endpoint(host: "rawillkair.local"), isLastGood: false)
         EndpointRow(endpoint: Endpoint(host: "192.168.11.54"), isLastGood: true)
-        EndpointRow(endpoint: Endpoint(host: "host.tail1234.ts.net"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "rawillk.tail2a3bab.ts.net"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "100.114.119.30"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "home.example.com", port: 2222), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "[2a00:f3c:5ad0:0:c29:6db5:4a49:dc53]"), isLastGood: false)
     }
 }
 #endif

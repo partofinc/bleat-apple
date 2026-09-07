@@ -26,16 +26,14 @@ struct WorkspaceRow: View {
 }
 
 #if DEBUG
-#Preview {
+/// All five states, in the order the app sorts them — blocked, done, working,
+/// idle, unknown. The symbol has to differ as well as the colour, and a row of
+/// five side by side is the only way to see whether it does.
+#Preview("Every state", traits: .sampleData) {
     List {
-        WorkspaceRow(workspace: Workspace(
-            workspaceID: "w2", label: "bleat-apple", number: 2,
-            agentStatus: .blocked, focused: true, paneCount: 3, tabCount: 1, activeTabID: nil
-        ))
-        WorkspaceRow(workspace: Workspace(
-            workspaceID: "w3", label: "herdr", number: 3,
-            agentStatus: .working, focused: false, paneCount: 1, tabCount: 1, activeTabID: nil
-        ))
+        ForEach(Workspace.samples) { workspace in
+            WorkspaceRow(workspace: workspace)
+        }
     }
 }
 #endif

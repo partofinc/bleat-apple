@@ -24,3 +24,15 @@ struct WorkspaceLink: View {
         .buttonStyle(.plain)
     }
 }
+
+#if DEBUG
+#Preview("Workspace links", traits: .sampleData) {
+    NavigationStack {
+        List {
+            ForEach(Workspace.samples) { workspace in
+                WorkspaceLink(peer: .preview, session: "work", workspace: workspace)
+            }
+        }
+    }
+}
+#endif

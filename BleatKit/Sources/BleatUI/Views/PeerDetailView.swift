@@ -29,6 +29,14 @@ struct PeerDetailView: View {
         })
     }
 
+    #if DEBUG
+    /// Preview-only: the sessions are handed in and nothing is fetched.
+    init(peer: PairedPeer, previewing state: Loadable<[SessionInfo]>) {
+        self.peer = peer
+        _sessions = State(wrappedValue: RemoteList(previewing: state))
+    }
+    #endif
+
     var body: some View {
         Form {
             SessionsSection(peer: peer, model: sessions)
@@ -115,7 +123,41 @@ struct PeerDetailView: View {
     }
 }
 
-// No `#Preview` here any more: the screen now loads sessions in `task`, which
-// means a Keychain read and an SSH connection attempt. A preview that reaches
-// for the real device key is not a preview. The rows it is built from —
-// `SessionRow`, `EndpointRow` — are pure and preview on their own.
+#if DEBUG
+/// Previewable again. The screen loads its sessions in `task`, which used to
+/// mean an SSH connection attempt from the canvas; `init(peer:previewing:)`
+/// hands them in instead, so nothing here dials.
+#Preview("Peer", traits: .sampleData) {
+    NavigationStack {
+        PeerDetailView(peer: .preview, previewing: .loaded(SessionInfo.samples))
+    }
+}
+
+/// The sparse record: no `herdrPath`, no device marker, one mDNS address. Every
+/// row that has a fallback is showing it.
+#Preview("Sparse", traits: .sampleData) {
+    NavigationStack {
+        PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
+    }
+}
+
+/// The host could not be reached, which is exactly when the details below the
+/// sessions section become the useful part of this screen.
+#Preview("Unreachable", traits: .sampleData) {
+    NavigationStack {
+        PeerDetailView(
+            peer: .previewOverlayOnly,
+            previewing: .failed("this host is only reachable over a VPN from here, and nothing "
+                                + "answered — check that a VPN reaching it is connected on this device")
+        )
+    }
+}
+
+/// Still connecting: the sessions section shows its own row rather than taking
+/// the host details off the screen behind a spinner.
+#Preview("Loading", traits: .sampleData) {
+    NavigationStack {
+        PeerDetailView(peer: .preview, previewing: .loading)
+    }
+}
+#endif

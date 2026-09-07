@@ -170,3 +170,41 @@ private extension View {
         #endif
     }
 }
+
+#if DEBUG
+#Preview("Removing the key", traits: .sampleData) {
+    UnpairSheet(model: UnpairModel(previewing: .working(.preview)))
+}
+
+/// The host could not be reached, so the key is still there and this phone can
+/// still log in. Stated as what is true, not as what failed.
+#Preview("Key remains", traits: .sampleData) {
+    UnpairSheet(model: UnpairModel(previewing: .keyRemains(
+        .preview,
+        reason: "none of 3 addresses could be reached",
+        advice: .revoke(deviceMarker: PairedPeer.preview.deviceMarker, deviceFingerprint: nil)
+    )))
+}
+
+/// No marker on the record, so the advice falls back to `bleat keys list` plus
+/// a fingerprint to match by eye.
+#Preview("Key remains, no marker", traits: .sampleData) {
+    UnpairSheet(model: UnpairModel(previewing: .keyRemains(
+        .previewSparse,
+        reason: "the host closed the connection",
+        advice: .revoke(
+            deviceMarker: nil,
+            deviceFingerprint: "SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78"
+        )
+    )))
+}
+
+/// Reached and refused — the case where the advice inverts, because the
+/// likeliest reading is that the key has already gone.
+#Preview("Host refused the key", traits: .sampleData) {
+    UnpairSheet(model: UnpairModel(previewing: .hostRefusedKey(
+        .preview,
+        advice: .check(deviceMarker: PairedPeer.preview.deviceMarker, deviceFingerprint: nil)
+    )))
+}
+#endif

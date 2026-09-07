@@ -24,3 +24,15 @@ struct AgentLink: View {
         .buttonStyle(.plain)
     }
 }
+
+#if DEBUG
+#Preview("Agent links", traits: .sampleData) {
+    NavigationStack {
+        List {
+            ForEach(Agent.samples) { agent in
+                AgentLink(peer: .preview, session: "work", agent: agent)
+            }
+        }
+    }
+}
+#endif

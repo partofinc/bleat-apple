@@ -1136,6 +1136,55 @@ failure needs a way back, and neither should look like the other.
   starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
   part that distinguishes one checkout from another.
 
+### Previews (Phase 2)
+
+Every view has a `#Preview`, and they all take `traits: .sampleData`. The trait
+injects an `AppContext` — which every screen above a row reads from the
+environment, so without one a preview of anything crashes on the missing value.
+`.noHosts` is the same context with nothing paired, for the empty state that is
+the first screen on a fresh install.
+
+- **The context is real; the registry is not.** `PeerRegistry.sample()` writes
+  the sample hosts into a fresh directory under `NSTemporaryDirectory()`, one
+  per call. Never `applicationSupport()`: `AddEndpointView` and the unpair flow
+  both *write*, so a preview pointed at the real registry edits the device's own
+  peer list from the canvas. An earlier `AddEndpointView` preview built a plain
+  `PeerStore()`, which is exactly that. A fresh directory per call rather than
+  one wiped and reused, because Xcode keeps more than one preview alive and a
+  shared path means the one being edited has its file rebuilt underneath it the
+  moment another renders.
+- **No preview reaches the network**, and that needs a seam rather than a
+  promise: `ConnectionStore` is real, and every list screen loads in `.task`.
+  `RemoteList.init(previewing:)` hands the rows in and makes `load` a no-op, and
+  the screens that own one take a `#if DEBUG` initialiser that uses it. The
+  guard is the **first** thing `load` does — after `state = .loading` it would
+  show a spinner where a seeded `.failed` was meant to be. `PaneModel`,
+  `TranscriptModel`, `PairingModel` and `UnpairModel` take the same treatment,
+  parked in a phase; `PaneModel.start()` and `TranscriptModel.follow` return
+  early, since a canvas that opened an `observe` stream would hold an exec
+  channel on the Mac for as long as the preview lived.
+- **The states worth previewing are the ones a working host never produces.**
+  A failed refresh over rows that already arrived, a `done` agent, a host that
+  refused the device key, a pane whose stream ended, a `bleat pair` that could
+  not reach the local network. Those are most of the writing on these screens
+  and none of them can be reached by pointing the app at a healthy Mac.
+- **`PreviewSmokeTests` lays every one of them out**, in `BleatUITests`, for the
+  reason `PaneGeometryTests` exists: a preview that compiles can still trap at
+  render, and nothing mechanical would catch it. It also pins the promise —
+  `ConnectionStore.endpoint` stays nil through every render, which is what says
+  no screen dialled.
+- Sample data lives in `Previews/`, `#if DEBUG`, in `BleatUI` rather than
+  `BleatKit` so the domain layer ships none. It is hand-written rather than read
+  from `Fixtures/` — those are not bundled with the app — but shaped like the
+  captured output: `pane_id` already carrying its workspace, opaque workspace
+  ids of both lengths, and all five agent states, since a sample list that was
+  all `idle` would leave the screen this app is organised around with nothing to
+  show.
+- Four files have no preview and say why in place: `QRScannerView` and
+  `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
+  `PairingFlow`/`UnpairFlow` present rather than draw — `RootView` exercises
+  them.
+
 ### The pairing UI (Phase 2)
 
 `PeersView` is the app's first screen and there is no manual host list any more.

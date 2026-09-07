@@ -52,3 +52,17 @@ public struct PairingView: View {
         }
     }
 }
+
+#if DEBUG
+/// The sheet as it is presented, chrome included — the "Done" button that is
+/// disabled mid-swap is part of what this screen is.
+#Preview("Pairing sheet", traits: .sampleData) {
+    PreviewContext { context in
+        PairingView(
+            store: context.peers,
+            localNetwork: context.localNetwork,
+            router: context.pairing
+        )
+    }
+}
+#endif

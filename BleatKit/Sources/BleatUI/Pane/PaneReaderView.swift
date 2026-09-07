@@ -90,3 +90,26 @@ struct PaneReaderView: View {
         return "Snapshot taken \(time) · pull to refresh"
     }
 }
+
+#if DEBUG
+#Preview("Snapshot", traits: .sampleData) {
+    NavigationStack {
+        PaneReaderView(lines: .loaded(PreviewPaneText.lines), capturedAt: .now, reload: {})
+    }
+}
+
+#Preview("Loading", traits: .sampleData) {
+    PaneReaderView(lines: .loading, capturedAt: nil, reload: {})
+}
+
+/// Empty, not failed — and the overlay must not swallow the pull that would
+/// re-read, which is the gesture someone makes at a pane they just started
+/// something in.
+#Preview("Nothing to read", traits: .sampleData) {
+    PaneReaderView(lines: .loaded([]), capturedAt: .now, reload: {})
+}
+
+#Preview("Failed", traits: .sampleData) {
+    PaneReaderView(lines: .failed("the pane closed"), capturedAt: nil, reload: {})
+}
+#endif

@@ -61,6 +61,22 @@ final class PairingModel {
         self.router = router
     }
 
+    #if DEBUG
+    /// Parked in one phase, for `#Preview`.
+    ///
+    /// Four of the five states are only reachable by pointing a camera at a
+    /// real `bleat pair`, and two of them — the failure and the result — are
+    /// where most of the writing on this screen lives.
+    convenience init(previewing phase: Phase) {
+        self.init(
+            store: PeerStore(registry: .sample()),
+            localNetwork: LocalNetworkAccess(),
+            router: PairingRouter()
+        )
+        self.phase = phase
+    }
+    #endif
+
     /// Ask iOS for the local network up front, when the sheet appears.
     ///
     /// The alert then arrives while the user is still lining up the camera,

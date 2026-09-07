@@ -2,43 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  This file exists for exactly one key.
-
-	  Everything else in Bleat's Info.plist is generated: the target sets
-	  GENERATE_INFOPLIST_FILE and a handful of INFOPLIST_KEY_* build settings,
-	  which is the house style and means there is no plist to drift. But there
-	  is no INFOPLIST_KEY_ for CFBundleURLTypes — the generated set covers a
-	  fixed list of keys and URL types is not on it — so registering a scheme
-	  needs a real file. Xcode merges the generated keys *into* this one when
-	  both settings are present, so the camera usage string and the rest are
-	  still build settings and still live in the project; only what cannot be
-	  expressed there is written out here.
-
-	  The scheme string must match PairingPayload.urlScheme in BleatKit, which
-	  is what `bleat pair` puts in the QR. There is no way to assert that from
-	  a package test — this file belongs to the app target — so it is stated in
-	  both places and in CLAUDE.md.
-	-->
-	<!--
-	  Local networking. Both keys are here rather than as INFOPLIST_KEY_ build
-	  settings: NSBonjourServices is an array, which the generated set cannot
-	  express, and separating the pair would leave the purpose string far from
-	  the service it explains.
-
-	  Herdr runs on a Mac on the same network, reached over SSH at a `.local`
-	  name or a LAN address — both of which iOS gates behind the local network
-	  permission. Without the usage description the system alert carries no
-	  explanation of why a terminal client wants the network; without the
-	  Bonjour service declaration, NWBrowser cannot ask the question at all,
-	  which is how the app finds out whether permission was granted.
-	-->
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_ssh._tcp</string>
-	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -51,6 +14,10 @@
 				<string>bleat</string>
 			</array>
 		</dict>
+	</array>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ssh._tcp</string>
 	</array>
 </dict>
 </plist>

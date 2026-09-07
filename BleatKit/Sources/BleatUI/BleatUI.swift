@@ -33,3 +33,18 @@ extension AgentStatus {
         }
     }
 }
+
+#if DEBUG
+/// The five states side by side, which is the only way to check the thing that
+/// matters about them: the **symbol** has to differ as well as the colour, or
+/// blocked and working are one row for anyone who cannot use colour to tell
+/// them apart. In attention order, as everything else in the app shows them.
+#Preview("Agent states", traits: .sampleData) {
+    List {
+        ForEach(AgentStatus.allCases.sorted(), id: \.self) { status in
+            Label(status.rawValue, systemImage: status.symbolName)
+                .foregroundStyle(status.tint)
+        }
+    }
+}
+#endif

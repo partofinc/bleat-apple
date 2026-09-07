@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import BleatKit
+#endif
 
 /// A `List` over something fetched from a host, with the states every such list
 /// has.
@@ -55,3 +58,55 @@ struct RemoteListView<Item, Rows: View>: View {
         }
     }
 }
+
+#if DEBUG
+/// The four states, previewed on the simplest rows there are. Each is easy to
+/// get subtly wrong and none of them should look like the others.
+#Preview("Loaded", traits: .sampleData) {
+    NavigationStack {
+        RemoteListView(state: .loaded(Workspace.samples), empty: "Nothing here.", retry: {}) { items in
+            ForEach(items) { WorkspaceRow(workspace: $0) }
+        }
+    }
+}
+
+#Preview("Loading", traits: .sampleData) {
+    RemoteListView(state: .loading, empty: "Nothing here.", retry: {}) { (items: [Workspace]) in
+        ForEach(items) { WorkspaceRow(workspace: $0) }
+    }
+}
+
+/// An empty answer is not a failure, and the overlay must not swallow the pull
+/// that would re-check.
+#Preview("Empty", traits: .sampleData) {
+    RemoteListView(
+        state: .loaded([]),
+        empty: "No workspaces in this session.",
+        retry: {}
+    ) { (items: [Workspace]) in
+        ForEach(items) { WorkspaceRow(workspace: $0) }
+    }
+}
+
+#Preview("Failed", traits: .sampleData) {
+    RemoteListView(
+        state: .failed("none of 3 addresses could be reached"),
+        empty: "Nothing here.",
+        retry: {}
+    ) { (items: [Workspace]) in
+        ForEach(items) { WorkspaceRow(workspace: $0) }
+    }
+}
+
+/// Rows that arrived, and a refresh that did not. The banner sits above them
+/// rather than replacing them.
+#Preview("Stale", traits: .sampleData) {
+    RemoteListView(
+        state: .stale(Workspace.samples, "the connection closed before this finished"),
+        empty: "Nothing here.",
+        retry: {}
+    ) { items in
+        ForEach(items) { WorkspaceRow(workspace: $0) }
+    }
+}
+#endif

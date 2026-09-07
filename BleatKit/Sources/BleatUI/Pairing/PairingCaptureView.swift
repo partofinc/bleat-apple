@@ -55,3 +55,14 @@ struct PairingCaptureView: View {
         }
     }
 }
+
+#if DEBUG
+/// Both ways in. The camera section falls to its no-access state in a canvas,
+/// which leaves the pasted-link half — the fallback `bleat pair` prints when
+/// the window is too small for a code — on screen where it can be laid out.
+#Preview("Scan or paste", traits: .sampleData) {
+    NavigationStack {
+        PairingCaptureView(model: PairingModel(previewing: .waiting))
+    }
+}
+#endif

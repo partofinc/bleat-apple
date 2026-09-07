@@ -39,4 +39,24 @@ struct CameraSection: View {
         }
     }
 }
+
+#if DEBUG
+/// The two states that do not need a camera. `true` is left out deliberately:
+/// it would mount a capture session, which a canvas has nothing to give.
+#Preview("Refused", traits: .sampleData) {
+    Form {
+        Section {
+            CameraSection(authorised: false, model: PairingModel(previewing: .waiting))
+        }
+    }
+}
+
+#Preview("Not yet asked", traits: .sampleData) {
+    Form {
+        Section {
+            CameraSection(authorised: nil, model: PairingModel(previewing: .waiting))
+        }
+    }
+}
+#endif
 #endif

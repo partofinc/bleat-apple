@@ -80,3 +80,15 @@ public struct PeersView: View {
         context.unpair.ask(about: context.peers.peers[first])
     }
 }
+
+#if DEBUG
+#Preview("Hosts", traits: .sampleData) {
+    NavigationStack { PeersView() }
+}
+
+/// The first screen on a fresh install, and the one that has to explain what to
+/// do next — the `bleat pair` sentence is the entire onboarding.
+#Preview("No hosts", traits: .noHosts) {
+    NavigationStack { PeersView() }
+}
+#endif

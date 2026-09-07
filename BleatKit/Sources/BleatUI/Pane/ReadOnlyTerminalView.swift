@@ -24,3 +24,6 @@ final class ReadOnlyTerminalView: TerminalView {
     override var canBecomeFirstResponder: Bool { false }
 }
 #endif
+
+// No `#Preview`: see `TerminalHost`. `PaneSurface` is where this screen is
+// laid out for the canvas.

@@ -30,16 +30,11 @@ struct SessionRow: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview("Session rows", traits: .sampleData) {
     List {
-        SessionRow(session: SessionInfo(
-            name: "work", running: true, isDefault: false,
-            sessionDir: nil, socketPath: nil
-        ))
-        SessionRow(session: SessionInfo(
-            name: "default", running: false, isDefault: true,
-            sessionDir: nil, socketPath: nil
-        ))
+        ForEach(SessionInfo.samples) { session in
+            SessionRow(session: session)
+        }
     }
 }
 #endif

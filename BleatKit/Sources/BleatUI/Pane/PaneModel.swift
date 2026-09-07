@@ -91,6 +91,35 @@ final class PaneModel {
     /// for, rather than a fallback.
     private var viewport: TerminalGrid?
 
+    #if DEBUG
+    /// Preview-only: `start()` returns early, so no `observe` stream is opened.
+    private var isPreview = false
+
+    /// Parked in one phase, for `#Preview`.
+    ///
+    /// Three of the four are only reachable from a host that stops answering,
+    /// and each is a `ContentUnavailableView` with its own way back — which is
+    /// exactly the sort of thing worth laying out in a canvas rather than by
+    /// unplugging a Mac.
+    convenience init(
+        previewing phase: Phase,
+        grid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
+        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47)
+    ) {
+        let peers = PeerStore(registry: .sample())
+        self.init(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            peer: .preview,
+            session: "work",
+            target: "w2:p1"
+        )
+        isPreview = true
+        self.phase = phase
+        self.grid = grid
+        self.paneGrid = paneGrid
+    }
+    #endif
+
     init(connections: ConnectionStore, peer: PairedPeer, session: String?, target: String) {
         self.connections = connections
         self.peer = peer
@@ -129,6 +158,12 @@ final class PaneModel {
     }
 
     private func start() {
+        #if DEBUG
+        // A preview: the phase was handed in and there is no stream to open.
+        // Before the assignment below, or a seeded `.failed` would be replaced
+        // by a spinner on the terminal's first layout pass.
+        if isPreview { return }
+        #endif
         // Set here rather than inside `run`, which is a task away: closing the
         // old stream takes up to a second (see below), and leaving `.live` on
         // screen through it shows a stale pane with nothing to say it is stale.

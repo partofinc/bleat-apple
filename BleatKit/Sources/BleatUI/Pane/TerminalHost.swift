@@ -34,3 +34,7 @@ struct TerminalHost: UIViewControllerRepresentable {
     }
 }
 #endif
+
+// No `#Preview`: without a stream this is an empty terminal, and everything
+// worth looking at around it — the badge, the overlays, the failure states —
+// previews in `PaneSurface`.

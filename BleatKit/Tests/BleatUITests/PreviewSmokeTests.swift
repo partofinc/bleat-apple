@@ -185,9 +185,6 @@ struct PreviewSmokeTests {
             phase: .unavailable("no transcript"), status: nil, step: nil,
             capturedAt: nil, reload: {}, showTerminal: {}
         ))
-        render(context, PaneReaderView(
-            lines: .loaded(PreviewPaneText.lines), capturedAt: .now, reload: {}
-        ))
         render(context, PaneSurface(model: PaneModel(previewing: .live), isActive: true))
         render(context, PaneSurface(model: PaneModel(previewing: .ended), isActive: true))
         render(context, NavigationStack {

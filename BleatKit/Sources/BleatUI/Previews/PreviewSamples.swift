@@ -134,30 +134,4 @@ extension TranscriptEntry {
     }
 }
 
-/// A pane's rendered output, for the reader.
-///
-/// Includes the two things the reader's layout is decided by: a blank line,
-/// which has to keep occupying a row or the paragraph break disappears, and a
-/// line wider than a phone, which is the whole reason the mode exists.
-enum PreviewPaneText {
-    static let lines: [String] = [
-        "> swift test",
-        "",
-        "Building for debugging...",
-        "[142/142] Compiling BleatKit EndpointDiscovery.swift",
-        "Build complete! (4.21s)",
-        "",
-        "◇ Test run started.",
-        "↳ Suite \"Refreshing a peer's endpoints\" started.",
-        "  ✔ a report no probe answered changes nothing (0.001 seconds)",
-        "  ✔ a stopped tailscale does not prune the overlay endpoints it cannot see (0.002 seconds)",
-        "  ✔ an address the host never claimed survives every refresh (0.001 seconds)",
-        "  ✔ the last-good endpoint is reinstated, and the exemption expires (0.001 seconds)",
-        "↳ Suite \"Refreshing a peer's endpoints\" passed after 0.008 seconds.",
-        "",
-        "✔ Test run with 365 tests in 50 suites passed after 2.140 seconds.",
-        "",
-        "> ",
-    ]
-}
 #endif

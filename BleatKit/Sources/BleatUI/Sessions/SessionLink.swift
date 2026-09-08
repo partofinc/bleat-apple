@@ -3,7 +3,6 @@ import SwiftUI
 
 /// A session row that pushes its workspaces.
 struct SessionLink: View {
-    @Environment(AppContext.self) private var context
     let peer: PairedPeer
     let session: SessionInfo
 

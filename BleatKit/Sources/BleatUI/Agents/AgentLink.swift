@@ -3,7 +3,6 @@ import SwiftUI
 
 /// An agent row that opens its pane.
 struct AgentLink: View {
-    @Environment(AppContext.self) private var context
     let peer: PairedPeer
     let session: String?
     let agent: Agent

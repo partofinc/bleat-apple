@@ -3,22 +3,14 @@ import SwiftUI
 
 /// One pane, read two ways.
 ///
-/// Read-only either way: this is `terminal session observe` and `pane read`,
-/// neither of which can disturb whoever holds input on the pane. The keyboard,
-/// the accessory row and takeover are Phase 3.
+/// Read-only either way: the chat is a transcript file and the terminal is
+/// `terminal session observe`, neither of which can disturb whoever holds input
+/// on the pane. The keyboard, the accessory row and takeover are Phase 3.
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
 
     @State private var model: PaneModel
-    /// The pane's text, loaded on demand.
-    ///
-    /// `RemoteList` rather than a fetch written here: a snapshot *is* a list of
-    /// lines, and the parts of loading that are easy to get wrong — the
-    /// generation token, a cancelled screen staying silent, dropping a dead
-    /// connection so the retry re-races — are identical to the three list
-    /// screens and already solved there.
-    @State private var text: RemoteList<String>
     @State private var transcript: TranscriptModel
     @State private var mode: PaneMode = .chat
     /// Whether the terminal has ever been asked for on this screen.
@@ -28,10 +20,6 @@ struct PaneView: View {
     /// — a live exec channel on someone's Mac — for every agent screen that is
     /// opened and read. Once asked for it stays mounted for the reasons below.
     @State private var terminalWasAskedFor = false
-    /// When the snapshot was taken, so the reader can admit its age. The
-    /// phone's clock, at the moment the answer arrived — the host does not
-    /// stamp the payload.
-    @State private var capturedAt: Date?
 
     init(
         peer: PairedPeer,
@@ -45,11 +33,6 @@ struct PaneView: View {
         _model = State(wrappedValue: PaneModel(
             connections: connections, peer: peer, session: session, target: target
         ))
-        _text = State(wrappedValue: RemoteList(
-            connections: connections,
-            session: session,
-            fetch: { try await $0.paneText(target: target) }
-        ))
         _transcript = State(wrappedValue: TranscriptModel(
             connections: connections, session: session, target: target
         ))
@@ -58,10 +41,6 @@ struct PaneView: View {
     #if DEBUG
     /// Preview-only: every model is handed in already settled, so no stream is
     /// opened and nothing is fetched.
-    ///
-    /// `capturedAt` is seeded alongside the reader's lines for the same reason
-    /// `TranscriptModel`'s is: the screen keys its first load on that being
-    /// nil, and a preview without one would go and read the pane.
     ///
     /// The models default to **nil** and are built in the body rather than in
     /// the argument list. A default argument is evaluated on every call, and
@@ -74,20 +53,16 @@ struct PaneView: View {
         title: String,
         mode: PaneMode,
         pane: PaneModel? = nil,
-        text: Loadable<[String]> = .loaded(PreviewPaneText.lines),
-        capturedAt: Date? = .now,
         transcript: TranscriptModel? = nil
     ) {
         self.title = title
         self.peer = peer
         _model = State(wrappedValue: pane ?? PaneModel(previewing: .live))
-        _text = State(wrappedValue: RemoteList(previewing: text))
         _transcript = State(
             wrappedValue: transcript ?? TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
         )
         _mode = State(wrappedValue: mode)
         _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
-        _capturedAt = State(wrappedValue: capturedAt)
     }
     #endif
 
@@ -135,14 +110,12 @@ struct PaneView: View {
                             .accessibilityLabel(mode.label)
                     }
                 }
-//                .pickerStyle(.segmented)
                 .labelsHidden()
             }
         }
-        // Loaded when the reader is first shown and not before: it is a whole
-        // exec channel, and most visits to this screen never open it. Keyed on
-        // the mode so returning to a snapshot already taken does not re-read —
-        // the footer says how old it is and pull-to-refresh is right there.
+        // Keyed on the mode: the transcript is a whole exec channel and most
+        // of a visit to this screen is spent in one mode, so neither is loaded
+        // until it is asked for.
         .task(id: mode) {
             switch mode {
             case .terminal:
@@ -158,16 +131,6 @@ struct PaneView: View {
             transcript.stop()
             Task { await model.close() }
         }
-    }
-
-    private func load() async {
-        await text.load(for: peer)
-        // **`.loaded`, not `value != nil`.** A failed refresh over existing
-        // lines produces `.stale(previous, message)`, whose `value` is the
-        // *old* content — so the looser test restamped a twenty-minute-old
-        // snapshot with the current time, which is exactly the misdating this
-        // is here to avoid.
-        if case .loaded = text.state { capturedAt = .now }
     }
 }
 

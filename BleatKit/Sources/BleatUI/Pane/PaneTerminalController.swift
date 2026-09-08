@@ -33,7 +33,7 @@ final class PaneTerminalController: UIViewController {
     private var announced = false
     /// Whether this terminal is the one on screen.
     ///
-    /// It stays mounted while the chat or reader is showing, so that switching
+    /// It stays mounted while the chat is showing, so that switching
     /// back is instant — but a hidden view still lays out, and reporting a size
     /// from one would reopen a stream and `stty` someone's Mac for a view
     /// nobody is looking at.
@@ -56,8 +56,10 @@ final class PaneTerminalController: UIViewController {
         // ignores `terminal.scroll` — sent one, got a single frame and nothing
         // on stderr, not even an "input ignored".
         //
-        // So a pane's history is reachable only through `pane read`, which is
-        // what the reader is. The terminal shows the live screen.
+        // So a pane's history is not reachable here at all. `pane read` is the
+        // only route to it — `HerdrClient.paneText` still wraps it — and
+        // nothing in the app calls one today. The terminal shows the live
+        // screen and only that.
         terminalView.isScrollEnabled = true
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's

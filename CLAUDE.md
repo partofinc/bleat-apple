@@ -1904,7 +1904,20 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   `control`. Local scrollback is no answer either: an `observe` frame is
   absolute cursor positioning and SGR colour with **zero newlines**, so nothing
   ever scrolls off into `TerminalView`'s buffer. A pane's history is reachable
-  only through `pane read`, which is what the reader mode is.
+  only through `pane read` — which nothing in the app calls now; see **The
+  reader mode is gone** below.
+- **The reader mode is gone.** `PaneView` offered a third reading — a
+  `pane read` snapshot reflowed to the phone — and it is removed: view,
+  previews, sample text and render test. It was lossy in exactly the way that
+  mattered, since a pane is a grid of absolutely positioned cells and anything
+  wide came back re-wrapped into nonsense, and the chat answers the question it
+  was really being opened for while genuinely reflowing. Two modes now, chat
+  and terminal.
+  - **`HerdrClient.paneText` and the `PaneText` model stay**, with their
+    fixture-backed tests. They wrap `pane read`, which is the *only* route to a
+    pane's history — the bullet above — and that is a Phase 3 question rather
+    than something to delete now. Nothing in the app calls one today, so it is
+    library surface with no caller: worth knowing before reading it as live.
 - **A badge in the corner names the grid**, and says "cropped" when the fallback
   is in use. The pane is deliberately larger than the screen now, and a scroll
   indicator that appears only once you already know to drag is not an

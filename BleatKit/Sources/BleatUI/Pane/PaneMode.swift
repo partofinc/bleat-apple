@@ -2,20 +2,19 @@
 ///
 /// They are not two renderers for one thing; they answer different questions.
 /// The terminal shows what the agent actually drew — colour, tables, cursor,
-/// live — at the pane's own width, which on a phone means panning. The reader
-/// throws all of that away for the one thing the terminal cannot do: reflow to
-/// the width of the device in your hand.
+/// live — at the pane's own width, which on a phone means panning. The chat is
+/// not the pane at all: it never went through a terminal, because herdr does
+/// not have the transcript and cannot — everything herdr knows about an agent
+/// it read off the rendered buffer. What herdr provides is the pointer to it.
 ///
-/// **None of them is the better one.** The reader is lossy in ways that matter
-/// — see `PaneReaderView` — and the transcript is not the pane at all, so both
-/// are offered beside the terminal rather than in place of it, and the terminal
-/// stays the default.
+/// **Neither is the better one**, which is why both are offered rather than
+/// one in place of the other. The chat is what the screen opens to, since it
+/// is the only reading of a pane that reflows to a phone.
 ///
-/// The third is a different kind of thing from the first two. Terminal and
-/// reader are both the *screen*: 142 columns because that is the pty, wrapped by
-/// whatever drew it. The transcript never went through a terminal — herdr does
-/// not have it and cannot, since everything herdr knows about an agent it read
-/// off the rendered buffer. What herdr provides is the pointer to it.
+/// There was a third, a `pane read` snapshot reflowed to the device. It was
+/// lossy in the way that mattered most — a pane is a grid of absolutely
+/// positioned cells, so anything wide came back re-wrapped into nonsense — and
+/// the chat answers the question it was really being opened for.
 enum PaneMode: CaseIterable, Identifiable {
     /// The default, and it is the chat rather than the terminal.
     ///

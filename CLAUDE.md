@@ -1918,22 +1918,19 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     dark for the life of the screen, and popping it was the only way out.
     Measured both ways in `ColorSchemeTests`, which keeps the broken shape
     beside the fixed one as the reason the line is written the way it is.
-- **The terminal is the screen's background, and the chat floats on glass over
-  it.** Both are mounted from the moment the screen opens; the mode picker
-  decides which one takes touches and which one VoiceOver reads, not which one
-  exists. `PaneChatView` sits on a `glassEffect` background that ignores the
-  safe area while its text stays inside it — the newest turn is the line the
-  user came for, and it must not slide under the home indicator.
-  - **This moves a write to the user's Mac onto every visit, and that is the
-    price.** Opening the stream resizes the pane's pty (`stty`, see below), so
-    a screen that previously only read a transcript now reflows that pane on
-    the host for whoever is sitting at it. Mounting used to be gated on the
-    terminal being asked for, exactly to avoid that. The gate is gone because a
-    background that is not streaming is a black rectangle — there is no version
-    of this layout that keeps it — so the cost is deliberate rather than
-    overlooked.
-  - `PaneSurface` is handed `isActive: true` in both modes now. The flag guards
-    reporting a geometry, and a terminal visible through glass has a real one.
+- **A mode is a mode: one view on screen at a time.** Tried and rejected — the
+  terminal as a permanent background with the chat on `glassEffect` over it.
+  It looked good and could not be read: a conversation over a live 47-row grid
+  is two things competing for the same pixels, and glass tinted by a black
+  terminal leaves prose without the contrast it needs. Built, looked at on
+  device, reverted. Do not re-propose it without a way to solve the contrast.
+  - **Mounting the terminal is gated on it being asked for**, and that gate is
+    what the glass layout could not keep. Opening the stream resizes the pane's
+    pty (`stty`, below), so an always-live background would reflow the user's
+    pane on their Mac every time an agent screen was opened to read the chat.
+    Once asked for it stays mounted — hidden by `opacity`, with `isActive`
+    false alongside, since a hidden view still lays out and a size reported
+    from one is that same write on behalf of nothing.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

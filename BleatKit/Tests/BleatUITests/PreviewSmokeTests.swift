@@ -106,7 +106,7 @@ struct PreviewSmokeTests {
         // A seeded failure is a state somebody wants to see, so it must survive
         // too — `load` moves an empty list to `.loading` on its way in, and
         // returning after that would show a spinner instead.
-        let failed = RemoteList(previewing: Loadable<[Workspace]>.failed("nothing answered"))
+        let failed = RemoteList(previewing: Loadable<[Workspace]>.failed(.unreachable("nothing answered")))
         await failed.load(for: .preview)
         #expect(failed.state.failureMessage == "nothing answered")
     }
@@ -139,6 +139,11 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
+        render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
+        // The host unpaired from underneath the sheet, which the root-level
+        // unpair flow can do while it is on screen.
+        render(context, PeerSettingsView(hostKey: "ssh-ed25519 not-a-paired-host"))
         await settle(context)
         // Weak on its own — a dial that failed would also leave this nil — but
         // it is free, and `previewingListIsInert` covers the seam properly.
@@ -152,7 +157,9 @@ struct PreviewSmokeTests {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
         })
         render(context, NavigationStack {
-            WorkspacesView(peer: .preview, session: "work", previewing: .failed("nothing answered"))
+            WorkspacesView(
+                peer: .preview, session: "work", previewing: .failed(.unreachable("nothing answered"))
+            )
         })
         render(context, NavigationStack {
             AgentsView(
@@ -164,6 +171,21 @@ struct PreviewSmokeTests {
             AgentsView(
                 peer: .preview, session: "work", workspace: nil, title: "bleat-apple",
                 previewing: .loaded([])
+            )
+        })
+        // The other two failure causes. Each draws a different title and a
+        // different symbol, and a symbol that does not exist only shows up in
+        // a render.
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "phone", workspace: nil, title: "bleat-apple",
+                previewing: .failed(.hostSaidNo("restart the Herdr server before using this command"))
+            )
+        })
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "work", workspace: nil, title: "bleat-apple",
+                previewing: .failed(.unreadable("the host sent a reply Bleat could not read"))
             )
         })
         await settle(context)
@@ -180,17 +202,26 @@ struct PreviewSmokeTests {
             phase: .unavailable("no transcript"), status: nil, step: nil,
             capturedAt: nil, reload: {}, showTerminal: {}
         ))
-        render(context, PaneReaderView(
-            lines: .loaded(PreviewPaneText.lines), capturedAt: .now, reload: {}
-        ))
         render(context, PaneSurface(model: PaneModel(previewing: .live), isActive: true))
         render(context, PaneSurface(model: PaneModel(previewing: .ended), isActive: true))
         render(context, NavigationStack {
             PaneView(peer: .preview, title: "w2:p1", mode: .chat)
         })
         render(context, NavigationStack {
-            PaneView(peer: .preview, title: "w2:p1", mode: .reader)
+            PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
         })
+        // Holding the pane: the toolbar swaps to Release and the two page keys
+        // appear over the terminal. Only reachable through a confirmation on a
+        // real host, so a render is the only mechanical check it gets.
+        render(context, NavigationStack {
+            PaneView(
+                peer: .preview, title: "w2:p1", mode: .terminal,
+                pane: PaneModel(previewing: .live, control: .controlling)
+            )
+        })
+        render(context, PaneSurface(
+            model: PaneModel(previewing: .live, control: .controlling), isActive: true
+        ))
         await settle(context)
     }
 
@@ -221,6 +252,33 @@ struct PreviewSmokeTests {
             advice: .check(deviceMarker: nil, deviceFingerprint: "SHA256:abc")
         ))))
         #expect(context.connections.endpoint == nil)
+    }
+
+    /// **The settings sheet must be gone before the unpair starts.**
+    ///
+    /// `UnpairFlow`'s confirmation dialog is presented at the root, underneath
+    /// the sheet, so one raised while the sheet is still up is covered by it
+    /// and never seen — the Unpair button would look like it did nothing.
+    /// `PeerSettingsFlow` runs the handover from `onDismiss`, which is only
+    /// correct if asking for it closes the sheet first.
+    @Test("asking to unpair from the settings sheet closes it first")
+    func unpairFromSettingsClosesTheSheet() {
+        let router = PeerSettingsRouter()
+        router.show(.preview)
+        #expect(router.peer?.id == PairedPeer.preview.hostKey)
+
+        router.requestUnpair(.preview)
+        #expect(router.peer == nil, "the sheet was still up when the unpair was handed over")
+        #expect(router.takePendingUnpair()?.hostKey == PairedPeer.preview.hostKey)
+        // Consumed: a dismissal is the one moment it applies, and leaving it
+        // set would unpair on the next one.
+        #expect(router.takePendingUnpair() == nil)
+
+        // An ordinary close must not leave one armed either.
+        router.show(.preview)
+        router.requestUnpair(.preview)
+        router.close()
+        #expect(router.takePendingUnpair() == nil, "a close left an unpair armed")
     }
 
     /// A parked model must stay parked: `PaneModel.start()` and

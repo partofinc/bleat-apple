@@ -1,37 +1,35 @@
 import BleatKit
 import SwiftUI
 
-/// One pane, read two ways.
+/// One pane, read two ways, one at a time.
 ///
-/// Read-only either way: this is `terminal session observe` and `pane read`,
-/// neither of which can disturb whoever holds input on the pane. The keyboard,
-/// the accessory row and takeover are Phase 3.
+/// **Tried and rejected: the terminal as a permanent background with the chat
+/// on glass over it.** It looked good and could not be read — a conversation
+/// over a live 47-row grid is two things competing for the same pixels, and
+/// glass tinted by a black terminal leaves prose with nowhere near enough
+/// contrast. So a mode is a mode: the chat has the system's own background and
+/// the terminal is on screen only when it is chosen.
+///
+/// Read-only either way: the chat is a transcript file and the terminal is
+/// `terminal session observe`, neither of which can disturb whoever holds input
+/// on the pane. The keyboard, the accessory row and takeover are Phase 3.
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
 
     @State private var model: PaneModel
-    /// The pane's text, loaded on demand.
-    ///
-    /// `RemoteList` rather than a fetch written here: a snapshot *is* a list of
-    /// lines, and the parts of loading that are easy to get wrong — the
-    /// generation token, a cancelled screen staying silent, dropping a dead
-    /// connection so the retry re-races — are identical to the three list
-    /// screens and already solved there.
-    @State private var text: RemoteList<String>
     @State private var transcript: TranscriptModel
     @State private var mode: PaneMode = .chat
     /// Whether the terminal has ever been asked for on this screen.
     ///
-    /// It gates *mounting* the terminal, not showing it. Chat is the default
-    /// now, and mounting the terminal regardless would open an `observe` stream
-    /// — a live exec channel on someone's Mac — for every agent screen that is
-    /// opened and read. Once asked for it stays mounted for the reasons below.
+    /// It gates *mounting* the terminal, not showing it. Chat is the default,
+    /// and mounting the terminal regardless would open an `observe` stream — a
+    /// live exec channel on someone's Mac, and an `stty` that reflows their
+    /// pane — for every agent screen that is opened and read. Once asked for it
+    /// stays mounted, for the reasons in the body.
     @State private var terminalWasAskedFor = false
-    /// When the snapshot was taken, so the reader can admit its age. The
-    /// phone's clock, at the moment the answer arrived — the host does not
-    /// stamp the payload.
-    @State private var capturedAt: Date?
+    /// Taking the pane is a seizure, so it is asked for rather than done.
+    @State private var askingForControl = false
 
     init(
         peer: PairedPeer,
@@ -45,11 +43,6 @@ struct PaneView: View {
         _model = State(wrappedValue: PaneModel(
             connections: connections, peer: peer, session: session, target: target
         ))
-        _text = State(wrappedValue: RemoteList(
-            connections: connections,
-            session: session,
-            fetch: { try await $0.paneText(target: target) }
-        ))
         _transcript = State(wrappedValue: TranscriptModel(
             connections: connections, session: session, target: target
         ))
@@ -58,10 +51,6 @@ struct PaneView: View {
     #if DEBUG
     /// Preview-only: every model is handed in already settled, so no stream is
     /// opened and nothing is fetched.
-    ///
-    /// `capturedAt` is seeded alongside the reader's lines for the same reason
-    /// `TranscriptModel`'s is: the screen keys its first load on that being
-    /// nil, and a preview without one would go and read the pane.
     ///
     /// The models default to **nil** and are built in the body rather than in
     /// the argument list. A default argument is evaluated on every call, and
@@ -74,20 +63,16 @@ struct PaneView: View {
         title: String,
         mode: PaneMode,
         pane: PaneModel? = nil,
-        text: Loadable<[String]> = .loaded(PreviewPaneText.lines),
-        capturedAt: Date? = .now,
         transcript: TranscriptModel? = nil
     ) {
         self.title = title
         self.peer = peer
         _model = State(wrappedValue: pane ?? PaneModel(previewing: .live))
-        _text = State(wrappedValue: RemoteList(previewing: text))
         _transcript = State(
             wrappedValue: transcript ?? TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
         )
         _mode = State(wrappedValue: mode)
         _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
-        _capturedAt = State(wrappedValue: capturedAt)
     }
     #endif
 
@@ -101,15 +86,15 @@ struct PaneView: View {
             // Hidden, the buffer and the stream both survive, so switching back
             // is instant and shows the screen as it stands rather than waiting
             // for a redraw the host only sends when a stream opens.
+            //
+            // Hidden by `opacity`, and `isActive` false with it: the view still
+            // lays out, and a size reported from one nobody is looking at
+            // reopens the stream and `stty`s the pane on the user's Mac.
             if terminalWasAskedFor {
                 PaneSurface(model: model, isActive: mode == .terminal)
                     .opacity(mode == .terminal ? 1 : 0)
                     .allowsHitTesting(mode == .terminal)
                     .accessibilityHidden(mode != .terminal)
-            }
-
-            if mode == .reader {
-                PaneReaderView(lines: text.state, capturedAt: capturedAt, reload: load)
             }
 
             if mode == .chat {
@@ -126,6 +111,7 @@ struct PaneView: View {
         .navigationTitle(title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.clear, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -139,29 +125,41 @@ struct PaneView: View {
                             .accessibilityLabel(mode.label)
                     }
                 }
-                .pickerStyle(.segmented)
                 .labelsHidden()
             }
-            ToolbarItem(placement: .primaryAction) {
-                // Says what the screen is, not just what it shows. Herdr allows
-                // one input owner per pane, and a user looking at live output
-                // deserves to know they are not it. True of both modes.
-                Image(systemName: "eye")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Read-only")
+            // Offered in the terminal, which is the only mode input means
+            // anything in — but shown in **either** mode once the pane is
+            // actually held. Gated on the mode alone, switching to chat hid the
+            // one thing saying the pane was seized *and* the only way to give
+            // it back, leaving release to `onDisappear`. That is the state
+            // `controlButton` itself calls expensive.
+            if model.control == .controlling || (mode == .terminal && terminalWasAskedFor) {
+                ToolbarItem(placement: .primaryAction) { controlButton }
             }
         }
-        // Loaded when the reader is first shown and not before: it is a whole
-        // exec channel, and most visits to this screen never open it. Keyed on
-        // the mode so returning to a snapshot already taken does not re-read —
-        // the footer says how old it is and pull-to-refresh is right there.
+        // **Asked, not done.** Herdr allows one input owner per pane, and there
+        // is no way to send a key without becoming it: measured, a `control`
+        // client without `--takeover` gets no frames and lands no input while
+        // anyone else holds the pane, silently. So the person at the Mac loses
+        // input the moment this is tapped, and the dialog is where that is
+        // said rather than discovered.
+        .confirmationDialog(
+            "Take control of this pane?",
+            isPresented: $askingForControl,
+            titleVisibility: .visible
+        ) {
+            Button("Take control") { model.takeControl() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Scrolling asks the program to redraw, so Bleat has to hold the pane's input. Whoever is using it at the Mac loses control until you release it.")
+        }
+        // Keyed on the mode: the transcript is a whole exec channel and most
+        // of a visit to this screen is spent in one mode, so neither is loaded
+        // until it is asked for.
         .task(id: mode) {
             switch mode {
             case .terminal:
                 terminalWasAskedFor = true
-            case .reader:
-                if capturedAt == nil { await load() }
             case .chat:
                 if transcript.capturedAt == nil { await transcript.load(for: peer) }
                 // Then keep following. `follow` returns immediately unless the
@@ -173,16 +171,37 @@ struct PaneView: View {
             transcript.stop()
             Task { await model.close() }
         }
+        // The terminal draws its own black and its chrome has to sit on it, so
+        // the screen goes dark for that mode and hands the choice back for the
+        // chat, which is ordinary prose and belongs in whatever the phone is
+        // set to.
+        //
+        // **`nil`, not the current scheme.** `preferredColorScheme` is a
+        // preference that travels *up* to the presentation, so what it sets
+        // comes back down as `\.colorScheme` — reading that here and passing it
+        // on for the chat means the terminal's `.dark` is read back as the
+        // ambient value and re-asserted, and the screen never returns to light
+        // once the terminal has been opened. `nil` is the way to say "no
+        // preference"; nothing else on the stack sets one, so the phone's own
+        // setting wins.
+        .preferredColorScheme(mode == .terminal ? .dark : nil)
+        .animation(.easeInOut, value: mode)
     }
 
-    private func load() async {
-        await text.load(for: peer)
-        // **`.loaded`, not `value != nil`.** A failed refresh over existing
-        // lines produces `.stale(previous, message)`, whose `value` is the
-        // *old* content — so the looser test restamped a twenty-minute-old
-        // snapshot with the current time, which is exactly the misdating this
-        // is here to avoid.
-        if case .loaded = text.state { capturedAt = .now }
+    /// Says which of the two states the pane is in, because they are not
+    /// cosmetically different and the wrong assumption is expensive: believing
+    /// you are watching while you actually hold someone's agent is how a pane
+    /// stays seized after the phone goes back in a pocket.
+    @ViewBuilder
+    private var controlButton: some View {
+        if model.control == .controlling {
+            Button("Release the pane", systemImage: "hand.raised.fill") {
+                Task { await model.releaseControl() }
+            }
+            .tint(.orange)
+        } else {
+            Button("Take control", systemImage: "hand.tap") { askingForControl = true }
+        }
     }
 }
 
@@ -196,20 +215,24 @@ struct PaneView: View {
     }
 }
 
-/// The reader: the pane's own output, wrapped to the device. Monospaced on
-/// purpose — an agent's indentation is structural.
-#Preview("Reader", traits: .sampleData) {
-    NavigationStack {
-        PaneView(peer: .preview, title: "swift test", mode: .reader)
-    }
-}
-
 /// The terminal mounts SwiftTerm and, in a canvas, has no stream feeding it —
 /// so what this shows is the chrome around an empty grid: the badge, the
 /// read-only marker, and the mode picker.
 #Preview("Terminal", traits: .sampleData) {
     NavigationStack {
         PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
+    }
+}
+
+/// Holding the pane: the toolbar says so and offers the way back, and the two
+/// keys appear over the terminal. Only reachable through a confirmation on a
+/// real host, which is exactly why it wants a canvas.
+#Preview("Controlling", traits: .sampleData) {
+    NavigationStack {
+        PaneView(
+            peer: .preview, title: "w2:p1", mode: .terminal,
+            pane: PaneModel(previewing: .live, control: .controlling)
+        )
     }
 }
 #endif

@@ -33,10 +33,10 @@ final class PaneTerminalController: UIViewController {
     private var announced = false
     /// Whether this terminal is the one on screen.
     ///
-    /// It stays mounted while the chat or reader is showing, so that switching
-    /// back is instant — but a hidden view still lays out, and reporting a size
-    /// from one would reopen a stream and `stty` someone's Mac for a view
-    /// nobody is looking at.
+    /// It stays mounted while the chat is showing, so that switching back is
+    /// instant — but a hidden view still lays out, and reporting a size from
+    /// one would reopen a stream and `stty` someone's Mac for a view nobody is
+    /// looking at.
     var isActive = true {
         didSet { if isActive, isActive != oldValue { view.setNeedsLayout() } }
     }
@@ -56,9 +56,27 @@ final class PaneTerminalController: UIViewController {
         // ignores `terminal.scroll` — sent one, got a single frame and nothing
         // on stderr, not even an "input ignored".
         //
-        // So a pane's history is reachable only through `pane read`, which is
-        // what the reader is. The terminal shows the live screen.
-        terminalView.isScrollEnabled = true
+        // **And no setting here can change that**, which is worth stating
+        // because it is the obvious place to look. Measured 8 Sept 2026 on a
+        // pane that had genuinely scrolled — `seq 1 200` through 30 rows, 172
+        // rows of scrollback on the host — the stream still sent four frames of
+        // exactly 30 rows with **LF=0 and CR=0 in every one**. Herdr renders
+        // its own buffer and ships absolute positioning, so nothing is pushed
+        // off the top here and this buffer stays empty by construction. Not a
+        // sizing problem, not a SwiftTerm option.
+        //
+        // History, where a pane has any, comes from `pane read` instead
+        // (`HerdrClient.paneText`). An agent's pane usually has none even
+        // there: its TUI is on the alternate screen, whose rows never enter
+        // herdr's scrollback. What holds an agent's history is its transcript,
+        // which is what chat mode reads.
+        //
+        // **So this is off**, and that is what frees the drag. It was left on
+        // for a while on the theory that a program which did scroll would then
+        // work — but nothing can, so all it did was consume every vertical
+        // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
+        // gets the drag and can turn it into the program's own page keys.
+        terminalView.isScrollEnabled = false
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and

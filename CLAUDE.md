@@ -317,7 +317,12 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
   five schemas — `request`, `success_response`, `event`, `subscription_event`,
   `error_response` — describing the socket API only. The NDJSON stream protocol
   must be captured empirically into `Fixtures/`.
-- `pane read` caps at ~1000 lines (undocumented). Don't build history views on it.
+- `pane read` caps at ~1000 lines (undocumented). Don't build history views on
+  it — and for an agent pane there is nothing to build one *from*; see
+  **An agent pane has no scrollback, at all** below. Its `--source` takes
+  `visible`, `recent`, `recent-unwrapped` or `detection`, and
+  `recent-unwrapped` is the one worth knowing: the buffer without the host's
+  wrapping, which is the only form that can be reflowed to a phone.
 - Environment: use `HERDR_BIN_PATH`-style absolute paths when a login shell
   might not have `herdr` on PATH. Treat non-zero exit as an error with stderr
   attached.
@@ -962,7 +967,7 @@ zero-trust overlay's private DNS name, held entirely on the client's side. It
 equally covers a port forward or a jump address, which have no discovery story
 at all.
 
-`PeerDetailView`'s "Reachable at" section adds and swipes-to-remove;
+`PeerSettingsView`'s "Reachable at" section adds and swipes-to-remove;
 `PeerRegistry.addEndpoint` / `removeEndpoint` are targeted mutations like the
 rest.
 
@@ -1013,10 +1018,14 @@ rest.
   so deleting it is permanent and undone only by retyping it; and a failed write
   would otherwise leave the row where it was with the message a screen back on
   the peer list, so the swipe would look like it had simply done nothing.
-- `PeerDetailView` takes the peer as a plain value: `RouteView` looks it up by
-  host key on every body evaluation and swaps the whole screen for an
-  unpaired-message when the record goes, so tracking the store here would be
-  redundant.
+- **`PeerSettingsView` takes a host key, not a peer.** `PeerDetailView` can
+  take the record as a plain value because `RouteView` looks it up on every
+  body evaluation and swaps the whole screen out when it goes — but a sheet is
+  presented once, from a router, and a captured `PairedPeer` would be stale the
+  moment the user added or removed an address: the list they were looking at
+  would not change. It looks the peer up itself and shows the same
+  unpaired-message when the record is gone, which the root-level unpair flow
+  can do while the sheet is still on screen.
 
 ### Connecting to a paired peer (Phase 2)
 
@@ -1123,6 +1132,21 @@ failure needs a way back, and neither should look like the other.
   data and saying so. An empty-state overlay is `allowsHitTesting(false)` for a
   related reason: it covers the whole list, and "no agents are running here" is
   precisely the message a user wants to pull-to-refresh out of.
+- **A failed load says which of the three error classes it was.** CLAUDE.md's
+  conventions name them — `HerdrError` (host said no), `TransportError`
+  (network), `DecodingError` (contract drift) — and `RemoteListView` used one
+  title for all three: *Could not reach the host*. Found on a live host, 8 Sept
+  2026: a `phone` session whose herdr server was a protocol version behind the
+  client answered with exactly what was wrong and how to fix it, and the phone
+  reported it as a network failure over the top of that message. The user is
+  sent to check a network that is working perfectly — the same lie
+  `TransportError.authenticationFailed` was added to stop one layer down.
+  - `Loadable` carries a `LoadFailure` now rather than a bare string, and
+    `ErrorMessage.failure(of:)` does the classification in one place.
+    `LoadFailureTests` pins it, on the real protocol-mismatch text.
+  - A `HerdrError` shows **herdr's own `message`**, not `description`, which
+    prefixes `herdr workspace list failed (1):`. That is right in a terminal
+    and noise on a phone; herdr's sentence is usually the whole fix.
 - **Ordering is not restated in the UI.** `HerdrClient.agents()` returns them
   already sorted by attention and `workspaces()` likewise, so the app cannot
   disagree with the console tool about what "blocked first" means.
@@ -1135,6 +1159,46 @@ failure needs a way back, and neither should look like the other.
   follows the running process, and it is truncated at the **head**: every row
   starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
   part that distinguishes one checkout from another.
+
+### A host's screen is its sessions; everything else is a sheet (Phase 2)
+
+`PeerDetailView` used to be a `Form` with the sessions on top and four sections
+of pairing detail under them — user, `herdr` path, host key fingerprint,
+addresses, device marker, unpair. It is the sessions and a bottom bar now, and
+the rest is `PeerSettingsView` behind the gear.
+
+- **It is a `RemoteListView` like the workspaces and agents screens.** The
+  section it used to be drew its spinner *in a row* on purpose, so the details
+  below stayed readable while the host was being reached. With nothing below,
+  that reasoning is spent and the four states belong in the shared list view —
+  which is also where "an empty answer is not a failure" and "a failed refresh
+  keeps its rows" are written once rather than twice. `SessionsSection` was
+  deleted with it; `SessionLink` and `SessionRow` are unchanged.
+- **`PeerSettingsRouter` is the third root-level router, for the third time for
+  the same reason.** The sheet is opened from a swipe on the peer list *and*
+  from the gear on a peer's own screen, and those two are in the navigation
+  stack at the same time — a `.sheet` on each would be two presentations of one
+  intent, of which SwiftUI raises whichever it reaches first and silently drops
+  the other. `PeerSettingsFlow` presents it at the root beside `.unpairFlow()`
+  and `.pairingFlow()`.
+- **Unpairing from inside the sheet closes it first, and that ordering is
+  load-bearing.** The confirmation dialog is presented at the root, *underneath*
+  this sheet, so one raised while it is still up is covered by it and never
+  seen — the Unpair button would appear to do nothing. The router holds the
+  request instead and `PeerSettingsFlow` starts it from the sheet's
+  `onDismiss`, which fires only once the dismissal has finished. A plain close
+  clears it, or a later dismissal would unpair a host nobody asked about.
+  `PreviewSmokeTests.unpairFromSettingsClosesTheSheet` pins both halves.
+- **The sheet yields to a `bleat://` link**, exactly as the device-key sheet
+  does: SwiftUI will not raise a second sheet over one already presented, so a
+  pairing request arriving while settings is up would be lost *and* leave
+  `PairingRouter.isPresented` true with nothing on screen — which makes the
+  Pair button a no-op until the app is relaunched.
+- **The swipe on a peer row still only asks.** It has two actions now, Unpair
+  and Settings, and Unpair is declared first so it stays what a full swipe
+  reaches — which is what `onDelete` did before. That is safe to trigger by
+  accident precisely because it opens a confirmation rather than acting; see
+  the unpair section for why a swipe must never revoke a key on its own.
 
 ### Previews (Phase 2)
 
@@ -1180,10 +1244,10 @@ the first screen on a fresh install.
   ids of both lengths, and all five agent states, since a sample list that was
   all `idle` would leave the screen this app is organised around with nothing to
   show.
-- Four files have no preview and say why in place: `QRScannerView` and
+- Five files have no preview and say why in place: `QRScannerView` and
   `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
-  `PairingFlow`/`UnpairFlow` present rather than draw — `RootView` exercises
-  them.
+  `PairingFlow`/`UnpairFlow`/`PeerSettingsFlow` present rather than draw —
+  `RootView` exercises them, and each previews what it presents.
 
 ### The pairing UI (Phase 2)
 
@@ -1859,8 +1923,169 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   nothing on stderr, not even the "input ignored" a bad record earns on
   `control`. Local scrollback is no answer either: an `observe` frame is
   absolute cursor positioning and SGR colour with **zero newlines**, so nothing
-  ever scrolls off into `TerminalView`'s buffer. A pane's history is reachable
-  only through `pane read`, which is what the reader mode is.
+  ever scrolls off into `TerminalView`'s buffer.
+- **The screen is dark in terminal mode and the phone's own scheme in chat**,
+  via `preferredColorScheme` on `PaneView`. The terminal draws its own black
+  and its chrome has to sit on it; the chat is prose and belongs in whatever
+  the user has set.
+  - **The "hand it back" branch passes `nil`, not `\.colorScheme`.**
+    `preferredColorScheme` is a preference that travels *up* to the
+    presentation, so what it sets comes straight back down as the ambient
+    value — read it and pass it on, and the terminal's `.dark` is re-asserted
+    on every evaluation from then on. Opening the terminal once left the chat
+    dark for the life of the screen, and popping it was the only way out.
+    Measured both ways in `ColorSchemeTests`, which keeps the broken shape
+    beside the fixed one as the reason the line is written the way it is.
+- **A mode is a mode: one view on screen at a time.** Tried and rejected — the
+  terminal as a permanent background with the chat on `glassEffect` over it.
+  It looked good and could not be read: a conversation over a live 47-row grid
+  is two things competing for the same pixels, and glass tinted by a black
+  terminal leaves prose without the contrast it needs. Built, looked at on
+  device, reverted. Do not re-propose it without a way to solve the contrast.
+  - **Mounting the terminal is gated on it being asked for**, and that gate is
+    what the glass layout could not keep. Opening the stream resizes the pane's
+    pty (`stty`, below), so an always-live background would reflow the user's
+    pane on their Mac every time an agent screen was opened to read the chat.
+    Once asked for it stays mounted — hidden by `opacity`, with `isActive`
+    false alongside, since a hidden view still lays out and a size reported
+    from one is that same write on behalf of nothing.
+- **Scrollback: measured properly, 8 Sept 2026, in a disposable session.** An
+  earlier note here said "a pane's history is reachable only through
+  `pane read`", and a later one over-corrected to "an agent pane has no
+  scrollback, at all". Both were wrong in different directions. What is true:
+  - **Herdr keeps real scrollback for a normal-screen pane.** `seq 1 200` into
+    a 30-row pane left `max_offset_from_bottom: 172`, and `pane read --source
+    recent --lines 500` returned **202 lines** against `visible`'s 30. So
+    `pane read` *is* a history source, and `recent-unwrapped` returns it
+    without the host's wrapping — the only form that reflows to a phone.
+  - **`experimental.pane_history` is not the switch.** Measured with it `true`
+    and `false`: 172 rows of scrollback either way. It is a red herring for
+    anyone who finds it in `config.toml` while looking for this.
+  - **But the stream never carries scrollback, and that is the load-bearing
+    fact.** The same pane, which had genuinely scrolled 200 lines, sent four
+    frames over `terminal session control` — one full repaint and three deltas
+    — and **every one had LF=0 and CR=0**, each exactly the 30-row viewport.
+    Herdr renders its own buffer and ships absolute cursor positioning. So
+    nothing is ever pushed off the top of SwiftTerm's viewport and its
+    scrollback — which is implemented, and enabled — stays empty by
+    construction. **This is not a sizing problem and not a SwiftTerm setting.**
+    No client of this API can grow a scrollback from the stream.
+  - **The `work` session's agent panes have none on the host either**: all ten
+    report `max_offset_from_bottom: 0`, and `visible`/`recent`/
+    `recent-unwrapped` each return exactly the 47 visible rows. Herdr's own
+    `--skill` doc names the cause — "the pane is probably running the agent on
+    the terminal's alternate screen. Rows that leave the alternate screen do
+    not enter Herdr's host scrollback" — so for these panes there is nothing to
+    fetch, at the Mac or anywhere else.
+  - **What you scroll at the Mac is the agent, not the terminal — and that is
+    the whole answer.** Proved with `less`, a classic alternate-screen pager,
+    on `seq 1 200` in a 30-row pane: `max_offset_from_bottom: 0` and
+    `pane read --source recent` returned **30 lines, not 200** — the same
+    signature as every Claude Code pane. Then two spaces were sent as
+    `terminal.input`, and the visible buffer went from rows **1–29 to 59–87**
+    while the scrollback stayed 0. The earlier content is in *the program*, and
+    the only way to see it is to ask the program.
+  - **So the phone can have it, at a price: it takes input ownership.** Built
+    — see **Scrolling a pane** below. `observe` is read-only and sends nothing,
+    which is exactly why the pane looks frozen at the current screen.
+  - **There is no half measure, and this was measured.** Against a pane another
+    client held, a `terminal session control` client **without** `--takeover`
+    received **no frames and landed no input** — no error, no stderr, the
+    screen simply did not move. The same client with `--takeover` moved the
+    program from rows 1–29 to 30–58. A `control` attach that is not a takeover
+    is silently inert, so any design that hoped to send a key without seizing
+    the pane is not available.
+  - **Settled inside SwiftTerm, 8 Sept 2026, because "surely there is a
+    setting" is the question that keeps coming back.** There is one, it is on,
+    and it works. The same `TerminalView` the app mounts, in one test:
+
+    | fed | newlines | `canScroll` | top visible row |
+    |---|---|---|---|
+    | 200 ordinary lines | 200 | **true** | 168 |
+    | a real pane's stream | **0** | **false** | 0 |
+
+    The second row is `Fixtures/terminal-observe-scrolled.ndjson`, captured
+    from a pane that had *genuinely scrolled 200 lines* with 172 rows of
+    scrollback on the host. `isCurrentBufferAlternate` is false for it too — so
+    it is not even the alternate screen at this end. The emulator is on its
+    normal buffer with exactly one screen in it, because one screen is all it
+    was sent. `ScrollbackTests` pins both rows.
+  - **The alternate screen is pty state, not per-client.** One buffer, rendered
+    by herdr, identical for every viewer — so there is no per-client scrollback
+    to enable and no SwiftTerm option that could differ between the Mac and the
+    phone. SwiftTerm's scrollback is implemented and on; nothing is ever
+    written into it.
+  - **Therefore**: a history view over `pane read --source recent-unwrapped`
+    would show real history for a plain shell pane and nothing beyond the
+    current screen for an agent. What holds an agent's history without touching
+    input is its transcript, which is what chat mode reads.
+    `HerdrClient.paneText` already wraps the command; nothing in the app calls
+    it.
+### Scrolling a pane (Phase 3, the first piece of input)
+
+The first thing Bleat sends to a host, and it is deliberately two keys.
+
+- **`PaneModel.control` is `.observing` or `.controlling`**, and only
+  `takeControl()` crosses. `run()` opens `observe` for the first and
+  `attach(takeover: true)` for the second; nothing else differs.
+- **The confirmation is not politeness, it is the whole safety story.** Taking
+  the pane takes it *from someone*, and per the measurement above there is no
+  way to send a key without doing so. `PaneView` says that in a
+  `confirmationDialog` before it happens rather than leaving it to be
+  discovered by the person at the Mac.
+- **Release is on three paths**: the toolbar button, `close()` when the screen
+  goes away, and `releaseControl()`. `close()` sends `terminal.release`
+  **before cancelling the reader**, or there is no live stream left to send it
+  on and herdr holds the pane for a phone that has gone in a pocket.
+- **Keys, not `terminal.scroll`.** Herdr's scroll record moves a pane's *host*
+  scrollback, which an agent does not have. The earlier output is inside the
+  program, so the program's own keys are what move it. `TerminalKey` carries
+  the xterm sequences and `TerminalCommand.bytes` puts them on the wire —
+  **`text` cannot**, because a raw ESC inside a JSON string is not legal JSON
+  and the host answers `input ignored`.
+- **Which keys work is the program's business.** `less` and every full-screen
+  pager answer Page Up; whether Claude Code does is **unverified** — a probe
+  that launched it in a scratch pane stalled on a workspace-trust prompt before
+  it could be asked. If it wants something else, `TerminalKey` is where that
+  goes and it is a one-line change.
+- **A drag pages it, and `TerminalView.isScrollEnabled` is off to allow that.**
+  It was on for a while on the theory that a program which did scroll would
+  then work; nothing can, so all it did was consume every vertical swipe on
+  behalf of a buffer that never fills. `PaneScrollGesture` gets the drag
+  instead and quantises it into page keys — half a terminal of travel per page,
+  pulling **down** for earlier output, the direction a scroll view moves
+  content with the finger.
+  - **It will always feel like paging, not scrolling, and that is structural.**
+    There is no buffer under the finger to move: the earlier output is inside
+    the program, which redraws a whole screen per key. A drag can only decide
+    *when* to ask for the next one.
+  - The two buttons stay. A drag is not reachable by VoiceOver or Switch
+    Control, and a gesture nothing advertises is not an affordance.
+  - **The gesture is attached always and gated with `including:`.** Branching
+    — `if controlling { content.gesture(drag) } else { content }` — builds a
+    `_ConditionalContent`, and switching branch changes the structural identity
+    of what it wraps. What it wraps is `TerminalHost`, a representable: every
+    take and every release would tear the controller down, lose the rendered
+    buffer and blank the pane until the next full frame.
+  - **The take/release button is shown whenever the pane is held**, not only in
+    terminal mode. Gated on the mode alone, switching to chat hid both the one
+    thing saying the pane was seized and the only way to give it back.
+- `PaneControlTests` guards every path into `.controlling`, including the one
+  that matters most: a pane with no viewport cannot be seized, because nothing
+  is on screen yet to release it.
+
+- **The reader mode is gone.** `PaneView` offered a third reading — a
+  `pane read` snapshot reflowed to the phone — and it is removed: view,
+  previews, sample text and render test. It was lossy in exactly the way that
+  mattered, since a pane is a grid of absolutely positioned cells and anything
+  wide came back re-wrapped into nonsense, and the chat answers the question it
+  was really being opened for while genuinely reflowing. Two modes now, chat
+  and terminal.
+  - **`HerdrClient.paneText` and the `PaneText` model stay**, with their
+    fixture-backed tests. They wrap `pane read`, which is the *only* route to a
+    pane's history — the bullet above — and that is a Phase 3 question rather
+    than something to delete now. Nothing in the app calls one today, so it is
+    library surface with no caller: worth knowing before reading it as live.
 - **A badge in the corner names the grid**, and says "cropped" when the fallback
   is in use. The pane is deliberately larger than the screen now, and a scroll
   indicator that appears only once you already know to drag is not an

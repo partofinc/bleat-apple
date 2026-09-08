@@ -18,6 +18,19 @@ struct PaneSurface: View {
         // sits on top of it. A terminal's bottom row is the one that matters
         // most; there is nothing to gain by hiding it.
         TerminalHost(model: model, isActive: isActive)
+            .background(.black)
+            // Installed on the terminal itself rather than the whole surface,
+            // so the buttons and the overlays keep their own taps.
+            .paneScrollGesture(model)
+            .overlay(alignment: .trailing) {
+                // Only while this screen owns input, because these are the
+                // only circumstances in which they can do anything: the keys
+                // go to the program, and a pane this screen is merely watching
+                // has nowhere to put them.
+                if case .live = model.phase, model.control == .controlling {
+                    PaneScrollControl(model: model)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

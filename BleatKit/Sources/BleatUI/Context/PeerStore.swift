@@ -116,7 +116,7 @@ public final class PeerStore {
         // cancelled part way. Either way there is nothing to say about its
         // addresses, and saying it anyway would prune against silence.
         guard discovered.answered, !Task.isCancelled else { return }
-        try? registry.recordDiscoveredEndpoints(discovered, forHostKey: peer.hostKey)
+        _ = try? registry.recordDiscoveredEndpoints(discovered, forHostKey: peer.hostKey)
         reload()
     }
 

@@ -20,6 +20,10 @@ public final class AppContext {
     /// be started from the peer list *or* by the system handing the app a
     /// `bleat://` link while any screen is on top.
     public let pairing = PairingRouter()
+    /// The peer settings sheet. A router for the same reason the two above are:
+    /// it is opened from the peer list *and* from a peer's own screen, which
+    /// are in the navigation stack at the same time.
+    public let peerSettings = PeerSettingsRouter()
     /// Whether iOS is letting the app onto the local network. Owned here, not
     /// by the pairing sheet, because the browser it watches has to outlive any
     /// one sheet — a permission granted after a sheet closed is still the

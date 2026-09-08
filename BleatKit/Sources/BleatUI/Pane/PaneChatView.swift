@@ -3,10 +3,10 @@ import SwiftUI
 
 /// The agent's conversation, shaped like a chat.
 ///
-/// The third reading of one pane and the only one that is not the terminal.
-/// Terminal and reader are both the *screen* — 142 columns because that is the
-/// pty, wrapped by whatever drew it, with its structure in escape sequences.
-/// This never went through a terminal: herdr does not have it and cannot, since
+/// The reading of a pane that is not the *screen*. The terminal is 142 columns
+/// because that is the pty, wrapped by whatever drew it, with its structure in
+/// escape sequences. This never went through a terminal: herdr does not have it
+/// and cannot, since
 /// everything herdr knows about an agent it read off the rendered buffer. What
 /// herdr provides is the pointer, and the agent wrote the rest for itself.
 ///
@@ -16,7 +16,7 @@ import SwiftUI
 /// **Read-only, and there is deliberately no composer.** Sending is
 /// `agent prompt`, that is Phase 3, and writing to a running agent on someone's
 /// Mac deserves its own deliberate step rather than arriving as a side effect
-/// of a nicer reader.
+/// of a screen that is nicer to read.
 struct PaneChatView: View {
     let phase: TranscriptModel.Phase
     let status: AgentStatus?
@@ -162,9 +162,10 @@ private struct ChatTurn: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            // Proportional, not monospaced — the whole reason this view exists.
-            // The reader has to stay monospaced because it is showing a grid;
-            // this is prose that was never wrapped to anything.
+            // Proportional, not monospaced — the whole reason this view
+            // exists. The terminal beside it has to stay monospaced because it
+            // is showing a grid; this is prose that was never wrapped to
+            // anything.
             Text(entry.text)
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -31,7 +31,20 @@ public enum TranscriptCommand {
     ///     `turns` — measured at about 7% in a real file.
     /// - Returns: `nil` when the id is not a shape that may be put in a shell
     ///   command. See `isSafe`.
-    public static func read(sessionID: String, turns: Int = 120, scanning records: Int = 1500) -> String? {
+    ///   - budget: A ceiling on the **total** bytes returned, applied newest
+    ///     first. `turns` bounds the record *count* and nothing bounded the
+    ///     size, so the payload grew with the conversation: measured 8 Sept
+    ///     2026 across three live sessions on this Mac, 120 turns came to
+    ///     270KB, 386KB and **676KB** — against the "couple of hundred
+    ///     kilobytes" this command was designed around. The same three under a
+    ///     128KB budget return 58, 37 and 48 turns, which is far more than a
+    ///     phone screen shows.
+    public static func read(
+        sessionID: String,
+        turns: Int = 120,
+        scanning records: Int = 1500,
+        budget: Int = 131_072
+    ) -> String? {
         guard isSafe(sessionID) else { return nil }
         let path = "\(root)/*/'\(sessionID)'.jsonl"
         // `command ls -t … | head -1` because the same session id can in
@@ -67,12 +80,38 @@ public enum TranscriptCommand {
         // matched", and an agent with no transcript is a normal answer rather
         // than a failed command — the caller distinguishes them by the output
         // being empty.
+        //
+        // **The last stage is a byte budget, and it is the one that was
+        // missing.** Everything above bounds how many records come back and how
+        // big any single one may be; nothing bounded the total, so the payload
+        // grew with the conversation until a phone was being asked to pull
+        // most of a megabyte through one exec channel before it could draw
+        // anything. It counts from the newest backwards and stops, so what is
+        // dropped is always the oldest — the end of the list nobody scrolls to.
+        //
+        // In `awk` rather than `tail -c`, which would cut a record in half and
+        // hand the parser a truncated line; and rather than `tail -r`, which is
+        // BSD-only and this file is meant to survive a Linux host.
+        //
+        // **The newest record is always kept, whatever it costs.** Starting
+        // `first` past the end and breaking on the first overflow printed
+        // *nothing* when the newest turn alone exceeded the budget — and empty
+        // output is how the caller says "this agent has no transcript", so one
+        // long answer blanked the chat instead of truncating it. The `i < NR`
+        // guard makes the budget a bound on the *older* turns. Reachable at the
+        // defaults only by a hair (the per-record filter is 131072 and so is
+        // this) and trivially at any smaller budget, which is a parameter.
         return """
             f=$(command ls -t \(path) 2>/dev/null | head -1); \
             [ -n "$f" ] && tail -n \(records) "$f" \
             | awk 'length($0) < 131072' \
             | grep -E '"type":"(user|assistant)"' \
-            | tail -n \(turns) || true
+            | tail -n \(turns) \
+            | awk -v max=\(budget) '{ lines[NR] = $0 } \
+                END { t = 0; first = NR; \
+                      for (i = NR; i >= 1; i--) { t += length(lines[i]) + 1; \
+                                                  if (t > max && i < NR) break; first = i } \
+                      for (i = first; i <= NR; i++) print lines[i] }' || true
             """
     }
 

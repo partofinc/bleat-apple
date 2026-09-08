@@ -61,7 +61,7 @@ struct WorkspacesView: View {
     NavigationStack {
         WorkspacesView(
             peer: .preview, session: "work",
-            previewing: .failed("none of 3 addresses could be reached")
+            previewing: .failed(.unreachable("none of 3 addresses could be reached"))
         )
     }
 }
@@ -72,7 +72,7 @@ struct WorkspacesView: View {
     NavigationStack {
         WorkspacesView(
             peer: .preview, session: "work",
-            previewing: .stale(Workspace.samples, "the connection closed before this finished")
+            previewing: .stale(Workspace.samples, .unreachable("the connection closed before this finished"))
         )
     }
 }

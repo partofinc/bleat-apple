@@ -65,11 +65,15 @@ public enum SessionLaunch {
 
     /// Where the launch's own output goes.
     ///
-    /// A **shell word**, not a path: `${TMPDIR:-/tmp}` is expanded on the host,
-    /// so it is emitted in double quotes rather than single ones. On macOS
-    /// `TMPDIR` is a per-user directory, which a predictable name under a
-    /// world-writable `/tmp` is not — the fallback is there for a host without
-    /// one, not as the intent.
+    /// A **shell word**, not a path: `${TMPDIR:-$HOME}` is expanded on the
+    /// host, so it is emitted in double quotes rather than single ones.
+    ///
+    /// **The fallback is `$HOME`, not `/tmp`, and that is not fussiness.** On
+    /// macOS `TMPDIR` is a per-user directory, but where it is unset the name
+    /// here is entirely predictable — so under a world-writable `/tmp` another
+    /// local account could pre-create it as a symlink, and this redirect would
+    /// truncate whatever it points at, as the SSH user. `$HOME` is the one
+    /// directory this connection is guaranteed to own.
     ///
     /// **Truncating (`>`), never appending.** The log is read back to explain a
     /// launch that produced no session, so it has to be about *this* attempt:
@@ -83,7 +87,7 @@ public enum SessionLaunch {
     /// something there: no `$`, no backtick, no backslash, no `"`. That is the
     /// type's job, and this is the line that depends on it.
     private static func logRedirect(for name: SessionName) -> String {
-        "\"${TMPDIR:-/tmp}/bleat-session-\(name.text).log\""
+        "\"${TMPDIR:-$HOME}/bleat-session-\(name.text).log\""
     }
 
     /// Single-quotes for `sh`. `SSHTransport.quote` is the same rule; this is

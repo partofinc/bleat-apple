@@ -112,14 +112,19 @@ struct SessionLaunchTests {
         #expect(start("scratch", herdr: "/opt/my herdr/herdr").contains("'/opt/my herdr/herdr'"))
     }
 
-    /// A per-user directory rather than a predictable name under a
-    /// world-writable `/tmp`, and in double quotes because `${TMPDIR:-/tmp}`
-    /// has to be expanded by the host's shell rather than passed through.
+    /// A per-user directory, in double quotes because the expansion has to
+    /// happen on the host rather than being passed through.
+    ///
+    /// **The fallback is `$HOME`, never `/tmp`.** The file name is entirely
+    /// predictable, so under a world-writable directory another local account
+    /// could pre-create it as a symlink and this redirect would truncate
+    /// whatever it points at, as the SSH user.
     @Test("the launch log lands somewhere the phone can read it back")
     func logIsFetchable() {
         let log = SessionLaunch.logCommand(name: SessionName("scratch")!)
-        #expect(start("scratch").contains(#">"${TMPDIR:-/tmp}/bleat-session-scratch.log""#))
-        #expect(log.contains(#"cat "${TMPDIR:-/tmp}/bleat-session-scratch.log""#))
+        #expect(start("scratch").contains(#">"${TMPDIR:-$HOME}/bleat-session-scratch.log""#))
+        #expect(log.contains(#"cat "${TMPDIR:-$HOME}/bleat-session-scratch.log""#))
+        #expect(!start("scratch").contains("/tmp"), "a predictable name under a shared /tmp")
     }
 
     /// The reason `HerdrLookup.command` ends the same way. A launch that

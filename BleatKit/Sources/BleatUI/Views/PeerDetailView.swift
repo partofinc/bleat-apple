@@ -25,6 +25,9 @@ struct PeerDetailView: View {
     /// is now running on someone's Mac.
     @State private var newSession: NewSessionModel
     @State private var isNaming = false
+    /// Whether this screen has been on screen before, so a return to it can be
+    /// told from the first arrival.
+    @State private var hasAppeared = false
     /// Stopping and deleting, for the sessions this phone started. Owned by the
     /// screen rather than the row, so one confirmation and one failure alert
     /// serve the whole list.
@@ -98,6 +101,15 @@ struct PeerDetailView: View {
         .sessionControl(control, on: peer) { _ in await sessions.load(for: peer) }
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
+        // **A pop does not re-run `.task`.** A session stopped or deleted from
+        // inside it would still be listed here as it was — and tapping a
+        // deleted one pushes a screen that can only error. The first appearance
+        // is left to `.task` so the two do not both load on arrival.
+        .onAppear {
+            defer { hasAppeared = true }
+            guard hasAppeared else { return }
+            Task { await sessions.load(for: peer) }
+        }
     }
 
     #if os(iOS)

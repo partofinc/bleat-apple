@@ -190,6 +190,64 @@ struct SessionActionsTests {
         var action: SessionControlModel.Action?
     }
 
+    /// **The claim must not be earned by a session that was already up.**
+    ///
+    /// The row said stopped because it was stopped when the list loaded; by the
+    /// time Start is tapped somebody at the Mac may have started it and be
+    /// working in it. The launch then fails — `error: herdr server is already
+    /// running`, into a log — and a version that asked only "is it running
+    /// now?" saw yes on its first poll and recorded the session as ours,
+    /// putting a Stop button over their agents.
+    ///
+    /// Driven here against a peer with no endpoints so nothing is dialled: what
+    /// is pinned is that a failed start records nothing at all. `SessionStarter`
+    /// now reads the list *before* launching and refuses the claim outright
+    /// when the session is already up.
+    @Test("a start that does not succeed claims nothing")
+    func aFailedStartClaimsNothing() async {
+        let registry = PeerRegistry.sample()
+        let peers = PeerStore(registry: registry)
+        let model = SessionControlModel(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            peers: peers
+        )
+        let unreachable = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+        )
+        try? registry.save(unreachable)
+
+        #expect(await model.perform(
+            .start, about: session("work", running: false), on: unreachable
+        ) == false)
+
+        let stored = (try? registry.all())?.first { $0.hostKey == unreachable.hostKey }
+        #expect(stored?.startedHere("work") != true, "a failed start claimed the session")
+        #expect(stored?.createdHere("work") != true, "a failed start claimed the session")
+    }
+
+    /// One at a time. `begin` starts an unstructured task, so two quick taps
+    /// enqueue two of these — and two launches share one truncating log, while
+    /// two stops raise a failure alert over one that had already worked.
+    @Test("a second action is refused while the first is in flight")
+    func noReentrancy() async {
+        let peers = PeerStore(registry: .sample())
+        let model = SessionControlModel(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            peers: peers
+        )
+        let unreachable = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+        )
+        let target = session("scratch", running: false)
+
+        async let first = model.perform(.start, about: target, on: unreachable)
+        async let second = model.perform(.start, about: target, on: unreachable)
+        let results = await [first, second]
+        #expect(results.filter { $0 }.isEmpty)
+        // Both cannot have got past the guard; the second returns immediately.
+        #expect(model.failureMessage != nil)
+    }
+
     /// The `#Preview` seam. This model *ends processes on someone's Mac*, so a
     /// canvas that reached the host would be the worst version of the bug the
     /// seam exists to prevent.

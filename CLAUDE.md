@@ -202,7 +202,17 @@ So it is guarded three ways, and all three are needed:
   - **`startedSessions` — "this phone is why it is running"** — is what **Stop**
     is offered on. Written when a launch the host has confirmed running
     succeeds, and **dropped when the session stops**, because that is when it
-    stops being true. Without expiry, starting and stopping the user's own
+    stops being true.
+    - **Both claims are derived from what the host said *before* the launch,
+      never from the caller.** `SessionStarter` reads `session list` first. A
+      version that launched and then asked only "is it running now?" answered
+      yes when the launch had failed *because it was already up* — herdr says
+      `error: herdr server is already running` into a log nobody read — and
+      recorded a session somebody was working in as ours, which is a Stop over
+      their agents. A stale row is all it takes. The same look settles the
+      other claim: `createdSessions` only when the host had never heard of the
+      name, so typing the name of somebody's stopped session into the new-
+      session field resumes it without earning a Delete over their layout. Without expiry, starting and stopping the user's own
     `work` session from the phone would leave a permanent claim on the name and
     a Stop button over whatever they started next.
   - **`createdSessions` — "this phone made it from nothing"** — is what
@@ -239,6 +249,21 @@ So it is guarded three ways, and all three are needed:
     comment about the hazard. Pinned by a test that drives it in SwiftUI's order
     — arm, dismiss, act — against a peer with no endpoints, which
     `PeerConnection.connect` refuses before dialling.
+  - **Only a line beginning `error: ` is a cause.** The launch log holds
+    herdr's startup banner on success, so a host merely slower than the poll's
+    budget had that banner shown under the heading "That did not happen" —
+    herdr saying it started, offered as the reason it had not.
+  - **The launch log falls back to `$HOME`, never `/tmp`.** The file name is
+    predictable, so under a world-writable directory another local account
+    could pre-create it as a symlink and the redirect would truncate whatever
+    it points at, as the SSH user.
+  - **`session list`, `session stop` and `session delete` take a
+    session-agnostic client.** `useSession` is shared mutable state on one
+    transport, read at command dispatch — and the session screen now asks two
+    questions over one connection, one of which needs the prefix. Passing
+    `session: nil` for the other cleared it out from under an in-flight
+    `workspace list` whenever `.task` and `.refreshable` overlapped.
+    `ConnectionStore.sessionAgnosticClient` exists for the reason `shell` does.
   - **The refresh belongs to `perform`, not to the dialog's button.** There
     are two ways an action starts — through the confirmation, and straight from
     a button for the one action that needs none — and hanging the reload off

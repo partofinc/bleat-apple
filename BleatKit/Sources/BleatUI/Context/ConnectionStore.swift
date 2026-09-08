@@ -78,6 +78,24 @@ public final class ConnectionStore {
         return connected.client
     }
 
+    /// A client for a command that does not care which session is selected.
+    ///
+    /// **Deliberately does not call `useSession`**, for the reason `shell` does
+    /// not: the prefix is shared mutable state on one transport, read at
+    /// command dispatch rather than when the client was handed out. A screen
+    /// that is inside a session now asks two questions over one connection —
+    /// `workspace list`, which needs the prefix, and `session list`, which does
+    /// not — and passing `session: nil` for the second would clear the prefix
+    /// out from under the first if the two overlapped. `.task` and
+    /// `.refreshable` overlap routinely.
+    ///
+    /// `session list`, `session stop` and `session delete` are all client-side
+    /// commands that name their session explicitly and report every session
+    /// whichever one is selected, so leaving the prefix alone costs nothing.
+    public func sessionAgnosticClient(for peer: PairedPeer) async throws -> HerdrClient {
+        try await connected(for: peer, session: nil).client
+    }
+
     /// A shell on the peer, over the same connection every screen uses.
     ///
     /// Pairing and unpairing are plain shell, not herdr — installing and

@@ -43,6 +43,7 @@ struct SessionLink: View {
                     // Start is the one that undoes rather than destroys, so it
                     // is not dressed as a warning.
                     .tint(action == .start ? .green : .red)
+                    .disabled(control.isWorking)
                 }
             }
         }

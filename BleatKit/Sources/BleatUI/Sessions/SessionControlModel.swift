@@ -193,6 +193,14 @@ final class SessionControlModel {
     /// dialog; see `SessionControlFlow`.
     @discardableResult
     func perform(_ action: Action, about session: SessionInfo, on peer: PairedPeer) async -> Bool {
+        // **One at a time.** `begin` starts an unstructured task, so two quick
+        // taps enqueue two of these; nothing between here and `phase =
+        // .working` below suspends, and the main actor runs them in turn, so
+        // the second sees the first's claim. Without it a double tap launches
+        // two `herdr server`s sharing one truncating log, or raises a failure
+        // alert over a stop that had already succeeded. `NewSessionModel.start`
+        // has had this guard from the beginning.
+        guard !isWorking else { return false }
         guard let connections, let name = SessionName(session.name) else {
             // Unreachable from a row this phone created — `SessionName` is what
             // minted it — but a name herdr accepted and this build will not is
@@ -208,12 +216,10 @@ final class SessionControlModel {
             // the launch is detached and its exit status says nothing.
             if action == .start {
                 switch try await SessionStarter.start(
-                    // Restarting, not creating. A session the phone did not
-                    // make stays undeletable from here — its layout is somebody
-                    // else's — while becoming stoppable, because the phone is
-                    // now why it is running.
-                    name, on: peer, connections: connections, peers: peers,
-                    claimAsCreated: false
+                    // Which claims this earns is settled by the starter, off
+                    // what the host said before the launch — not by this call
+                    // site, which cannot know.
+                    name, on: peer, connections: connections, peers: peers
                 ) {
                 case .started:
                     phase = .idle
@@ -223,7 +229,11 @@ final class SessionControlModel {
                 }
             }
 
-            let client = try await connections.client(for: peer, session: nil)
+            // Session-agnostic: `session stop` and `session delete` name their
+            // session as an argument, so the prefix is irrelevant to them — and
+            // setting it would clear the one a workspaces list on the same
+            // screen is reading.
+            let client = try await connections.sessionAgnosticClient(for: peer)
             switch action {
             case .stop: try await client.stopSession(named: name)
             case .delete: try await client.deleteSession(named: name)

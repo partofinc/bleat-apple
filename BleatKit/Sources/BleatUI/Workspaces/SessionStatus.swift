@@ -46,9 +46,10 @@ final class SessionStatus {
     /// many.
     func load(for peer: PairedPeer) async {
         guard let connections, let name else { return }
-        // No session prefix: `session list` is client-side and reports every
-        // session whichever one is selected.
-        guard let client = try? await connections.client(for: peer, session: nil),
+        // Session-agnostic: `session list` reports every session whichever one
+        // is selected, and asking with `session: nil` would clear the prefix
+        // that the workspaces load beside this one depends on.
+        guard let client = try? await connections.sessionAgnosticClient(for: peer),
               let sessions = try? await client.sessions()
         else { return }
         info = sessions.first { $0.name == name }

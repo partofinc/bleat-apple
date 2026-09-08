@@ -91,7 +91,7 @@ final class NewSessionModel {
 
         do {
             switch try await SessionStarter.start(
-                name, on: peer, connections: connections, peers: peers, claimAsCreated: true
+                name, on: peer, connections: connections, peers: peers
             ) {
             case .started: return true
             case .failed(let why): failure = why; return false

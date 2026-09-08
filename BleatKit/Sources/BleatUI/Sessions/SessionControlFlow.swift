@@ -29,6 +29,11 @@ struct SessionControlFlow: ViewModifier {
             // those — the dialog's button and a button that needs no dialog —
             // and giving it to only the first is exactly the bug this fixes.
             .onAppear { control.onCompleted = reload }
+            // **And cleared, or the screen never goes.** `reload` captures the
+            // view, which holds the `@State` box, which holds this model, which
+            // holds `reload` — a cycle that leaks a model and everything it
+            // captured on every push. Re-installed on the way back in.
+            .onDisappear { control.onCompleted = nil }
             .confirmationDialog(
                 title, isPresented: $control.isConfirming, titleVisibility: .visible
             ) {

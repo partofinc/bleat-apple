@@ -365,19 +365,47 @@ the order that costs the user least:
   `~`: every argument reaches the host inside single quotes, so nothing expands
   it, and herdr then falls back to the home directory — which for `~` alone is
   the right answer *by accident* and for `~/Developer` is not.
-- **The existence, before anything is created.** `DirectoryCheck` asks the host
-  `test -d` over a plain shell, so the answer arrives before there is a
-  workspace to regret. It exits 0 either way and says which in its output, for
-  the reason `HerdrLookup.command` ends in `|| true`, and the reply is read as a
-  **token within** stdout rather than compared whole — `.zshenv` is sourced for
-  every non-interactive zsh and profiles print banners, which is the mistake
-  `PeerConnector`'s `printf ok` probe made.
+- **The path, resolved by the host, before anything is created.**
+  `DirectoryCheck` runs `cd … && pwd -P` over a plain shell, which settles two
+  questions in one round trip: a directory that cannot be entered has no answer,
+  and the answer that does come back is the form herdr will report. It exits 0
+  either way, for the reason `HerdrLookup.command` ends in `|| true`, and the
+  reply is read as a **prefixed line within** stdout rather than compared whole
+  — `.zshenv` is sourced for every non-interactive zsh and profiles print
+  banners, which is the mistake `PeerConnector`'s `printf ok` probe made. `cd`'s
+  own output is redirected inside the substitution, or a `chpwd` hook that runs
+  `ls` would be read as part of the path.
+  - **Resolving is not tidiness; a plain `test -d` shipped a bug.** herdr
+    reports a **canonical** cwd — measured: `/tmp` → `/private/tmp`, `/var` →
+    `/private/var`, and both `/Users/ravil//Developer` and
+    `/Users/ravil/Developer/../Developer` → `/Users/ravil/Developer`. A phone
+    comparing herdr's answer against the string the user typed therefore
+    reported a workspace as misplaced that had gone exactly where it was asked,
+    for paths as ordinary as `/tmp`. The create sends the resolved form and the
+    comparison is against that.
 - **Where it actually landed.** `WorkspaceCreated.openedElsewhere(than:)`
-  compares the reply's `root_pane.cwd` against what was asked for. With the
-  check in front of it this only catches a race, and it is what stops "created
-  it, somewhere else" being something the user has to notice for themselves. The
-  form stays up and says so, with the button spent — the workspace exists, and
-  tapping Create again would make a second one.
+  compares the reply's `root_pane.cwd` against the resolved path. With the check
+  in front of it this only catches a race, and it is what stops "created it,
+  somewhere else" being something the user has to notice for themselves.
+- **And on the failure path, whether it happened anyway.** A create that
+  *threw* is not proof that nothing happened: if the connection drops between
+  herdr running the command and the reply arriving, the workspace exists and a
+  plain failure invites the obvious retry, which makes a second one. So the
+  ids from `workspace list` are captured before the write and read back after a
+  throw — the same shape as `SessionStarter` polling `session list`. Three
+  answers, and the third is why it is not a one-liner: nothing new means it is
+  safe to try again, a new workspace means say so, and a read-back that *itself*
+  fails means "I cannot tell", which must **disarm** rather than re-arm.
+- **A settled attempt spends the button, and only reopening the sheet clears
+  it.** The model is `@State` on `WorkspacesView` rather than on the sheet — so
+  an in-flight create survives a dismissal — which means everything it holds
+  outlives the sheet too. `clearFailure` deliberately does not touch the
+  warning, since editing a text field does not undo a workspace; `reset()` does,
+  and the plus button calls it. Without that, one "landed elsewhere" left the
+  button reading "Done" forever over a stale message, with nothing on the screen
+  able to clear it and popping the whole session screen the only way out. The
+  path and label are reset too, or a reopened sheet comes up prefilled *and*
+  armed, one reflexive tap from a second workspace at the same path.
 
 Three smaller measurements, each of which would otherwise be guessed wrong:
 
@@ -406,6 +434,13 @@ which button is prominent in the bottom bar: while a session is up the useful
 action is adding to it and Stop is the afterthought, while a stopped one has
 nothing to add *to* — a client command against it answers `server_not_running` —
 so Start takes the prominent position and the plus is not shown at all.
+
+**Each bottom-bar button keeps its own `ToolbarItem` with a `ToolbarSpacer`
+between**, and that is load-bearing rather than layout taste. Start and Delete
+are the only pair that appear together and one of them removes somebody's
+session directory; rendering both inside a single item — which a `ForEach`
+does — puts a destructive action flush against the primary one, a tap's width
+apart.
 
 **The directories are suggested, not typed.** The phone has no file browser and
 an absolute path is miserable to type on one, but `pane list` already carries

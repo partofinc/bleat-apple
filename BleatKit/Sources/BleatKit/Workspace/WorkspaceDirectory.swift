@@ -23,9 +23,13 @@ import Foundation
 /// rather than trust. Two halves, and both are needed —
 ///
 /// - the shape is refused here, before anything leaves the phone;
-/// - the *existence* cannot be, so the caller asks the host (`test -d`) and
-///   then checks where the pane actually landed. See
-///   `WorkspaceCreated.openedElsewhere(than:)`.
+/// - the *existence* cannot be, so the caller asks the host — which also
+///   answers the second question this type cannot: **what the path really is**.
+///   herdr reports a canonical cwd (`/tmp` comes back `/private/tmp`), so a
+///   phone comparing its own string against that would call a workspace
+///   misplaced that had gone exactly where it was asked. `DirectoryCheck`
+///   resolves it the same way herdr does, and
+///   `WorkspaceCreated.openedElsewhere(than:)` compares against *that*.
 public struct WorkspaceDirectory: Sendable, Hashable {
     /// Why a string is not a usable directory.
     public enum Problem: Sendable, Hashable {
@@ -69,7 +73,7 @@ public struct WorkspaceDirectory: Sendable, Hashable {
     /// Separate from the initialiser so a field can say *why* while the user is
     /// still typing, rather than only refusing to proceed.
     public static func problem(with path: String) -> Problem? {
-        let trimmed = path.trimmingCharacters(in: .whitespaces)
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .empty }
         if trimmed.hasPrefix("~") { return .tilde }
         if !trimmed.hasPrefix("/") { return .notAbsolute }
@@ -108,8 +112,17 @@ public struct WorkspaceDirectory: Sendable, Hashable {
     /// Trailing slashes removed, so `/Users/ravil/` and `/Users/ravil` are one
     /// directory rather than two with different suggested labels. The root
     /// survives, because it is nothing but a slash.
+    ///
+    /// **Newlines are trimmed as well as spaces**, because the likeliest way
+    /// this field is filled is a paste from a terminal's `pwd`, which carries
+    /// one. Kept, it passes every check here and then fails on the host — and
+    /// the message would name the directory without the newline in it, so the
+    /// user is told there is no such directory about one that plainly exists.
+    ///
+    /// This is a trim, not a canonicalisation: `/tmp` stays `/tmp`, and the
+    /// host resolves it. See `DirectoryCheck`.
     private static func normalising(_ path: String) -> String {
-        var trimmed = path.trimmingCharacters(in: .whitespaces)
+        var trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }
         return trimmed
     }

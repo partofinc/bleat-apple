@@ -62,19 +62,51 @@ struct NewWorkspaceTests {
         #expect(model.failure == nil)
     }
 
-    /// **The button is spent once something exists.** `misplaced` means a
-    /// workspace was created, just not where it was asked to go — so the screen
-    /// still has something to say, but tapping Create again would make a second
-    /// one on someone's Mac.
-    @Test("a workspace that landed elsewhere disarms the button rather than inviting a retry")
-    func createdElsewhereDisarms() {
+    /// **The button is spent once something may exist.** A `warning` means
+    /// either a workspace was created somewhere else, or the connection dropped
+    /// in the window where it may or may not have been created — and in both
+    /// cases tapping Create again risks a second one on someone's Mac.
+    @Test("a warning disarms the button rather than inviting a retry")
+    func aWarningDisarms() {
         let model = NewWorkspaceModel(
             previewing: "/Users/ravil/Developer",
-            misplaced: "Created Developer, but its pane opened in /Users/ravil rather than "
+            warning: "Created Developer, but its pane opened in /Users/ravil rather than "
                 + "/Users/ravil/Developer."
         )
         #expect(model.directory != nil, "the path itself is fine; it is the outcome that is not")
         #expect(!model.canCreate)
+    }
+
+    /// **The bug this pairing shipped with, before review.** The model is
+    /// `@State` on `WorkspacesView`, not on the sheet, so everything it holds
+    /// outlives a dismissal. `clearFailure` was the only reset and it does not
+    /// touch `warning` — so one "landed elsewhere" left the button reading
+    /// "Done" forever, over a stale message about a workspace made minutes
+    /// earlier, with nothing on the screen able to clear it. Popping the whole
+    /// session screen was the only way out.
+    @Test("editing the path does not clear a warning, but reopening the sheet does")
+    func onlyResetClearsAWarning() {
+        let model = NewWorkspaceModel(
+            previewing: "/Users/ravil/Developer",
+            label: "Developer",
+            failure: "something went wrong",
+            warning: "Created Developer, but its pane opened in /Users/ravil."
+        )
+        // Editing is not undoing: something may be on the host.
+        model.clearFailure()
+        #expect(model.failure == nil)
+        #expect(model.warning != nil, "a text edit cleared a warning about a real workspace")
+        #expect(!model.canCreate)
+
+        // Reopening is.
+        model.reset()
+        #expect(model.warning == nil)
+        #expect(model.failure == nil)
+        // And the path goes too, or a reopened sheet is prefilled *and* armed —
+        // where one reflexive tap makes a second workspace at the same path.
+        #expect(model.path.isEmpty)
+        #expect(model.label.isEmpty)
+        #expect(!model.canCreate, "an empty form is not something to submit")
     }
 
     /// The `#Preview` seam, the same promise `RemoteList(previewing:)` makes —
@@ -85,8 +117,20 @@ struct NewWorkspaceTests {
         let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
         #expect(await model.create(on: .preview) == .failed)
         #expect(model.failure == nil, "a parked create reported a failure, so it tried")
-        #expect(model.misplaced == nil)
+        #expect(model.warning == nil)
         #expect(!model.isCreating)
+    }
+
+    /// A path pasted from a terminal's `pwd` carries a newline. Kept, it passes
+    /// every check here and then fails on the host — and the message names the
+    /// directory *without* the newline, so the user is told there is no such
+    /// directory about one that plainly exists.
+    @Test("a path pasted with a trailing newline is still a path")
+    func tolerantOfAPastedNewline() {
+        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer\n")
+        #expect(model.pathProblem == nil)
+        #expect(model.canCreate)
+        #expect(model.directory?.path == "/Users/ravil/Developer")
     }
 
     /// The suggestions are a convenience, so a host that cannot answer must

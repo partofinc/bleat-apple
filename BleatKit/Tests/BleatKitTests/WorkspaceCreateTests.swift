@@ -215,16 +215,25 @@ struct WorkspaceCreateTests {
         #expect(args.contains("--focus") == false)
     }
 
-    // MARK: - Asking whether the directory is there
+    // MARK: - Asking the host where the directory really is
 
     @Test("the check asks about the directory and exits 0 either way")
     func directoryCheckCommand() {
         let command = DirectoryCheck.command(for: WorkspaceDirectory("/Users/ravil/Developer")!)
-        #expect(command.contains("test -d '/Users/ravil/Developer'"))
-        // Both branches echo, so `ShellRunner` never sees a non-zero exit and
+        #expect(command.contains("cd '/Users/ravil/Developer'"))
+        #expect(command.contains("pwd -P"))
+        // Both branches print, so `ShellRunner` never sees a non-zero exit and
         // the answer never arrives as "the host rejected a command".
-        #expect(command.contains(DirectoryCheck.present))
-        #expect(command.contains(DirectoryCheck.absent))
+        #expect(command.contains(DirectoryCheck.prefix))
+    }
+
+    /// A `chpwd` hook — an `ls` on every directory change is a common one —
+    /// writes to stdout from inside the `cd`. Left unredirected it lands in the
+    /// command substitution and is read as part of the path.
+    @Test("cd's own output cannot be mistaken for the path")
+    func silencesTheCd() {
+        let command = DirectoryCheck.command(for: WorkspaceDirectory("/tmp")!)
+        #expect(command.contains("cd '/tmp' >/dev/null 2>&1"))
     }
 
     /// The whole command is assembled here rather than passed as arguments, so
@@ -235,22 +244,55 @@ struct WorkspaceCreateTests {
         #expect(command.contains(#"'/Users/ravil/it'\''s here'"#))
     }
 
-    /// **A token, never the whole of stdout.** sshd runs an exec command
-    /// through a login shell, `.zshenv` is sourced for every non-interactive
-    /// zsh, and profiles print banners — `PeerConnector` had a `printf ok`
-    /// probe that any of that defeated. Comparing exactly would refuse every
-    /// directory on a Mac with a chatty profile.
+    /// **Why this resolves rather than merely testing.** herdr reports a
+    /// canonical cwd, measured against 0.9.0:
+    ///
+    /// | asked | herdr reports |
+    /// |---|---|
+    /// | `/tmp` | `/private/tmp` |
+    /// | `/var` | `/private/var` |
+    /// | `/Users/ravil//Developer` | `/Users/ravil/Developer` |
+    /// | `/Users/ravil/Developer/../Developer` | `/Users/ravil/Developer` |
+    ///
+    /// So a phone that compared its own string against that would report a
+    /// workspace as misplaced that had gone exactly where it was asked — and
+    /// `/tmp` is a path this suite accepts as valid two screens up. `cd … &&
+    /// pwd -P` is the same resolution, so asking for it first is what makes the
+    /// comparison mean anything.
+    @Test("the resolved path is what comes back, symlinks and all")
+    func readsTheResolvedPath() {
+        #expect(DirectoryCheck.resolvedPath(inOutput: "bleat-dir-at:/private/tmp\n") == "/private/tmp")
+    }
+
+    /// **A prefixed line, never the whole of stdout.** sshd runs an exec
+    /// command through a login shell, `.zshenv` is sourced for every
+    /// non-interactive zsh, and profiles print banners — `PeerConnector` had a
+    /// `printf ok` probe that any of that defeated. Comparing exactly would
+    /// refuse every directory on a Mac with a chatty profile.
     @Test("a banner around the answer does not change it")
     func readsThroughABanner() {
-        #expect(DirectoryCheck.exists(inOutput: "Welcome back!\n\(DirectoryCheck.present)\n"))
-        #expect(DirectoryCheck.exists(inOutput: "\(DirectoryCheck.absent)\n") == false)
+        let output = "Welcome back!\nyou have mail\nbleat-dir-at:/Users/ravil/Developer\n"
+        #expect(DirectoryCheck.resolvedPath(inOutput: output) == "/Users/ravil/Developer")
+    }
+
+    /// `cd` refuses a missing directory, a file, and one it cannot enter, and
+    /// the remedy the user needs is the same for all three. Verified against a
+    /// login shell: `/no/such/dir` and `/etc/hosts` both answer with an empty
+    /// value.
+    @Test("a directory the host cannot enter has no path", arguments: [
+        "bleat-dir-at:\n", "bleat-dir-at:", "Welcome back!\nbleat-dir-at:\n",
+    ])
+    func absenceHasNoPath(_ output: String) {
+        #expect(DirectoryCheck.resolvedPath(inOutput: output) == nil)
     }
 
     /// Absence is the default answer: creating a workspace is the side that
-    /// should need proof, so a reply saying neither is not taken as a yes.
-    @Test("a reply that says neither is not a yes")
-    func silenceIsNotAYes() {
-        #expect(DirectoryCheck.exists(inOutput: "") == false)
-        #expect(DirectoryCheck.exists(inOutput: "some unrelated banner") == false)
+    /// should need proof, so a reply saying nothing is not taken as a yes — and
+    /// an answer that is not a path is not one either.
+    @Test("a reply that says nothing useful is not a yes", arguments: [
+        "", "some unrelated banner", "bleat-dir-at:not-a-path",
+    ])
+    func silenceIsNotAYes(_ output: String) {
+        #expect(DirectoryCheck.resolvedPath(inOutput: output) == nil)
     }
 }

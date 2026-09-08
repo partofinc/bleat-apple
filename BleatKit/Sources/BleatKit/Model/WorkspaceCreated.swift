@@ -43,6 +43,13 @@ public struct WorkspaceCreated: Codable, Sendable, Hashable {
     /// is the host's own account of where the pane ended up, compared against
     /// what was asked for.
     ///
+    /// **`requested` must be the host's canonical form, not what a user typed.**
+    /// The cwd herdr reports is resolved — `/tmp` comes back `/private/tmp`,
+    /// `/var` comes back `/private/var`, and `//` and `..` are collapsed — so
+    /// comparing against a raw string reports a perfectly correct workspace as
+    /// misplaced, for paths as ordinary as `/tmp`. `DirectoryCheck` exists to
+    /// produce that form, and is asked before the create rather than after.
+    ///
     /// nil when the host did not say — `root_pane` is optional, and a missing
     /// answer is not a wrong one. Callers report what they know rather than
     /// guessing, exactly as `SessionStatus` does with a session it has not

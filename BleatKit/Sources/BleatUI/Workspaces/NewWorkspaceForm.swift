@@ -148,9 +148,11 @@ struct NewWorkspaceForm: View {
     private var confirm: some View {
         if model.isCreating {
             ProgressView()
-        } else if model.misplaced != nil {
-            // The workspace exists. Offering "Create" again would make a second
-            // one; the only thing left to do is read the message and leave.
+        } else if model.warning != nil {
+            // Something may exist on the host. Offering "Create" again would
+            // risk a second one; the only thing left is to read the message and
+            // leave. `NewWorkspaceModel.reset` is what clears this, on the next
+            // deliberate open.
             Button("Done") { dismiss() }
         } else {
             Button("Create", action: create).disabled(!model.canCreate)
@@ -162,9 +164,10 @@ struct NewWorkspaceForm: View {
     /// At most one message, most urgent first.
     private var note: (text: String, isProblem: Bool)? {
         if let failure = model.failure { return (failure, true) }
-        // Not red: something was created, and it is on the host whether or not
-        // the user likes where. Red would read as "nothing happened".
-        if let misplaced = model.misplaced { return (misplaced, false) }
+        // Not red: something may well be on the host whether or not the user
+        // likes where. Red would read as "nothing happened", which is the one
+        // thing this state is telling them not to assume.
+        if let warning = model.warning { return (warning, false) }
         return nil
     }
 
@@ -182,10 +185,10 @@ struct NewWorkspaceForm: View {
             case .created:
                 onCreated()
                 dismiss()
-            case .createdElsewhere:
-                // The list still has to be refreshed — the workspace is real —
-                // but the sheet stays up, because this is the only place that
-                // says where it actually went.
+            case .warned:
+                // The list still has to be refreshed — a workspace may well be
+                // there — but the sheet stays up, because this is the only
+                // place that says what happened to it.
                 onCreated()
             case .failed:
                 break
@@ -229,8 +232,19 @@ struct NewWorkspaceForm: View {
 #Preview("Landed elsewhere", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
         previewing: "/Users/ravil/Developer",
-        misplaced: "Created Developer, but its pane opened in /Users/ravil rather than "
+        warning: "Created Developer, but its pane opened in /Users/ravil rather than "
             + "/Users/ravil/Developer."
+    ))
+}
+
+/// The other half of that state, and the one that actually happens: the
+/// connection dropped in the window where the workspace may or may not have
+/// been made. The button is spent either way.
+#Preview("Cannot tell", traits: .sampleData) {
+    NewWorkspacePreview(model: NewWorkspaceModel(
+        previewing: "/Users/ravil/Developer",
+        warning: "the connection closed before this finished\n\nThe workspace may or may not "
+            + "have been created — pull the list down to see."
     ))
 }
 

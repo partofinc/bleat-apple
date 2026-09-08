@@ -163,33 +163,51 @@ struct WorkspacesView: View {
         if isRunning {
             ToolbarItem(placement: .bottomBar) {
                 Button("Add Workspace", systemImage: "plus") {
-                    // Whatever the last attempt said is not about this one.
-                    newWorkspace.clearFailure()
+                    // **A whole reset, not just the failure.** The model is
+                    // `@State` here rather than on the sheet, so everything it
+                    // holds outlives a dismissal — a stale path would come back
+                    // prefilled and armed, and a "landed elsewhere" warning
+                    // would come back with the button already spent and no way
+                    // on the screen to clear it.
+                    newWorkspace.reset()
                     isNaming = true
                 }
                 .buttonStyle(.glassProminent)
                 .disabled(control.isWorking)
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) { sessionActions(prominent: false) }
-        } else if status.info != nil {
-            ToolbarItem(placement: .bottomBar) { sessionActions(prominent: true) }
+            // At most Stop here — herdr will not delete a running session — so
+            // there is only ever one thing on the right.
+            ToolbarItem(placement: .bottomBar) { trailingAction(prominent: false) }
+        } else if let info = status.info, let first = actions.first {
+            ToolbarItem(placement: .bottomBar) {
+                actionButton(first, about: info, prominent: true)
+            }
+            // **The spacer is what keeps Delete away from Start**, and it is
+            // load-bearing rather than layout taste: the two are the only pair
+            // that appear together, and one of them removes somebody's session
+            // directory. Rendering both inside a single `ToolbarItem` — which a
+            // `ForEach` does — puts a destructive action flush against the
+            // primary one, a tap's width apart.
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) { trailingAction(prominent: false) }
         }
     }
 
-    /// The session's own actions — at most Start and Delete, or Stop alone.
+    /// Whatever action goes to the right of the bar, if any.
     ///
     /// Empty for a session this phone did not start, which is the guard rather
-    /// than an oversight: see `SessionControlModel.actions(for:on:)`.
+    /// than an oversight: see `SessionControlModel.actions(for:on:)`. Empty too
+    /// while the session runs and this phone started it, because the only
+    /// action then is Stop and it is already the one on the right.
     @ViewBuilder
-    private func sessionActions(prominent: Bool) -> some View {
+    private func trailingAction(prominent: Bool) -> some View {
         if let info = status.info {
-            ForEach(actions, id: \.self) { action in
-                // Only the leading action is ever prominent, and only when
-                // nothing more useful is standing in that position. Two
-                // prominent buttons in one bar is two primary actions, which is
-                // none.
-                actionButton(action, about: info, prominent: prominent && action == actions.first)
+            // The second action when the leading one is shown beside it, and
+            // the only action when it is not.
+            let trailing = isRunning ? actions.first : actions.dropFirst().first
+            if let trailing {
+                actionButton(trailing, about: info, prominent: prominent)
             }
         }
     }

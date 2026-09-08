@@ -186,7 +186,11 @@ struct PreviewSmokeTests {
             ),
             NewWorkspaceModel(
                 previewing: "/Users/ravil/Developer",
-                misplaced: "Created Developer, but its pane opened in /Users/ravil."
+                warning: "Created Developer, but its pane opened in /Users/ravil."
+            ),
+            NewWorkspaceModel(
+                previewing: "/Users/ravil/Developer",
+                warning: "the connection closed before this finished"
             ),
             NewWorkspaceModel(previewing: "/Users/ravil/Developer", isCreating: true),
         ] {

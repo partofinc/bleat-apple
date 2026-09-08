@@ -1,51 +1,76 @@
 import Foundation
 
-/// Asking the host whether a directory is really there, before a workspace is
-/// made in it.
+/// Asking the host where a directory really is, before a workspace is made in
+/// it.
 ///
-/// **herdr will not do this for you.** `workspace create --cwd /no/such/dir`
-/// exits 0, answers `workspace_created`, and opens the pane in the home
-/// directory instead — see `WorkspaceDirectory`. Without this check the phone's
-/// only options are to report a success that is wrong about where the
-/// workspace is, or to report the mistake *after* having made one on someone
-/// else's Mac. One round trip beforehand turns both into a refusal.
+/// **Two questions, and it has to be one command, because the answers have to
+/// agree.** herdr will neither refuse a directory that is not there nor report
+/// the path it was given:
+///
+/// - `workspace create --cwd /no/such/dir` exits 0, answers
+///   `workspace_created`, and opens the pane in the home directory instead.
+/// - the cwd it reports back is **canonical**. Measured against herdr 0.9.0:
+///   `/tmp` comes back `/private/tmp`, `/var` comes back `/private/var`,
+///   `/Users/ravil//Developer` and `/Users/ravil/Developer/../Developer` both
+///   come back `/Users/ravil/Developer`.
+///
+/// So a phone that asked for `/tmp` and compared herdr's answer to what it
+/// typed would conclude the workspace had gone somewhere else — about a
+/// workspace created exactly where it was asked for. `cd … && pwd -P` is the
+/// same resolution herdr does, so asking for it up front settles both: a path
+/// that cannot be entered has no answer, and the one that comes back is the
+/// form herdr will report.
 ///
 /// Plain shell rather than a herdr command, so it goes through
 /// `ConnectionStore.shell` and leaves the session prefix alone, exactly as the
 /// pairing commands do.
 public enum DirectoryCheck {
-    /// Printed when the directory is there. Deliberately unlikely to occur in a
+    /// Prefixes the one line worth reading. Deliberately unlikely to occur in a
     /// login shell's own output.
-    static let present = "bleat-dir-present"
-    static let absent = "bleat-dir-absent"
+    static let prefix = "bleat-dir-at:"
 
-    /// - Returns: a command that exits 0 either way and says which in its
-    ///   output.
+    /// - Returns: a command that exits 0 whatever the answer, and prints
+    ///   `bleat-dir-at:<resolved path>` — with nothing after the colon when the
+    ///   path is not a directory that can be entered.
     ///
-    /// **Exit status cannot carry the answer**, and that is not a style
-    /// choice: `ShellRunner.run` throws `ShellError` on a non-zero exit, so a
-    /// bare `test -d` would reach the caller as "the host rejected a command
-    /// (exit 1)" about a host that answered the question perfectly well. The
-    /// same reason `HerdrLookup.command` ends in `|| true`.
+    /// **Exit status cannot carry the answer**, and that is not a style choice:
+    /// `ShellRunner.run` throws `ShellError` on a non-zero exit, so a bare
+    /// `test -d` would reach the caller as "the host rejected a command (exit
+    /// 1)" about a host that answered the question perfectly well. The same
+    /// reason `HerdrLookup.command` ends in `|| true`.
+    ///
+    /// **`cd`'s own output is redirected inside the substitution**, so a `chpwd`
+    /// hook — an `ls` on every directory change is a common one — cannot get
+    /// into the captured value and be mistaken for the path.
     public static func command(for directory: WorkspaceDirectory) -> String {
-        "test -d \(quote(directory.path)) && echo \(present) || echo \(absent)"
+        "printf '\(prefix)%s\\n' \"$(cd \(quote(directory.path)) >/dev/null 2>&1 && pwd -P)\""
     }
 
-    /// Whether the host said the directory is there.
+    /// The directory's real path, or nil when the host could not enter it.
     ///
-    /// **A token in the output, never the whole of it.** `sshd` runs an exec
-    /// command through a login shell, profiles print banners, and `.zshenv` is
-    /// sourced for every non-interactive zsh — so comparing stdout exactly is
-    /// how a working host is reported as broken. `PeerConnector` learned this
-    /// with a `printf ok` probe that any startup banner defeated; the same
-    /// mistake here would refuse every directory on a Mac with a chatty
-    /// profile.
+    /// nil covers every way of not being a usable directory at once — missing,
+    /// a file, or unreadable — because `cd` refuses all three and the remedy
+    /// the user needs is the same. Verified against a login shell: `/etc/hosts`
+    /// and `/no/such/dir` both answer with an empty value.
     ///
-    /// Absence is the default answer: a reply that says neither is not
-    /// evidence that the directory exists, and creating a workspace is the
+    /// **A prefixed line, never the whole of stdout.** sshd runs an exec
+    /// command through a login shell, `.zshenv` is sourced for every
+    /// non-interactive zsh, and profiles print banners — `PeerConnector` had a
+    /// `printf ok` probe that any of that defeated. Comparing exactly would
+    /// refuse every directory on a Mac with a chatty profile.
+    ///
+    /// Absence is the default answer: a reply carrying no such line at all is
+    /// not evidence that the directory exists, and creating a workspace is the
     /// side that should need proof.
-    public static func exists(inOutput output: String) -> Bool {
-        output.contains(present)
+    public static func resolvedPath(inOutput output: String) -> String? {
+        guard let line = output
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .last(where: { $0.hasPrefix(prefix) })
+        else { return nil }
+        let path = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+        // `pwd -P` is absolute by construction, so anything else is a shell
+        // that answered with something other than a path.
+        return path.hasPrefix("/") ? path : nil
     }
 
     /// Single quotes for POSIX shells, the same rule as `SSHTransport.quote`.

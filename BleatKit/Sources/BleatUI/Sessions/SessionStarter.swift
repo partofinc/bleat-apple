@@ -19,6 +19,11 @@ enum SessionStarter {
 
     /// Launches, then checks, then records.
     ///
+    /// - Parameter claimAsCreated: whether this is a session the phone made
+    ///   from nothing, as opposed to one it restarted. Only the first earns a
+    ///   Delete later — deleting removes the session directory, and for a
+    ///   session somebody else set up that is their layout, not ours. Both earn
+    ///   a Stop, because the phone may undo what it did.
     /// - Throws: whatever the transport or herdr threw. A launch that ran and
     ///   produced no session comes back as `.failed` instead, because there is
     ///   nothing to throw — see below.
@@ -26,7 +31,8 @@ enum SessionStarter {
         _ name: SessionName,
         on peer: PairedPeer,
         connections: ConnectionStore,
-        peers: PeerStore?
+        peers: PeerStore?,
+        claimAsCreated: Bool
     ) async throws -> Outcome {
         // A shell, not a herdr command: `HerdrTransport.run` would apply the
         // screen's own `HERDR_SESSION` prefix and cannot express a detached
@@ -46,7 +52,8 @@ enum SessionStarter {
         // `PairedPeer.createdSessions` — so claiming it before the host agreed
         // would hand those actions to a session that may be somebody else's, or
         // may not exist.
-        peers?.recordCreatedSession(name.text, for: peer)
+        if claimAsCreated { peers?.recordCreatedSession(name.text, for: peer) }
+        peers?.recordStartedSession(name.text, for: peer)
         return .started
     }
 

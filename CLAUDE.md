@@ -197,11 +197,21 @@ unpairing only takes away the phone's own access.
 
 So it is guarded three ways, and all three are needed:
 
-- **Only sessions this phone started.** `PairedPeer.createdSessions` is written
-  after a launch the host has confirmed running, and
-  `SessionControlModel.actions(for:on:)` returns nothing for a session that is
-  not on it — so the `work` session someone is sitting in front of has no swipe
-  at all. It is a name, not an identity: herdr has no notion of who created a
+- **The phone may undo what it did, and no more.** Two claims, kept apart on
+  purpose:
+  - **`startedSessions` — "this phone is why it is running"** — is what **Stop**
+    is offered on. Written when a launch the host has confirmed running
+    succeeds, and **dropped when the session stops**, because that is when it
+    stops being true. Without expiry, starting and stopping the user's own
+    `work` session from the phone would leave a permanent claim on the name and
+    a Stop button over whatever they started next.
+  - **`createdSessions` — "this phone made it from nothing"** — is what
+    **Delete** is offered on, and nothing else. Deleting removes the session
+    *directory*; for a session somebody else set up, that is their layout.
+  - So `SessionControlModel.actions(for:on:)` offers no Stop for a session
+    running for somebody else's reasons — the `work` session someone is sitting
+    in front of has no swipe at all — and no Delete for one this phone merely
+    restarted. It is a name, not an identity: herdr has no notion of who created a
   session, so this is only ever what this install remembers doing. **A reinstall
   forgets and then offers nothing**, which is the safe direction — the record
   lives under Application Support, which is excluded from backup and does not
@@ -260,9 +270,17 @@ action with no confirmation — `needsConfirmation` says so in one place, and
 `begin(_:about:on:)` is the single entry point so a new button cannot skip the
 question.
 
-- A running session offers **Stop**; a stopped one offers **Start, then
-  Delete** — Start first, so a full swipe reaches the harmless one. Never a
-  pair herdr would refuse.
+- **Start is offered for anyone's stopped session**, and that is deliberate.
+  It restores rather than creates — measured: a stopped session comes back with
+  its workspaces, its panes, and a **freshly spawned shell** in each at its
+  recorded cwd — so it ends nothing, and it is the only way back when the Mac
+  has rebooted with nothing up, which is the gap this file names below.
+  **Agents are not restarted**: `herdr agent start` is a separate step herdr
+  does not replay, so a pane that held one comes back as a plain shell. The
+  stopped empty state says so.
+- A running session offers **Stop** (if the phone started it); a stopped one
+  offers **Start**, then **Delete** if the phone created it — Start first, so a
+  full swipe reaches the harmless one. Never a pair herdr would refuse.
 - **The session screen has a bottom bar too**, the same shape as the peer
   screen's: the action on the left, prominent, and Delete to the right when
   there is one. Empty for a session this phone did not start.
@@ -270,17 +288,20 @@ question.
   cannot carry it: a route's identity would then change the moment the session
   stopped, which is exactly when the screen has to stay put. `nil` means "not
   asked yet", not "stopped" — the bar shows nothing rather than guessing.
-- **A stopped session gets its own empty state.** There is no server to answer
-  `workspace list`, so the list underneath is a `server_not_running` error —
-  true and useless. Saying "Session stopped" is what leaves the Start button
-  meaning something.
+- **A stopped session gets its own empty state, in place of the list and not
+  over it.** There is no server to answer `workspace list`, so the list's own
+  state is a `server_not_running` failure — true and useless. An `.overlay`
+  drew one on top of the other: two headings and two paragraphs interleaved,
+  both legible and neither readable. Replace the list; do not cover it.
 - **Deleting from inside the session pops.** The route names something the host
   no longer has, so every refresh from there on would fail against it.
 
 **The gap that remains: the phone cannot create a pane, workspace or tab from
 cold.** Those commands go over the socket API, and a client command will not
 autostart a server — it returns `server_not_running`. Starting the session is
-what closes that for sessions; the rest still needs a session already up.
+what closes that for sessions, **including sessions the phone did not create**,
+so a Mac that rebooted with nothing up is no longer a walk to the keyboard. The
+rest still needs a session already up.
 
 **It is not a new privilege, but it is a new affordance.** The device key
 already grants a full shell, so nothing here widens what a paired phone *could*

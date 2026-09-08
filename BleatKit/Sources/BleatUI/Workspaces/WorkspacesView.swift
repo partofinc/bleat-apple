@@ -43,19 +43,26 @@ struct WorkspacesView: View {
     #endif
 
     var body: some View {
-        RemoteListView(
-            state: workspaces.state,
-            empty: "No workspaces in this session.",
-            retry: { await workspaces.load(for: peer) }
-        ) { list in
-            ForEach(list) { workspace in
-                WorkspaceLink(peer: peer, session: session, workspace: workspace)
+        // **Instead of the list, not over it.** A stopped session has no server
+        // to answer `workspace list`, so the list's own state is a
+        // `server_not_running` failure — true, and useless. An `.overlay` drew
+        // this on top of that: two headings and two paragraphs interleaved,
+        // both legible, neither readable. Replacing the list is what was meant.
+        Group {
+            if isStopped {
+                stopped
+            } else {
+                RemoteListView(
+                    state: workspaces.state,
+                    empty: "No workspaces in this session.",
+                    retry: { await workspaces.load(for: peer) }
+                ) { list in
+                    ForEach(list) { workspace in
+                        WorkspaceLink(peer: peer, session: session, workspace: workspace)
+                    }
+                }
             }
         }
-        // A stopped session has no server to answer `workspace list`, so the
-        // list underneath is a `server_not_running` error — true, and useless.
-        // Saying it plainly leaves the Start button below meaning something.
-        .overlay { if isStopped { stopped } }
         .navigationTitle(session ?? peer.name)
         #if os(iOS)
         .toolbar { bottomBar }
@@ -86,8 +93,15 @@ struct WorkspacesView: View {
         ContentUnavailableView(
             "Session stopped",
             systemImage: "stop.circle",
+            // Says what Start actually does, because it is not obvious and it
+            // is not nothing: measured, a restarted session comes back with its
+            // workspaces and panes and a freshly spawned shell in each — but
+            // **agents are not restarted**. `herdr agent start` is a separate
+            // step herdr does not replay, so a pane that held an agent comes
+            // back as a plain shell.
             description: Text(
-                "Nothing is running in \(session ?? peer.name). Start it to see its workspaces."
+                "Nothing is running in \(session ?? peer.name). Starting it brings back its "
+                + "workspaces and a shell in each pane; agents are not restarted."
             )
         )
     }
@@ -173,15 +187,29 @@ struct WorkspacesView: View {
     }
 }
 
-/// **The guard.** A session this install did not start: the workspaces are
-/// there and the bar is empty, because ending somebody else's session is not
-/// on offer.
-#Preview("Not ours", traits: .sampleData) {
+/// **The guard.** A session running for somebody else's reasons: the
+/// workspaces are there and the bar is empty, because ending it is not on
+/// offer.
+#Preview("Not ours, running", traits: .sampleData) {
     NavigationStack {
         WorkspacesView(
             peer: .preview, session: "phone",
             previewing: .loaded(Workspace.samples),
             status: SessionInfo(name: "phone", running: true, isDefault: false)
+        )
+    }
+}
+
+/// **And the other half of the guard.** Somebody else's session, stopped: Start
+/// is offered — it restores rather than creates, and it is the only way back
+/// when the Mac has rebooted — while Delete is not, because the layout it would
+/// throw away is theirs.
+#Preview("Not ours, stopped", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .preview, session: "default",
+            previewing: .failed(.hostSaidNo("no herdr server is running at …/herdr.sock")),
+            status: SessionInfo(name: "default", running: false, isDefault: true)
         )
     }
 }

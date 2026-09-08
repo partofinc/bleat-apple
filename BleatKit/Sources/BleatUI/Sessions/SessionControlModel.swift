@@ -94,12 +94,25 @@ final class SessionControlModel {
     /// offering Delete there would be an action that has already failed before
     /// it is taken.
     static func actions(for session: SessionInfo, on peer: PairedPeer) -> [Action] {
-        guard peer.createdHere(session.name) else { return [] }
-        // Start is offered first for a stopped session, so it is what a full
-        // swipe reaches: the harmless one. herdr refuses to delete a running
-        // session, and refuses to stop one that is not running, so neither list
-        // offers an action that has already failed before it is taken.
-        return session.running ? [.stop] : [.start, .delete]
+        // **Stop is the guarded one, and it is guarded on `startedHere` rather
+        // than on who created the session.** The rule is that the phone may
+        // undo what it did: a session it started, it may stop. One that is
+        // running because somebody is using it has no Stop, which is the whole
+        // point.
+        guard !session.running else {
+            return peer.startedHere(session.name) ? [.stop] : []
+        }
+        // **Start is offered for anyone's stopped session.** It restores rather
+        // than creates — measured: the workspaces, panes and a fresh shell in
+        // each come back at their recorded cwd — so it ends nothing, and it is
+        // the only way back when the Mac has rebooted with nothing up, which is
+        // the gap CLAUDE.md names. It is also first in the list, so it is what
+        // a full swipe reaches: the harmless one.
+        //
+        // Delete is not, because it removes the session *directory* — for a
+        // session somebody else set up, that is their layout and not ours to
+        // throw away.
+        return peer.createdHere(session.name) ? [.start, .delete] : [.start]
     }
 
     /// Whether this action must be confirmed before it runs.
@@ -182,7 +195,12 @@ final class SessionControlModel {
             // the launch is detached and its exit status says nothing.
             if action == .start {
                 switch try await SessionStarter.start(
-                    name, on: peer, connections: connections, peers: peers
+                    // Restarting, not creating. A session the phone did not
+                    // make stays undeletable from here — its layout is somebody
+                    // else's — while becoming stoppable, because the phone is
+                    // now why it is running.
+                    name, on: peer, connections: connections, peers: peers,
+                    claimAsCreated: false
                 ) {
                 case .started: phase = .idle; return true
                 case .failed(let why): phase = .failed(action, session, why); return false
@@ -210,10 +228,18 @@ final class SessionControlModel {
                 phase = .failed(action, session, notDone(action, name.text))
                 return false
             }
-            // Only on delete: the session is gone, so the claim that this phone
-            // created it stops being true — and a later session of that name,
-            // made at the Mac, must not inherit these actions.
-            if action == .delete { peers?.forgetCreatedSession(name.text, for: peer) }
+            switch action {
+            // The session is gone, so both claims on the name stop being true —
+            // and a later session of that name, made at the Mac, must not
+            // inherit these actions.
+            case .delete: peers?.forgetCreatedSession(name.text, for: peer)
+            // "This phone is why it is running" expires the moment it is not.
+            // Without this, starting and stopping the user's own session from
+            // the phone would leave a standing Stop button over whatever they
+            // started next.
+            case .stop: peers?.forgetStartedSession(name.text, for: peer)
+            case .start: break // recorded by the starter, once the host agreed
+            }
             phase = .idle
             return true
         } catch {

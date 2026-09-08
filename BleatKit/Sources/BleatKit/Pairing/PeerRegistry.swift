@@ -187,6 +187,36 @@ public struct PeerRegistry: Sendable {
         return peers[index]
     }
 
+    /// Records that this phone is why `session` is running, which is what Stop
+    /// is offered on. See `PairedPeer.startedSessions`.
+    @discardableResult
+    public func recordStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard !peers[index].startedHere(session) else { return peers[index] }
+        peers[index].startedSessions = (peers[index].startedSessions ?? []) + [session]
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Drops that claim once the session is down again.
+    ///
+    /// **Called on stop, and this is what keeps the claim honest.** It means
+    /// "this phone is why it is running", so a session that is no longer
+    /// running has no such reason. Left standing, starting and stopping the
+    /// user's own `work` session from the phone would leave a permanent claim
+    /// on that name — and a Stop button over whatever they started next.
+    @discardableResult
+    public func forgetStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard peers[index].startedHere(session) else { return peers[index] }
+        let remaining = (peers[index].startedSessions ?? []).filter { $0 != session }
+        peers[index].startedSessions = remaining.isEmpty ? nil : remaining
+        try write(peers)
+        return peers[index]
+    }
+
     /// Forgets a session this phone started, once it is gone from the host.
     ///
     /// **Called on delete, and that is not bookkeeping.** The name is the only
@@ -199,9 +229,16 @@ public struct PeerRegistry: Sendable {
     public func forgetCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
         var peers = try all()
         guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
-        guard peers[index].createdHere(session) else { return peers[index] }
+        guard peers[index].createdHere(session) || peers[index].startedHere(session) else {
+            return peers[index]
+        }
         let remaining = (peers[index].createdSessions ?? []).filter { $0 != session }
         peers[index].createdSessions = remaining.isEmpty ? nil : remaining
+        // A deleted session is not running either, so the other claim goes with
+        // it — otherwise a session of that name made later at the Mac would
+        // inherit a Stop button.
+        let started = (peers[index].startedSessions ?? []).filter { $0 != session }
+        peers[index].startedSessions = started.isEmpty ? nil : started
         try write(peers)
         return peers[index]
     }

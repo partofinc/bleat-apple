@@ -98,6 +98,19 @@ public final class PeerStore {
         reload()
     }
 
+    /// Records that this phone is why a session is running, which is what Stop
+    /// is offered on. See `PairedPeer.startedSessions`.
+    public func recordStartedSession(_ session: String, for peer: PairedPeer) {
+        try? registry.recordStartedSession(session, forHostKey: peer.hostKey)
+        reload()
+    }
+
+    /// Drops that claim once the session is down again.
+    public func forgetStartedSession(_ session: String, for peer: PairedPeer) {
+        try? registry.forgetStartedSession(session, forHostKey: peer.hostKey)
+        reload()
+    }
+
     /// Drops that claim once the session has been deleted from the host.
     public func forgetCreatedSession(_ session: String, for peer: PairedPeer) {
         try? registry.forgetCreatedSession(session, forHostKey: peer.hostKey)

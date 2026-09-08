@@ -74,6 +74,9 @@ extension PairedPeer {
     static var previewOwningSessions: PairedPeer {
         var peer = preview
         peer.createdSessions = ["work", "bleat-test"]
+        // `work` is running because this phone started it, which is what a
+        // Stop is offered on; `bleat-test` is down, so the claim has expired.
+        peer.startedSessions = ["work"]
         return peer
     }
 

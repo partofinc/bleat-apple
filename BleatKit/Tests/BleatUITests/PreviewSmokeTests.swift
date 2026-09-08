@@ -211,6 +211,15 @@ struct PreviewSmokeTests {
                 status: SessionInfo(name: "phone", running: true, isDefault: false)
             )
         })
+        // Somebody else's session, stopped: Start on its own, over the stopped
+        // empty state rather than under the list's `server_not_running` error.
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .preview, session: "default",
+                previewing: .failed(.hostSaidNo("no herdr server is running")),
+                status: SessionInfo(name: "default", running: false, isDefault: true)
+            )
+        })
         render(context, NavigationStack {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
         })

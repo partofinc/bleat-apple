@@ -86,7 +86,35 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// paired host. Read it through `createdHere(_:)`.
     public var createdSessions: [String]?
 
+    /// Sessions this phone is the reason are *running*, by name.
+    ///
+    /// Distinct from `createdSessions`, and the distinction is what lets Start
+    /// be offered for a session the phone did not make. Starting one restores
+    /// rather than creates — measured: a stopped session comes back with its
+    /// workspaces, its panes, and a freshly spawned shell in each at its
+    /// recorded cwd — so it ends nothing and is the only way back when the Mac
+    /// has rebooted with nothing up.
+    ///
+    /// But it does spawn processes, and a phone that can start something it
+    /// cannot stop is a worse shape than one that can do neither. So starting
+    /// records the claim, and the claim is what Stop is offered on: **the phone
+    /// may undo what it did.**
+    ///
+    /// **Dropped when the session stops**, which is what keeps it honest. The
+    /// claim is "this phone is why it is running" — not "this phone once
+    /// touched it" — so once it is down the claim has expired. Without that,
+    /// starting and stopping `work` from the phone would leave a standing claim
+    /// on the name, and a Stop button over whatever the person at the Mac
+    /// started next.
+    public var startedSessions: [String]?
+
     public var id: String { hostKey }
+
+    /// Whether this phone is why `session` is currently running, and so may
+    /// stop it. Creating one implies starting it.
+    public func startedHere(_ session: String) -> Bool {
+        startedSessions?.contains(session) ?? false
+    }
 
     /// Whether this phone is the thing that started `session`.
     ///
@@ -112,7 +140,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         deviceMarker: String? = nil,
         session: String? = nil,
         hostReport: EndpointDiscovery.Report? = nil,
-        createdSessions: [String]? = nil
+        createdSessions: [String]? = nil,
+        startedSessions: [String]? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -124,6 +153,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.session = session
         self.hostReport = hostReport
         self.createdSessions = createdSessions
+        self.startedSessions = startedSessions
     }
 
     public init(payload: PairingPayload) {
@@ -180,10 +210,15 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         // would make every session this phone started on that host look like
         // somebody else's, and quietly withdraw the stop and delete actions
         // from all of them.
-        let mine = createdSessions ?? []
-        let theirs = (other.createdSessions ?? []).filter { !mine.contains($0) }
-        merged.createdSessions = mine.isEmpty && theirs.isEmpty ? nil : mine + theirs
+        merged.createdSessions = union(createdSessions, other.createdSessions)
+        merged.startedSessions = union(startedSessions, other.startedSessions)
         return merged
+    }
+
+    private func union(_ mine: [String]?, _ theirs: [String]?) -> [String]? {
+        let mine = mine ?? []
+        let extra = (theirs ?? []).filter { !mine.contains($0) }
+        return mine.isEmpty && extra.isEmpty ? nil : mine + extra
     }
 
     /// Folds a fresh report of the host's own addresses into this record.

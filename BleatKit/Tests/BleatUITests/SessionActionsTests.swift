@@ -11,9 +11,10 @@ import Testing
 @MainActor
 struct SessionActionsTests {
 
-    private func peer(created: [String]) -> PairedPeer {
+    private func peer(created: [String] = [], started: [String] = []) -> PairedPeer {
         var peer = PairedPeer.preview
         peer.createdSessions = created.isEmpty ? nil : created
+        peer.startedSessions = started.isEmpty ? nil : started
         return peer
     }
 
@@ -21,40 +22,80 @@ struct SessionActionsTests {
         SessionInfo(name: name, running: running, isDefault: false)
     }
 
-    /// **The one that matters.** `work` is somebody's real session; the phone
-    /// did not start it, so there is nothing to swipe at all.
-    @Test("a session this phone did not start offers nothing")
-    func noActionsForSomebodyElses() {
-        #expect(SessionControlModel.actions(
-            for: session("work", running: true), on: peer(created: [])
-        ).isEmpty)
+    private func actions(
+        _ name: String, running: Bool, created: [String] = [], started: [String] = []
+    ) -> [SessionControlModel.Action] {
+        SessionControlModel.actions(
+            for: session(name, running: running), on: peer(created: created, started: started)
+        )
+    }
+
+    // MARK: - Stop, which is the guarded one
+
+    /// **The one that matters.** `work` is somebody's real session, running
+    /// because they are using it. Nothing this phone did put it there, so there
+    /// is no Stop.
+    @Test("a running session this phone did not start cannot be stopped")
+    func noStopForSomebodyElses() {
+        #expect(actions("work", running: true).isEmpty)
         // Not even when the phone owns a *different* session on the same host.
-        #expect(SessionControlModel.actions(
-            for: session("work", running: true), on: peer(created: ["scratch"])
-        ).isEmpty)
+        #expect(actions("work", running: true, created: ["scratch"], started: ["scratch"]).isEmpty)
     }
 
     @Test("a running session this phone started can be stopped")
-    func stopWhenRunning() {
-        #expect(SessionControlModel.actions(
-            for: session("scratch", running: true), on: peer(created: ["scratch"])
-        ) == [.stop])
+    func stopWhatWeStarted() {
+        #expect(actions("scratch", running: true, started: ["scratch"]) == [.stop])
     }
 
-    /// Never Stop *and* Delete: herdr refuses to delete a running session
-    /// (`session_delete_failed`, "stop it before deleting"), so offering both
-    /// would put an action on screen that has already failed before it is
-    /// taken.
-    @Test("a stopped session this phone started can be started again, or deleted")
-    func stoppedOffersBoth() {
-        #expect(SessionControlModel.actions(
-            for: session("scratch", running: false), on: peer(created: ["scratch"])
-        ) == [.start, .delete], "Start must come first, so a full swipe reaches the harmless one")
+    /// The claim that matters for Stop is "this phone is why it is running",
+    /// not "this phone made it once". A session created here but started again
+    /// by somebody at the Mac is theirs while it runs.
+    @Test("having created a session is not on its own a licence to stop it")
+    func createdButNotStarted() {
+        #expect(
+            actions("scratch", running: true, created: ["scratch"]).isEmpty,
+            "a session running for somebody else's reasons offered a Stop"
+        )
     }
 
-    /// Starting is the one action that ends nothing, and the way back from an
-    /// unwanted one is the Stop beside it — so it does not ask. Stopping and
-    /// deleting both end things that cannot be brought back.
+    // MARK: - Start, which is not guarded
+
+    /// **Anyone's stopped session may be started.** It restores rather than
+    /// creates — measured: workspaces, panes and a fresh shell in each come
+    /// back — so it ends nothing, and it is the only way back when the Mac has
+    /// rebooted with nothing up.
+    @Test("a stopped session may be started even if this phone never touched it")
+    func startAnyStoppedSession() {
+        #expect(actions("default", running: false) == [.start])
+    }
+
+    /// Start first, so a full swipe reaches the harmless one rather than
+    /// Delete.
+    @Test("a stopped session this phone created offers Start before Delete")
+    func stoppedOursOffersBoth() {
+        #expect(actions("scratch", running: false, created: ["scratch"]) == [.start, .delete])
+    }
+
+    /// Delete removes the session *directory*, which for a session somebody
+    /// else set up is their layout. Starting one does not earn the right to
+    /// throw it away.
+    @Test("restarting somebody else's session does not make it deletable")
+    func startingDoesNotEarnDelete() {
+        #expect(actions("default", running: false, started: ["default"]) == [.start])
+    }
+
+    /// A reinstall loses both records — they live in Application Support, which
+    /// is excluded from backup. It can still start things, and can stop nothing
+    /// it did not start. That is the intended direction.
+    @Test("a fresh install can start anything and stop nothing")
+    func freshInstall() {
+        #expect(actions("scratch", running: false) == [.start])
+        #expect(actions("scratch", running: true).isEmpty)
+    }
+
+    /// Starting is the one action that ends nothing, and the way back is the
+    /// Stop beside it — which starting is what earns. Stopping and deleting
+    /// both end things that cannot be brought back.
     @Test("only the destructive actions ask first")
     func onlyDestructiveActionsAsk() {
         #expect(!SessionControlModel.needsConfirmation(.start))
@@ -75,19 +116,6 @@ struct SessionActionsTests {
         let model = SessionControlModel(previewing: .idle)
         model.begin(.start, about: session("scratch", running: false), on: .preview)
         #expect(!model.isConfirming, "starting a session should not stop to ask")
-    }
-
-    /// A reinstall loses the record — it lives in Application Support, which is
-    /// excluded from backup — and then offers nothing. That is the intended
-    /// direction: the list is what this install remembers doing, not a claim
-    /// the host would recognise.
-    @Test("a fresh install claims nothing")
-    func freshInstallClaimsNothing() {
-        for running in [true, false] {
-            #expect(SessionControlModel.actions(
-                for: session("scratch", running: running), on: peer(created: [])
-            ).isEmpty)
-        }
     }
 
     @Test("asking arms a confirmation rather than acting")

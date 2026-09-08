@@ -121,8 +121,11 @@ struct SessionControlTests {
         mine.createdSessions = ["a"]
         var other = peer
         other.createdSessions = ["a", "b"]
+        mine.startedSessions = ["a"]
+        other.startedSessions = ["b"]
         let merged = try mine.merging(other)
         #expect(merged.createdSessions?.sorted() == ["a", "b"], "a name was lost or duplicated")
+        #expect(merged.startedSessions?.sorted() == ["a", "b"], "the running claim was lost on merge")
     }
 
     // MARK: - The registry
@@ -155,6 +158,58 @@ struct SessionControlTests {
         let stored = try registry.all().first
         #expect(stored?.createdHere("scratch") == false)
         #expect(stored?.createdSessions == nil, "an empty list should not linger as an empty array")
+    }
+
+    /// **The claim Stop is offered on, and why it expires.** It means "this
+    /// phone is why it is running" — so once the session is down it is no
+    /// longer true. Left standing, starting and stopping the user's own `work`
+    /// session from the phone would leave a permanent claim on that name, and a
+    /// Stop button over whatever they started next.
+    @Test("stopping a session drops the claim that it is running because of us")
+    func startedClaimExpires() throws {
+        let registry = registry()
+        try registry.save(peer)
+        try registry.recordStartedSession("work", forHostKey: peer.hostKey)
+        #expect(try registry.all().first?.startedHere("work") == true)
+
+        try registry.forgetStartedSession("work", forHostKey: peer.hostKey)
+        let stored = try registry.all().first
+        #expect(stored?.startedHere("work") == false)
+        #expect(stored?.startedSessions == nil, "an empty list should not linger as an empty array")
+    }
+
+    /// Restarting somebody else's session earns a Stop, never a Delete —
+    /// deleting removes the session directory, and that is their layout.
+    @Test("the two claims are independent")
+    func claimsAreIndependent() throws {
+        let registry = registry()
+        try registry.save(peer)
+        try registry.recordStartedSession("default", forHostKey: peer.hostKey)
+        let stored = try registry.all().first
+        #expect(stored?.startedHere("default") == true)
+        #expect(stored?.createdHere("default") == false)
+    }
+
+    /// A deleted session is not running either, so both claims go — otherwise a
+    /// session of that name made later at the Mac inherits a Stop button.
+    @Test("deleting drops both claims")
+    func deleteDropsBoth() throws {
+        let registry = registry()
+        try registry.save(peer)
+        try registry.recordCreatedSession("scratch", forHostKey: peer.hostKey)
+        try registry.recordStartedSession("scratch", forHostKey: peer.hostKey)
+        try registry.forgetCreatedSession("scratch", forHostKey: peer.hostKey)
+        let stored = try registry.all().first
+        #expect(stored?.createdHere("scratch") == false)
+        #expect(stored?.startedHere("scratch") == false)
+    }
+
+    @Test("a peer record written before either claim existed still decodes")
+    func oldRecordsDecodeWithNeitherClaim() throws {
+        let old = #"{"hostKey":"ssh-ed25519 AAAA","name":"mac","username":"ravil","endpoints":[]}"#
+        let peer = try JSONDecoder().decode(PairedPeer.self, from: Data(old.utf8))
+        #expect(peer.createdSessions == nil)
+        #expect(peer.startedSessions == nil)
     }
 
     @Test("recording against an unknown host changes nothing")

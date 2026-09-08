@@ -28,6 +28,8 @@ struct PaneView: View {
     /// pane — for every agent screen that is opened and read. Once asked for it
     /// stays mounted, for the reasons in the body.
     @State private var terminalWasAskedFor = false
+    /// Taking the pane is a seizure, so it is asked for rather than done.
+    @State private var askingForControl = false
 
     init(
         peer: PairedPeer,
@@ -125,6 +127,28 @@ struct PaneView: View {
                 }
                 .labelsHidden()
             }
+            // Only in the terminal, which is the only mode input means
+            // anything in — and only once it has been asked for, so this
+            // cannot be tapped against a pane with no stream behind it.
+            if mode == .terminal, terminalWasAskedFor {
+                ToolbarItem(placement: .primaryAction) { controlButton }
+            }
+        }
+        // **Asked, not done.** Herdr allows one input owner per pane, and there
+        // is no way to send a key without becoming it: measured, a `control`
+        // client without `--takeover` gets no frames and lands no input while
+        // anyone else holds the pane, silently. So the person at the Mac loses
+        // input the moment this is tapped, and the dialog is where that is
+        // said rather than discovered.
+        .confirmationDialog(
+            "Take control of this pane?",
+            isPresented: $askingForControl,
+            titleVisibility: .visible
+        ) {
+            Button("Take control") { model.takeControl() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Scrolling asks the program to redraw, so Bleat has to hold the pane's input. Whoever is using it at the Mac loses control until you release it.")
         }
         // Keyed on the mode: the transcript is a whole exec channel and most
         // of a visit to this screen is spent in one mode, so neither is loaded
@@ -160,6 +184,22 @@ struct PaneView: View {
         .preferredColorScheme(mode == .terminal ? .dark : nil)
         .animation(.easeInOut, value: mode)
     }
+
+    /// Says which of the two states the pane is in, because they are not
+    /// cosmetically different and the wrong assumption is expensive: believing
+    /// you are watching while you actually hold someone's agent is how a pane
+    /// stays seized after the phone goes back in a pocket.
+    @ViewBuilder
+    private var controlButton: some View {
+        if model.control == .controlling {
+            Button("Release the pane", systemImage: "hand.raised.fill") {
+                Task { await model.releaseControl() }
+            }
+            .tint(.orange)
+        } else {
+            Button("Take control", systemImage: "hand.tap") { askingForControl = true }
+        }
+    }
 }
 
 #if DEBUG
@@ -178,6 +218,18 @@ struct PaneView: View {
 #Preview("Terminal", traits: .sampleData) {
     NavigationStack {
         PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
+    }
+}
+
+/// Holding the pane: the toolbar says so and offers the way back, and the two
+/// keys appear over the terminal. Only reachable through a confirmation on a
+/// real host, which is exactly why it wants a canvas.
+#Preview("Controlling", traits: .sampleData) {
+    NavigationStack {
+        PaneView(
+            peer: .preview, title: "w2:p1", mode: .terminal,
+            pane: PaneModel(previewing: .live, control: .controlling)
+        )
     }
 }
 #endif

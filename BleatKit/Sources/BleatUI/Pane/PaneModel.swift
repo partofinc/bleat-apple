@@ -4,12 +4,24 @@ import Observation
 
 /// Streams one pane's rendered screen.
 ///
-/// **Read-only.** `terminal session observe` cannot disturb whoever currently
-/// holds input on the pane, which is the right default and the whole of Phase
-/// 2 — Herdr allows one input owner per pane, and taking it from an agent
-/// mid-run because someone glanced at their phone would be indefensible.
-/// `control` and `--takeover` arrive in Phase 3, when there is a deliberate
-/// gesture behind them.
+/// **Read-only by default**, and it stays that way unless the user says
+/// otherwise. `terminal session observe` cannot disturb whoever currently
+/// holds input on the pane — Herdr allows one input owner, and taking it from
+/// an agent mid-run because someone glanced at their phone would be
+/// indefensible.
+///
+/// `takeControl()` is the deliberate gesture that changes it, and what it buys
+/// is scrolling. An agent's earlier output is not in herdr's scrollback and
+/// not in the stream; it is inside the program, which redraws its own viewport
+/// when it is sent a key. Reaching it therefore means *sending* — which means
+/// `terminal session control`, and, whenever anyone is attached at the Mac,
+/// `--takeover`.
+///
+/// **There is no middle setting.** Measured 8 Sept 2026 against a pane another
+/// client held: a `control` client without `--takeover` received **no frames
+/// and sent nothing**, silently — no error, the screen simply did not move.
+/// With `--takeover` the same input landed. So this is a seizure or it is
+/// nothing, and the view above must say so before it happens.
 ///
 /// The bytes are never inspected. `terminal.frame` payloads carry cursor
 /// positioning and synchronized-output markers inside them, so they go to the
@@ -26,6 +38,16 @@ final class PaneModel {
         case failed(String)
     }
 
+    /// Whether this screen is watching the pane or driving it.
+    enum Control: Equatable {
+        /// `terminal session observe`. Sends nothing, ever.
+        case observing
+        /// `terminal session control --takeover`. This screen is the pane's
+        /// input owner, and whoever held it at the Mac no longer is.
+        case controlling
+    }
+
+    private(set) var control: Control = .observing
     private(set) var phase: Phase = .opening
     /// The grid everything agrees on: what the terminal shows, what the pane's
     /// pty was set to, and what the stream was opened at.
@@ -104,7 +126,8 @@ final class PaneModel {
     convenience init(
         previewing phase: Phase,
         grid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
-        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47)
+        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
+        control: Control = .observing
     ) {
         let peers = PeerStore(registry: .sample())
         self.init(
@@ -114,6 +137,7 @@ final class PaneModel {
             target: "w2:p1"
         )
         isPreview = true
+        self.control = control
         self.phase = phase
         self.grid = grid
         self.paneGrid = paneGrid
@@ -183,9 +207,47 @@ final class PaneModel {
         reader = Task { [weak self] in await self?.run() }
     }
 
-    /// Closes the stream. There is no `terminal.release` to send: release is
-    /// what an input *owner* does, and an observer never becomes one.
+    /// Takes input ownership of the pane, so it can be scrolled.
+    ///
+    /// **This takes the pane from whoever holds it**, which on a Mac someone
+    /// is sitting at means them. The view asks first; this does not.
+    func takeControl() {
+        guard control == .observing, viewport != nil else { return }
+        control = .controlling
+        start()
+    }
+
+    /// Gives it back, and returns to watching.
+    ///
+    /// `terminal.release` rather than just closing: it is the clean detach —
+    /// the host closes the stream and the command exits 0 — and it is what
+    /// tells herdr the pane is free again. Closing alone leaves the release to
+    /// be inferred from a dropped channel.
+    func releaseControl() async {
+        guard control == .controlling else { return }
+        try? await stream?.send(.release)
+        control = .observing
+        start()
+    }
+
+    /// Sends the program one of its own keys.
+    ///
+    /// Silently does nothing while observing, which is the safe direction: a
+    /// stray call must never be the thing that seizes a pane.
+    func send(_ key: TerminalKey) async {
+        guard control == .controlling, let stream else { return }
+        try? await stream.send(.bytes(key.bytes))
+    }
+
+    /// Closes the stream, releasing input first if this screen took it.
     func close() async {
+        // **Before the reader is cancelled**, or there is no live stream left
+        // to send it on and the pane stays owned by a phone that has walked
+        // away — herdr would hold it until the channel drops.
+        if control == .controlling {
+            try? await stream?.send(.release)
+            control = .observing
+        }
         reader?.cancel()
         reader = nil
         // **Put the pane back.** Bleat narrowed someone's pty to suit a phone;
@@ -246,9 +308,16 @@ final class PaneModel {
                 resized = await resizePty(to: fit, on: peer, client: client)
                 if resized { try? await Task.sleep(for: .milliseconds(350)) }
             }
-            let opened = try await client.observe(
-                target, cols: size.cols, rows: size.rows
-            )
+            // The one place the two modes differ. `--takeover` is passed
+            // because there is no other way in: without it a second client
+            // gets no frames and lands no input while anyone else holds the
+            // pane, and says nothing about why.
+            let opened = switch control {
+            case .observing:
+                try await client.observe(target, cols: size.cols, rows: size.rows)
+            case .controlling:
+                try await client.attach(to: target, cols: size.cols, rows: size.rows, takeover: true)
+            }
             // A reopen cancelled this reader while the channel was opening. It
             // is a live `herdr terminal session observe` on the host and
             // nothing else holds it, so installing it now would orphan it — or

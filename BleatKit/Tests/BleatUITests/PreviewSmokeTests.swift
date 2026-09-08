@@ -210,6 +210,18 @@ struct PreviewSmokeTests {
         render(context, NavigationStack {
             PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
         })
+        // Holding the pane: the toolbar swaps to Release and the two page keys
+        // appear over the terminal. Only reachable through a confirmation on a
+        // real host, so a render is the only mechanical check it gets.
+        render(context, NavigationStack {
+            PaneView(
+                peer: .preview, title: "w2:p1", mode: .terminal,
+                pane: PaneModel(previewing: .live, control: .controlling)
+            )
+        })
+        render(context, PaneSurface(
+            model: PaneModel(previewing: .live, control: .controlling), isActive: true
+        ))
         await settle(context)
     }
 

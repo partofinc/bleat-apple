@@ -1985,13 +1985,16 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     `terminal.input`, and the visible buffer went from rows **1–29 to 59–87**
     while the scrollback stayed 0. The earlier content is in *the program*, and
     the only way to see it is to ask the program.
-  - **So the phone can have it, at a price: it takes input ownership.**
-    `observe` is read-only and sends nothing, which is exactly why the pane
-    looks frozen at the current screen. Scrolling an agent from the phone means
-    `terminal session control` and, whenever someone is attached at the Mac,
-    `--takeover` — seizing the pane from them to scroll it. That is a Phase 3
-    decision, not a rendering bug, and it is the honest shape of the feature:
-    a scroll gesture would send the program its own keys.
+  - **So the phone can have it, at a price: it takes input ownership.** Built
+    — see **Scrolling a pane** below. `observe` is read-only and sends nothing,
+    which is exactly why the pane looks frozen at the current screen.
+  - **There is no half measure, and this was measured.** Against a pane another
+    client held, a `terminal session control` client **without** `--takeover`
+    received **no frames and landed no input** — no error, no stderr, the
+    screen simply did not move. The same client with `--takeover` moved the
+    program from rows 1–29 to 30–58. A `control` attach that is not a takeover
+    is silently inert, so any design that hoped to send a key without seizing
+    the pane is not available.
   - **The alternate screen is pty state, not per-client.** One buffer, rendered
     by herdr, identical for every viewer — so there is no per-client scrollback
     to enable and no SwiftTerm option that could differ between the Mac and the
@@ -2003,6 +2006,41 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     input is its transcript, which is what chat mode reads.
     `HerdrClient.paneText` already wraps the command; nothing in the app calls
     it.
+### Scrolling a pane (Phase 3, the first piece of input)
+
+The first thing Bleat sends to a host, and it is deliberately two keys.
+
+- **`PaneModel.control` is `.observing` or `.controlling`**, and only
+  `takeControl()` crosses. `run()` opens `observe` for the first and
+  `attach(takeover: true)` for the second; nothing else differs.
+- **The confirmation is not politeness, it is the whole safety story.** Taking
+  the pane takes it *from someone*, and per the measurement above there is no
+  way to send a key without doing so. `PaneView` says that in a
+  `confirmationDialog` before it happens rather than leaving it to be
+  discovered by the person at the Mac.
+- **Release is on three paths**: the toolbar button, `close()` when the screen
+  goes away, and `releaseControl()`. `close()` sends `terminal.release`
+  **before cancelling the reader**, or there is no live stream left to send it
+  on and herdr holds the pane for a phone that has gone in a pocket.
+- **Keys, not `terminal.scroll`.** Herdr's scroll record moves a pane's *host*
+  scrollback, which an agent does not have. The earlier output is inside the
+  program, so the program's own keys are what move it. `TerminalKey` carries
+  the xterm sequences and `TerminalCommand.bytes` puts them on the wire —
+  **`text` cannot**, because a raw ESC inside a JSON string is not legal JSON
+  and the host answers `input ignored`.
+- **Which keys work is the program's business.** `less` and every full-screen
+  pager answer Page Up; whether Claude Code does is **unverified** — a probe
+  that launched it in a scratch pane stalled on a workspace-trust prompt before
+  it could be asked. If it wants something else, `TerminalKey` is where that
+  goes and it is a one-line change.
+- **Buttons, not a swipe, for now.** `TerminalView` is a `UIScrollView` and
+  already claims vertical drags for a buffer that is permanently empty; a
+  gesture fighting it is a worse first version than two controls that plainly
+  work.
+- `PaneControlTests` guards every path into `.controlling`, including the one
+  that matters most: a pane with no viewport cannot be seized, because nothing
+  is on screen yet to release it.
+
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

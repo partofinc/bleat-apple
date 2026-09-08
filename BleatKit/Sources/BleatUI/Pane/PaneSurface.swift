@@ -19,6 +19,15 @@ struct PaneSurface: View {
         // most; there is nothing to gain by hiding it.
         TerminalHost(model: model, isActive: isActive)
             .background(.black)
+            .overlay(alignment: .trailing) {
+                // Only while this screen owns input, because these are the
+                // only circumstances in which they can do anything: the keys
+                // go to the program, and a pane this screen is merely watching
+                // has nowhere to put them.
+                if case .live = model.phase, model.control == .controlling {
+                    PaneScrollControl(model: model)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

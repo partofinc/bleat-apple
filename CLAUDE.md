@@ -1949,26 +1949,39 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     Once asked for it stays mounted — hidden by `opacity`, with `isActive`
     false alongside, since a hidden view still lays out and a size reported
     from one is that same write on behalf of nothing.
-- **An agent pane has no scrollback, at all — measured 8 Sept 2026.** This
-  file used to say a pane's history was "reachable only through `pane read`".
-  For the panes Bleat exists to show, it is reachable through nothing.
-  - `herdr pane list` reports **`max_offset_from_bottom: 0` on every pane** of
-    the `work` session — all ten, every one running an agent. Herdr itself says
-    there is nowhere to scroll back to.
-  - `pane read` agrees: `--source visible`, `recent` and `recent-unwrapped` all
-    return **exactly the 47 visible rows** for each of them, whatever `--lines`
-    is asked for.
-  - The cause is the alternate screen. An agent's TUI runs on it, and the
-    alternate screen has no scrollback by definition — its buffer *is* the
-    viewport. Nothing scrolls off because nothing scrolls; the program repaints
-    in place. The same reason an `observe` frame carries zero newlines.
-  - So a request to "scroll back in the terminal" cannot be answered by any
-    client, this one included, and it is not answerable at the Mac either. The
-    thing that *does* hold an agent's history is the transcript, which is what
-    chat mode reads — and that is the honest answer to give.
-  - `HerdrClient.paneText` still wraps `pane read`. It would find real history
-    in a **plain shell** pane, which has a normal screen and therefore a
-    buffer; unverified, since no such pane exists in this session to measure.
+- **Scrollback: measured properly, 8 Sept 2026, in a disposable session.** An
+  earlier note here said "a pane's history is reachable only through
+  `pane read`", and a later one over-corrected to "an agent pane has no
+  scrollback, at all". Both were wrong in different directions. What is true:
+  - **Herdr keeps real scrollback for a normal-screen pane.** `seq 1 200` into
+    a 30-row pane left `max_offset_from_bottom: 172`, and `pane read --source
+    recent --lines 500` returned **202 lines** against `visible`'s 30. So
+    `pane read` *is* a history source, and `recent-unwrapped` returns it
+    without the host's wrapping — the only form that reflows to a phone.
+  - **`experimental.pane_history` is not the switch.** Measured with it `true`
+    and `false`: 172 rows of scrollback either way. It is a red herring for
+    anyone who finds it in `config.toml` while looking for this.
+  - **But the stream never carries scrollback, and that is the load-bearing
+    fact.** The same pane, which had genuinely scrolled 200 lines, sent four
+    frames over `terminal session control` — one full repaint and three deltas
+    — and **every one had LF=0 and CR=0**, each exactly the 30-row viewport.
+    Herdr renders its own buffer and ships absolute cursor positioning. So
+    nothing is ever pushed off the top of SwiftTerm's viewport and its
+    scrollback — which is implemented, and enabled — stays empty by
+    construction. **This is not a sizing problem and not a SwiftTerm setting.**
+    No client of this API can grow a scrollback from the stream.
+  - **The `work` session's agent panes have none on the host either**: all ten
+    report `max_offset_from_bottom: 0`, and `visible`/`recent`/
+    `recent-unwrapped` each return exactly the 47 visible rows. Herdr's own
+    `--skill` doc names the cause — "the pane is probably running the agent on
+    the terminal's alternate screen. Rows that leave the alternate screen do
+    not enter Herdr's host scrollback" — so for these panes there is nothing to
+    fetch, at the Mac or anywhere else.
+  - **Therefore**: a history view over `pane read --source recent-unwrapped`
+    would work, and would show real history for a plain shell pane and nothing
+    beyond the current screen for an agent. What holds an agent's history is
+    its transcript, which is what chat mode reads. `HerdrClient.paneText`
+    already wraps the command; nothing in the app calls it.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

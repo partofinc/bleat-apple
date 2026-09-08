@@ -56,14 +56,20 @@ final class PaneTerminalController: UIViewController {
         // ignores `terminal.scroll` — sent one, got a single frame and nothing
         // on stderr, not even an "input ignored".
         //
-        // **And there is none on the host either, for these panes.** Measured
-        // 8 Sept 2026: `pane list` reports `max_offset_from_bottom: 0` for
-        // every pane of a real session, and `pane read --source recent` returns
-        // exactly the visible rows. An agent's TUI runs on the alternate
-        // screen, which has no scrollback by definition — its buffer is the
-        // viewport. So this is not a client limitation to work around; the
-        // history of an agent pane is its transcript, which is what chat mode
-        // reads.
+        // **And no setting here can change that**, which is worth stating
+        // because it is the obvious place to look. Measured 8 Sept 2026 on a
+        // pane that had genuinely scrolled — `seq 1 200` through 30 rows, 172
+        // rows of scrollback on the host — the stream still sent four frames of
+        // exactly 30 rows with **LF=0 and CR=0 in every one**. Herdr renders
+        // its own buffer and ships absolute positioning, so nothing is pushed
+        // off the top here and this buffer stays empty by construction. Not a
+        // sizing problem, not a SwiftTerm option.
+        //
+        // History, where a pane has any, comes from `pane read` instead
+        // (`HerdrClient.paneText`). An agent's pane usually has none even
+        // there: its TUI is on the alternate screen, whose rows never enter
+        // herdr's scrollback. What holds an agent's history is its transcript,
+        // which is what chat mode reads.
         terminalView.isScrollEnabled = true
         terminalView.getTerminal().changeHistorySize(1500)
 

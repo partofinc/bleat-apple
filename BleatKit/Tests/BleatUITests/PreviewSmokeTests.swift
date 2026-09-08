@@ -184,6 +184,33 @@ struct PreviewSmokeTests {
     @Test("the list screens render in every state")
     func listScreens() async {
         let context = sampleContext()
+        // The session screen with its bar in each state: ours and running,
+        // ours and stopped, and one this install did not start — which is the
+        // guard, and shows no bar at all. These also exercise the screen
+        // reading `AppContext` for the router it pops with; a version that
+        // reached for a `NavigationRouter` in the environment compiled and
+        // trapped here.
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .previewOwningSessions, session: "work",
+                previewing: .loaded(Workspace.samples),
+                status: SessionInfo(name: "work", running: true, isDefault: true)
+            )
+        })
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .previewOwningSessions, session: "bleat-test",
+                previewing: .failed(.hostSaidNo("no herdr server is running")),
+                status: SessionInfo(name: "bleat-test", running: false, isDefault: false)
+            )
+        })
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .preview, session: "phone",
+                previewing: .loaded(Workspace.samples),
+                status: SessionInfo(name: "phone", running: true, isDefault: false)
+            )
+        })
         render(context, NavigationStack {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
         })
@@ -338,7 +365,7 @@ struct PreviewSmokeTests {
         let control = SessionControlModel(previewing: .idle)
         let target = SessionInfo(name: "work", running: true, isDefault: true)
         control.ask(.stop, about: target)
-        #expect(await control.confirm(.stop, about: target, on: .preview) == false)
+        #expect(await control.perform(.stop, about: target, on: .preview) == false)
     }
 }
 #endif

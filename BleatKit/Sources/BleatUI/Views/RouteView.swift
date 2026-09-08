@@ -20,7 +20,7 @@ struct RouteView: View {
             }
         case .workspaces(let hostKey, let session):
             if let peer = peer(hostKey) {
-                WorkspacesView(peer: peer, session: session, connections: context.connections)
+                WorkspacesView(peer: peer, session: session, connections: context.connections, peers: context.peers)
             } else {
                 unpaired
             }

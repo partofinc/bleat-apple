@@ -16,8 +16,10 @@ import SwiftUI
 struct SessionControlFlow: ViewModifier {
     let control: SessionControlModel
     let peer: PairedPeer
-    /// Run after something actually happened, so the list reflects it.
-    let reload: () async -> Void
+    /// Run after something actually happened, so the screen reflects it. Takes
+    /// the action because the right answer differs: a list refreshes, while the
+    /// screen *inside* a session it has just deleted has to leave.
+    let reload: (SessionControlModel.Action) async -> Void
 
     func body(content: Content) -> some View {
         @Bindable var control = control
@@ -32,10 +34,10 @@ struct SessionControlFlow: ViewModifier {
                 // does nothing, silently. `UnpairFlow` captures its peer for
                 // the same reason.
                 if let pending = control.pending {
-                    Button(pending.action == .stop ? "Stop" : "Delete", role: .destructive) {
+                    Button(pending.action.title, role: .destructive) {
                         Task {
-                            if await control.confirm(pending.action, about: pending.session, on: peer) {
-                                await reload()
+                            if await control.perform(pending.action, about: pending.session, on: peer) {
+                                await reload(pending.action)
                             }
                         }
                     }
@@ -60,14 +62,15 @@ struct SessionControlFlow: ViewModifier {
 
     private var title: String {
         guard let pending = control.pending else { return "" }
-        return pending.action == .stop
-            ? "Stop \(pending.session.name)?"
-            : "Delete \(pending.session.name)?"
+        return "\(pending.action.title) \(pending.session.name)?"
     }
 
     private var message: String {
         guard let pending = control.pending else { return "" }
         switch pending.action {
+        // Never asked about — `needsConfirmation` says so — but the switch has
+        // to be total.
+        case .start: return ""
         case .stop:
             // Named plainly, because it is the part that cannot be taken back.
             // Anything running in that session — an agent mid-task included —
@@ -85,7 +88,7 @@ extension View {
     func sessionControl(
         _ control: SessionControlModel,
         on peer: PairedPeer,
-        reload: @escaping () async -> Void
+        reload: @escaping (SessionControlModel.Action) async -> Void
     ) -> some View {
         modifier(SessionControlFlow(control: control, peer: peer, reload: reload))
     }

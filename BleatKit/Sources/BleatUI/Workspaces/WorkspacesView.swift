@@ -7,24 +7,38 @@ import SwiftUI
 /// list is an attention summary in itself: the user can see which workspace has
 /// something blocked without opening it.
 struct WorkspacesView: View {
+    @Environment(AppContext.self) private var context
     let peer: PairedPeer
     let session: String?
     @State private var workspaces: RemoteList<Workspace>
+    /// Whether this session is running, which the route cannot carry — see
+    /// `SessionStatus`. It is what decides between Start and Stop.
+    @State private var status: SessionStatus
+    @State private var control: SessionControlModel
 
-    init(peer: PairedPeer, session: String?, connections: ConnectionStore) {
+    init(peer: PairedPeer, session: String?, connections: ConnectionStore, peers: PeerStore) {
         self.peer = peer
         self.session = session
         _workspaces = State(wrappedValue: RemoteList(connections: connections, session: session) {
             try await $0.workspaces()
         })
+        _status = State(wrappedValue: SessionStatus(connections: connections, name: session))
+        _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
     }
 
     #if DEBUG
     /// Preview-only: the workspaces are handed in and nothing is fetched.
-    init(peer: PairedPeer, session: String?, previewing state: Loadable<[Workspace]>) {
+    init(
+        peer: PairedPeer,
+        session: String?,
+        previewing state: Loadable<[Workspace]>,
+        status: SessionInfo? = nil
+    ) {
         self.peer = peer
         self.session = session
         _workspaces = State(wrappedValue: RemoteList(previewing: state))
+        _status = State(wrappedValue: SessionStatus(previewing: status))
+        _control = State(wrappedValue: SessionControlModel(previewing: .idle))
     }
     #endif
 
@@ -38,16 +52,137 @@ struct WorkspacesView: View {
                 WorkspaceLink(peer: peer, session: session, workspace: workspace)
             }
         }
+        // A stopped session has no server to answer `workspace list`, so the
+        // list underneath is a `server_not_running` error — true, and useless.
+        // Saying it plainly leaves the Start button below meaning something.
+        .overlay { if isStopped { stopped } }
         .navigationTitle(session ?? peer.name)
-        .refreshable { await workspaces.load(for: peer) }
-        .task { await workspaces.load(for: peer) }
+        #if os(iOS)
+        .toolbar { bottomBar }
+        #else
+        .toolbar { ToolbarItemGroup(placement: .primaryAction) { actionButtons } }
+        #endif
+        .sessionControl(control, on: peer) { action in
+            // A screen cannot stay inside a session it has just deleted: the
+            // route names something the host no longer has, and every refresh
+            // from here on would fail against it.
+            if action == .delete { context.navigation.pop(); return }
+            await reload()
+        }
+        .refreshable { await reload() }
+        .task { await reload() }
     }
+
+    private func reload() async {
+        await workspaces.load(for: peer)
+        await status.load(for: peer)
+    }
+
+    /// Only for a session known to be stopped — `nil` is "not asked yet", and
+    /// covering the list on that would flash over a perfectly good load.
+    private var isStopped: Bool { status.info?.running == false }
+
+    private var stopped: some View {
+        ContentUnavailableView(
+            "Session stopped",
+            systemImage: "stop.circle",
+            description: Text(
+                "Nothing is running in \(session ?? peer.name). Start it to see its workspaces."
+            )
+        )
+    }
+
+    /// Empty for a session this phone did not start, which is the guard — see
+    /// `SessionControlModel.actions(for:on:)`.
+    private var actions: [SessionControlModel.Action] {
+        guard let info = status.info else { return [] }
+        return SessionControlModel.actions(for: info, on: peer)
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if let info = status.info {
+            ForEach(actions, id: \.self) { action in
+                Button(action.title, systemImage: action.symbol) {
+                    control.begin(action, about: info, on: peer)
+                }
+                .disabled(control.isWorking)
+            }
+        }
+    }
+
+    #if os(iOS)
+    /// The same shape as the peer screen's bar: the action that does something
+    /// on the left, prominent, and the rest to the right.
+    @ToolbarContentBuilder
+    private var bottomBar: some ToolbarContent {
+        if let info = status.info, let first = actions.first {
+            ToolbarItem(placement: .bottomBar) {
+                Button(first.title, systemImage: first.symbol) {
+                    control.begin(first, about: info, on: peer)
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(control.isWorking)
+            }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                // Only ever Delete, and only for a stopped session — herdr
+                // refuses to delete a running one, so there is nothing to show
+                // beside Stop.
+                if let second = actions.dropFirst().first {
+                    Button(second.title, systemImage: second.symbol) {
+                        control.begin(second, about: info, on: peer)
+                    }
+                    .disabled(control.isWorking)
+                }
+            }
+        }
+    }
+    #endif
 }
 
 #if DEBUG
 #Preview("Workspaces", traits: .sampleData) {
     NavigationStack {
         WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
+    }
+}
+
+/// A session this phone started, running — so the bar offers Stop, and nothing
+/// beside it, because herdr will not delete a running session.
+#Preview("Ours, running", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .previewOwningSessions, session: "work",
+            previewing: .loaded(Workspace.samples),
+            status: SessionInfo(name: "work", running: true, isDefault: true)
+        )
+    }
+}
+
+/// The same session stopped: Start and Delete, over the empty state that says
+/// why there are no workspaces rather than the `server_not_running` error the
+/// list would otherwise show.
+#Preview("Ours, stopped", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .previewOwningSessions, session: "bleat-test",
+            previewing: .failed(.hostSaidNo("no herdr server is running at …/bleat-test/herdr.sock")),
+            status: SessionInfo(name: "bleat-test", running: false, isDefault: false)
+        )
+    }
+}
+
+/// **The guard.** A session this install did not start: the workspaces are
+/// there and the bar is empty, because ending somebody else's session is not
+/// on offer.
+#Preview("Not ours", traits: .sampleData) {
+    NavigationStack {
+        WorkspacesView(
+            peer: .preview, session: "phone",
+            previewing: .loaded(Workspace.samples),
+            status: SessionInfo(name: "phone", running: true, isDefault: false)
+        )
     }
 }
 

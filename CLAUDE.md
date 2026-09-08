@@ -220,6 +220,20 @@ So it is guarded three ways, and all three are needed:
     launch after this shipped.
 - **A swipe asks; it does not act.** The peer row's rule. The dialog names the
   session and says what goes with it rather than asking "are you sure?".
+  - **A confirmed action takes its values as parameters, never reads them back
+    out of the model.** SwiftUI clears a `confirmationDialog`'s binding *before*
+    running the tapped button, and a model whose `isConfirming` setter resets
+    its phase on that write then finds nothing armed — so the action returns
+    having done nothing, with no error and no alert. Shipped exactly that: Stop
+    removed the row and left the session running. `UnpairFlow` already carried a
+    comment about the hazard. Pinned by a test that drives it in SwiftUI's order
+    — arm, dismiss, act — against a peer with no endpoints, which
+    `PeerConnection.connect` refuses before dialling.
+  - **A swipe button must not carry `role: .destructive`.** In a swipe action
+    that is not a colour: SwiftUI reads it as "this row is going away" and
+    animates it out the moment the button is tapped — before the confirmation
+    is answered, and still gone if it is cancelled. Wrong for Stop in any case,
+    which leaves the session listed and merely not running. Tint red instead.
 - **The result is checked, not assumed** — and this one is not paranoia.
   `herdr session delete nosuchsession --json` answers **`{"deleted":true}` and
   exits 0**, having deleted nothing. So `deleted` is not evidence; the list is
@@ -235,6 +249,33 @@ Two more shapes worth knowing:
 
 Errors arrive as the unenveloped client-side shape, `{"error":{…}}` on stderr
 with exit 1, which `HerdrError.fromStderr` already parses.
+
+**Three actions, one of which does not ask.** `start` joins them —
+`SessionControlModel` covers all three, and `SessionStarter` holds the launch so
+the field that names a new session and the button that restarts a stopped one
+cannot drift apart. Starting a stopped session is the *same command* as creating
+one, and herdr keeps the session directory, so it resumes with the workspaces it
+had. It ends nothing and the way back is the Stop beside it, so it is the one
+action with no confirmation — `needsConfirmation` says so in one place, and
+`begin(_:about:on:)` is the single entry point so a new button cannot skip the
+question.
+
+- A running session offers **Stop**; a stopped one offers **Start, then
+  Delete** — Start first, so a full swipe reaches the harmless one. Never a
+  pair herdr would refuse.
+- **The session screen has a bottom bar too**, the same shape as the peer
+  screen's: the action on the left, prominent, and Delete to the right when
+  there is one. Empty for a session this phone did not start.
+- **`SessionStatus` fetches whether the session is running**, because the route
+  cannot carry it: a route's identity would then change the moment the session
+  stopped, which is exactly when the screen has to stay put. `nil` means "not
+  asked yet", not "stopped" — the bar shows nothing rather than guessing.
+- **A stopped session gets its own empty state.** There is no server to answer
+  `workspace list`, so the list underneath is a `server_not_running` error —
+  true and useless. Saying "Session stopped" is what leaves the Start button
+  meaning something.
+- **Deleting from inside the session pops.** The route names something the host
+  no longer has, so every refresh from there on would fail against it.
 
 **The gap that remains: the phone cannot create a pane, workspace or tab from
 cold.** Those commands go over the socket API, and a client command will not

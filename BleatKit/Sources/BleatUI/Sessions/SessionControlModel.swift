@@ -28,11 +28,35 @@ import Observation
 @MainActor
 final class SessionControlModel {
     enum Action: Hashable {
+        /// Brings a stopped session back up, with the workspaces it had —
+        /// herdr keeps the session directory, so this resumes rather than
+        /// recreates. The only one of the three that is not destructive, and
+        /// the only one that does not ask first.
+        case start
         /// Ends every process in the session. Offered only while it runs.
         case stop
         /// Removes the stopped session and its directory. herdr refuses this
         /// while the session runs, so it is the second of two steps.
         case delete
+
+        /// The verb, used on the swipe, the bar and the dialog's button — one
+        /// definition, so a dialog cannot end up asking about a different verb
+        /// from the one the user tapped.
+        var title: String {
+            switch self {
+            case .start: "Start"
+            case .stop: "Stop"
+            case .delete: "Delete"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .start: "play.fill"
+            case .stop: "stop.fill"
+            case .delete: "trash"
+            }
+        }
     }
 
     enum Phase: Equatable {
@@ -71,11 +95,36 @@ final class SessionControlModel {
     /// it is taken.
     static func actions(for session: SessionInfo, on peer: PairedPeer) -> [Action] {
         guard peer.createdHere(session.name) else { return [] }
-        return session.running ? [.stop] : [.delete]
+        // Start is offered first for a stopped session, so it is what a full
+        // swipe reaches: the harmless one. herdr refuses to delete a running
+        // session, and refuses to stop one that is not running, so neither list
+        // offers an action that has already failed before it is taken.
+        return session.running ? [.stop] : [.start, .delete]
     }
+
+    /// Whether this action must be confirmed before it runs.
+    ///
+    /// Starting is not: it creates a session that is empty of anyone's work,
+    /// and the way back from an unwanted one is the Stop button beside it.
+    /// Stopping and deleting both end things that cannot be brought back.
+    static func needsConfirmation(_ action: Action) -> Bool { action != .start }
 
     func ask(_ action: Action, about session: SessionInfo) {
         phase = .confirming(action, session)
+    }
+
+    /// The one entry point a button needs: asks first where asking is owed, and
+    /// otherwise just does it.
+    ///
+    /// Kept here rather than written out at each call site so a new action
+    /// cannot be added to a bar or a swipe without the question of whether it
+    /// needs confirming being answered in one place.
+    func begin(_ action: Action, about session: SessionInfo, on peer: PairedPeer) {
+        guard Self.needsConfirmation(action) else {
+            Task { await perform(action, about: session, on: peer) }
+            return
+        }
+        ask(action, about: session)
     }
 
     /// Bound by the confirmation dialog, which SwiftUI dismisses itself — the
@@ -117,7 +166,7 @@ final class SessionControlModel {
     /// walked into anyway. The caller captures the values when it builds the
     /// dialog; see `SessionControlFlow`.
     @discardableResult
-    func confirm(_ action: Action, about session: SessionInfo, on peer: PairedPeer) async -> Bool {
+    func perform(_ action: Action, about session: SessionInfo, on peer: PairedPeer) async -> Bool {
         guard let connections, let name = SessionName(session.name) else {
             // Unreachable from a row this phone created — `SessionName` is what
             // minted it — but a name herdr accepted and this build will not is
@@ -129,10 +178,22 @@ final class SessionControlModel {
         phase = .working(action, session)
 
         do {
+            // Starting is checked by the launcher itself, which has to poll:
+            // the launch is detached and its exit status says nothing.
+            if action == .start {
+                switch try await SessionStarter.start(
+                    name, on: peer, connections: connections, peers: peers
+                ) {
+                case .started: phase = .idle; return true
+                case .failed(let why): phase = .failed(action, session, why); return false
+                }
+            }
+
             let client = try await connections.client(for: peer, session: nil)
             switch action {
             case .stop: try await client.stopSession(named: name)
             case .delete: try await client.deleteSession(named: name)
+            case .start: break // handled above
             }
 
             // The reply is not the answer — `deleted: true` comes back for a
@@ -142,6 +203,7 @@ final class SessionControlModel {
             let done = switch action {
             case .stop: after?.running == false
             case .delete: after == nil
+            case .start: after?.running == true
             }
 
             guard done else {
@@ -163,8 +225,13 @@ final class SessionControlModel {
 
     private func notDone(_ action: Action, _ name: String) -> String {
         switch action {
+        case .start: "The host did not report \(name) as running."
         case .stop: "The host still reports \(name) as running."
         case .delete: "\(name) is still on the host."
         }
     }
+
+    /// Whether this action is in flight, so a bar can show a spinner and
+    /// refuse a second tap.
+    var isWorking: Bool { if case .working = phase { true } else { false } }
 }

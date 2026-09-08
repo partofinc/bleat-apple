@@ -95,7 +95,7 @@ struct PeerDetailView: View {
             }
         }
         #endif
-        .sessionControl(control, on: peer) { await sessions.load(for: peer) }
+        .sessionControl(control, on: peer) { _ in await sessions.load(for: peer) }
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
     }

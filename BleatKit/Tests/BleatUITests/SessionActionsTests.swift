@@ -45,11 +45,36 @@ struct SessionActionsTests {
     /// (`session_delete_failed`, "stop it before deleting"), so offering both
     /// would put an action on screen that has already failed before it is
     /// taken.
-    @Test("a stopped session this phone started can be deleted, and only deleted")
-    func deleteWhenStopped() {
+    @Test("a stopped session this phone started can be started again, or deleted")
+    func stoppedOffersBoth() {
         #expect(SessionControlModel.actions(
             for: session("scratch", running: false), on: peer(created: ["scratch"])
-        ) == [.delete])
+        ) == [.start, .delete], "Start must come first, so a full swipe reaches the harmless one")
+    }
+
+    /// Starting is the one action that ends nothing, and the way back from an
+    /// unwanted one is the Stop beside it — so it does not ask. Stopping and
+    /// deleting both end things that cannot be brought back.
+    @Test("only the destructive actions ask first")
+    func onlyDestructiveActionsAsk() {
+        #expect(!SessionControlModel.needsConfirmation(.start))
+        #expect(SessionControlModel.needsConfirmation(.stop))
+        #expect(SessionControlModel.needsConfirmation(.delete))
+    }
+
+    @Test("beginning a destructive action asks rather than acting")
+    func beginAsks() {
+        let model = SessionControlModel(previewing: .idle)
+        model.begin(.delete, about: session("scratch", running: false), on: .preview)
+        #expect(model.isConfirming)
+        #expect(model.pending?.action == .delete)
+    }
+
+    @Test("beginning a start does not raise a dialog")
+    func beginStartDoesNotAsk() {
+        let model = SessionControlModel(previewing: .idle)
+        model.begin(.start, about: session("scratch", running: false), on: .preview)
+        #expect(!model.isConfirming, "starting a session should not stop to ask")
     }
 
     /// A reinstall loses the record — it lives in Application Support, which is
@@ -91,7 +116,7 @@ struct SessionActionsTests {
         let model = SessionControlModel(previewing: .idle)
         let target = session("scratch", running: true)
         model.ask(.stop, about: target)
-        #expect(await model.confirm(.stop, about: target, on: .preview) == false)
+        #expect(await model.perform(.stop, about: target, on: .preview) == false)
     }
 
     /// **The regression that shipped.** `confirm` used to read the armed action
@@ -123,7 +148,7 @@ struct SessionActionsTests {
         model.isConfirming = false
         #expect(model.phase == .idle, "the dialog no longer resets the phase, so this test proves nothing")
 
-        #expect(await model.confirm(.stop, about: target, on: unreachable) == false)
+        #expect(await model.perform(.stop, about: target, on: unreachable) == false)
         #expect(
             model.failureMessage != nil,
             "the action returned without trying — the dismissal cancelled it, which is the bug"

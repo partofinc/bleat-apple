@@ -36,14 +36,13 @@ struct SessionLink: View {
                     // session listed and merely not running. The row must
                     // change only when the host's answer changes it.
                     Button {
-                        control.ask(action, about: session)
+                        control.begin(action, about: session, on: peer)
                     } label: {
-                        switch action {
-                        case .stop: Label("Stop", systemImage: "stop.fill")
-                        case .delete: Label("Delete", systemImage: "trash")
-                        }
+                        Label(action.title, systemImage: action.symbol)
                     }
-                    .tint(.red)
+                    // Start is the one that undoes rather than destroys, so it
+                    // is not dressed as a warning.
+                    .tint(action == .start ? .green : .red)
                 }
             }
         }

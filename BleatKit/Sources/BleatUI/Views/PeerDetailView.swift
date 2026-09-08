@@ -25,17 +25,22 @@ struct PeerDetailView: View {
     /// is now running on someone's Mac.
     @State private var newSession: NewSessionModel
     @State private var isNaming = false
+    /// Stopping and deleting, for the sessions this phone started. Owned by the
+    /// screen rather than the row, so one confirmation and one failure alert
+    /// serve the whole list.
+    @State private var control: SessionControlModel
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
-    init(peer: PairedPeer, connections: ConnectionStore) {
+    init(peer: PairedPeer, connections: ConnectionStore, peers: PeerStore) {
         self.peer = peer
         // No session prefix: `session list` is a client-side command that
         // reports every session regardless of which one is selected.
         _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
             try await $0.sessions()
         })
-        _newSession = State(wrappedValue: NewSessionModel(connections: connections))
+        _newSession = State(wrappedValue: NewSessionModel(connections: connections, peers: peers))
+        _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
     }
 
     #if DEBUG
@@ -44,6 +49,7 @@ struct PeerDetailView: View {
         self.peer = peer
         _sessions = State(wrappedValue: RemoteList(previewing: state))
         _newSession = State(wrappedValue: NewSessionModel(previewing: ""))
+        _control = State(wrappedValue: SessionControlModel(previewing: .idle))
     }
     #endif
 
@@ -61,7 +67,7 @@ struct PeerDetailView: View {
             retry: { await sessions.load(for: peer) }
         ) { list in
             ForEach(list) { session in
-                SessionLink(peer: peer, session: session)
+                SessionLink(peer: peer, session: session, control: control)
             }
         }
         .navigationTitle(peer.name)
@@ -89,6 +95,7 @@ struct PeerDetailView: View {
             }
         }
         #endif
+        .sessionControl(control, on: peer) { await sessions.load(for: peer) }
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
     }

@@ -14,7 +14,7 @@ struct RouteView: View {
         switch route {
         case .peer(let hostKey):
             if let peer = peer(hostKey) {
-                PeerDetailView(peer: peer, connections: context.connections)
+                PeerDetailView(peer: peer, connections: context.connections, peers: context.peers)
             } else {
                 unpaired
             }

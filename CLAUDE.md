@@ -181,6 +181,61 @@ and `-`, and not `.` or `..`. `SessionName` adds one rule herdr does not:
   Without the rule the phone can leave a session running on someone's Mac that
   the Mac's own CLI cannot stop.
 
+### Stopping and deleting a session (built, 8 Sept 2026)
+
+`herdr session stop <name> --json` and `herdr session delete <name> --json`,
+both client-side commands — explicit `--json`, no envelope, replies captured in
+`Fixtures/session-stop.json` and `session-delete.json`. There is **no "detach"**
+for a headless session: detaching is what a TUI client does, and nothing is
+attached. Stop and delete are the two verbs herdr has.
+
+**Stopping ends every process in the session.** Measured: a session with one
+pane was stopped and its shell was gone a second later, pid and all. On a
+session holding agents that is their work ending, with no undo and nothing at
+the Mac to say who did it. This is the most destructive thing Bleat does —
+unpairing only takes away the phone's own access.
+
+So it is guarded three ways, and all three are needed:
+
+- **Only sessions this phone started.** `PairedPeer.createdSessions` is written
+  after a launch the host has confirmed running, and
+  `SessionControlModel.actions(for:on:)` returns nothing for a session that is
+  not on it — so the `work` session someone is sitting in front of has no swipe
+  at all. It is a name, not an identity: herdr has no notion of who created a
+  session, so this is only ever what this install remembers doing. **A reinstall
+  forgets and then offers nothing**, which is the safe direction — the record
+  lives under Application Support, which is excluded from backup and does not
+  restore to a new phone.
+  - **The claim is dropped on delete**, and that is not tidiness. The name is
+    all that ties a session to this install, so one left behind would be
+    inherited by the next session of that name — made by whoever is at the Mac
+    — handing the phone a Stop action over their work.
+  - **`merging` unions it.** A re-pair builds the incoming record from a
+    scanned QR, which carries no sessions, so taking the newer value would
+    withdraw the actions from every session this phone had started.
+  - Stored as an **optional array**, not a defaulted one: the synthesized
+    decoder does not apply default values for a missing key, and
+    `PeerRegistry.all()` treats an undecodable file as a hard failure — a
+    defaulted `Set` would have stranded every already-paired host on the first
+    launch after this shipped.
+- **A swipe asks; it does not act.** The peer row's rule. The dialog names the
+  session and says what goes with it rather than asking "are you sure?".
+- **The result is checked, not assumed** — and this one is not paranoia.
+  `herdr session delete nosuchsession --json` answers **`{"deleted":true}` and
+  exits 0**, having deleted nothing. So `deleted` is not evidence; the list is
+  read back and the answer is whether the name is really gone. The same class
+  of lie as a `authorized_keys` removal exiting 0 when it matched nothing.
+
+Two more shapes worth knowing:
+
+- **Delete is refused while the session runs** — `session_delete_failed`,
+  "stop it before deleting" — so the row offers Stop *or* Delete, never both.
+- **Stop is refused when it is not running** (`session_stop_failed`), for the
+  same reason the row does not offer it.
+
+Errors arrive as the unenveloped client-side shape, `{"error":{…}}` on stderr
+with exit 1, which `HerdrError.fromStderr` already parses.
+
 **The gap that remains: the phone cannot create a pane, workspace or tab from
 cold.** Those commands go over the socket API, and a client command will not
 autostart a server — it returns `server_not_running`. Starting the session is

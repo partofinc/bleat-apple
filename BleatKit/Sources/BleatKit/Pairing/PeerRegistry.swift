@@ -171,6 +171,41 @@ public struct PeerRegistry: Sendable {
         return peers[index]
     }
 
+    /// Remembers that this phone started `session` on the host.
+    ///
+    /// A targeted mutation for the reason `recordHerdrPath` is one: `save`
+    /// merges, and a merge takes the newer record's `lastGoodEndpoint` — this
+    /// runs moments after `recordSuccess`, so writing back an edited copy
+    /// loaded a moment earlier would undo the endpoint that had just won.
+    @discardableResult
+    public func recordCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard !peers[index].createdHere(session) else { return peers[index] }
+        peers[index].createdSessions = (peers[index].createdSessions ?? []) + [session]
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Forgets a session this phone started, once it is gone from the host.
+    ///
+    /// **Called on delete, and that is not bookkeeping.** The name is the only
+    /// thing tying a session to this install, so a name left in the list
+    /// outlives the session it referred to — and the next session of that name,
+    /// made by whoever is at the Mac, would inherit the stop and delete actions
+    /// as if the phone had created it. Deleting is exactly when the claim stops
+    /// being true.
+    @discardableResult
+    public func forgetCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard peers[index].createdHere(session) else { return peers[index] }
+        let remaining = (peers[index].createdSessions ?? []).filter { $0 != session }
+        peers[index].createdSessions = remaining.isEmpty ? nil : remaining
+        try write(peers)
+        return peers[index]
+    }
+
     /// Removes an address the user no longer wants dialled.
     ///
     /// Mostly for what a refresh cannot prune: an endpoint that came from the

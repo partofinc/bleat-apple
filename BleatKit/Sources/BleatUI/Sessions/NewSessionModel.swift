@@ -32,15 +32,18 @@ final class NewSessionModel {
     private(set) var failure: String?
 
     private let connections: ConnectionStore?
+    private let peers: PeerStore?
 
-    init(connections: ConnectionStore) {
+    init(connections: ConnectionStore, peers: PeerStore) {
         self.connections = connections
+        self.peers = peers
     }
 
     #if DEBUG
     /// Parked, for `#Preview`: nothing dials and nothing is launched.
     init(previewing name: String, failure: String? = nil, isStarting: Bool = false) {
         self.connections = nil
+        self.peers = nil
         self.name = name
         self.failure = failure
         self.isStarting = isStarting
@@ -97,7 +100,15 @@ final class NewSessionModel {
                 name: name, herdrPath: peer.herdrPath ?? "herdr"
             ))
 
-            if try await isRunning(name, on: peer) { return true }
+            if try await isRunning(name, on: peer) {
+                // Recorded only now, and only on a session the host has
+                // confirmed running. This is what later permits stopping and
+                // deleting it — see `PairedPeer.createdSessions` — so claiming
+                // it before the host agreed would hand those actions to a
+                // session that may be somebody else's, or may not exist.
+                peers?.recordCreatedSession(name.text, for: peer)
+                return true
+            }
             failure = try await diagnosis(for: name, over: shell)
             return false
         } catch {

@@ -139,6 +139,20 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        // Session rows with the stop/delete swipe armed, on a peer that
+        // started two of them from this phone — and one, `phone`, that it did
+        // not, which is the row proving the guard.
+        render(context, NavigationStack {
+            List {
+                ForEach(SessionInfo.samples) { session in
+                    SessionLink(
+                        peer: .previewOwningSessions,
+                        session: session,
+                        control: SessionControlModel(previewing: .idle)
+                    )
+                }
+            }
+        })
         // Naming a new session, in the four states worth looking at: free,
         // taken by a running session, taken by a stopped one, and refused by
         // the host. Rendered bare rather than in its cover — a presentation
@@ -318,6 +332,12 @@ struct PreviewSmokeTests {
         let session = NewSessionModel(previewing: "scratch")
         #expect(await session.start(on: .preview) == false)
         #expect(session.failure == nil, "a parked launch reported a failure, so it tried")
+
+        // And the one that would *end* processes on the dev Mac rather than
+        // start them.
+        let control = SessionControlModel(previewing: .idle)
+        control.ask(.stop, about: SessionInfo(name: "work", running: true, isDefault: true))
+        #expect(await control.confirm(on: .preview) == false)
     }
 }
 #endif

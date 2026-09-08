@@ -64,6 +64,19 @@ extension PairedPeer {
         )
     }
 
+    /// The everyday peer, but with two of its sessions started from this
+    /// phone — so the session rows can show what a swipe offers and, more to
+    /// the point, what it does *not*.
+    ///
+    /// `work` runs and so offers Stop; `bleat-test` is stopped and so offers
+    /// Delete; `phone` was started at the Mac and has no swipe at all. That
+    /// last row is the one worth looking at: it is the guard.
+    static var previewOwningSessions: PairedPeer {
+        var peer = preview
+        peer.createdSessions = ["work", "bleat-test"]
+        return peer
+    }
+
     /// What the peer list is drawn from.
     static var samples: [PairedPeer] { [preview, previewOverlayOnly, previewSparse] }
 }

@@ -62,7 +62,42 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// between a stopped Tailscale and a peer that can never be reached again.
     public var hostReport: EndpointDiscovery.Report?
 
+    /// Sessions this phone started on this host, by name.
+    ///
+    /// **What makes stopping and deleting a session safe to offer at all.**
+    /// Either one exits every process in the session — measured: stopping a
+    /// session killed its pane's shell outright — so on a host where somebody
+    /// is working, an accidental swipe is not an inconvenience, it is their
+    /// agents gone. The phone therefore only offers those actions for sessions
+    /// it created itself, which are the ones it knows are empty of anyone
+    /// else's work at the moment they were made.
+    ///
+    /// **Losing this list is the safe direction, and it is expected.** It lives
+    /// in the peer record under Application Support, which is excluded from
+    /// backup and does not restore to a new phone — so a reinstall sees every
+    /// session as somebody else's and offers nothing. That is a feature: the
+    /// list is a record of what this install did, not a claim of ownership the
+    /// host would recognise.
+    ///
+    /// Stored as an optional array rather than a `Set` with a default, purely
+    /// so old records still decode: the synthesized decoder does not apply
+    /// default values for a missing key, and `PeerRegistry.all()` treats an
+    /// undecodable file as a hard failure — which would strand every already
+    /// paired host. Read it through `createdHere(_:)`.
+    public var createdSessions: [String]?
+
     public var id: String { hostKey }
+
+    /// Whether this phone is the thing that started `session`.
+    ///
+    /// A name, not an identity: herdr has no notion of who created a session,
+    /// so this can only ever be what this install remembers doing. If a session
+    /// is deleted here and someone at the Mac later makes another of the same
+    /// name, the record is dropped on delete precisely so the new one is not
+    /// mistaken for ours.
+    public func createdHere(_ session: String) -> Bool {
+        createdSessions?.contains(session) ?? false
+    }
 
     /// `SHA256:…` for showing the user. Never used for comparison.
     public var hostKeyFingerprint: String? { SSHPublicKeyLine(line: hostKey)?.fingerprint }
@@ -76,7 +111,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         lastGoodEndpoint: Endpoint? = nil,
         deviceMarker: String? = nil,
         session: String? = nil,
-        hostReport: EndpointDiscovery.Report? = nil
+        hostReport: EndpointDiscovery.Report? = nil,
+        createdSessions: [String]? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -87,6 +123,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.deviceMarker = deviceMarker
         self.session = session
         self.hostReport = hostReport
+        self.createdSessions = createdSessions
     }
 
     public init(payload: PairingPayload) {
@@ -138,6 +175,14 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         }
         if let session = other.session { merged.session = session }
         merged.hostReport = other.hostReport ?? hostReport
+        // Unioned, never replaced. A re-pair builds `other` straight from a
+        // scanned QR, which carries no sessions at all — taking the newer value
+        // would make every session this phone started on that host look like
+        // somebody else's, and quietly withdraw the stop and delete actions
+        // from all of them.
+        let mine = createdSessions ?? []
+        let theirs = (other.createdSessions ?? []).filter { !mine.contains($0) }
+        merged.createdSessions = mine.isEmpty && theirs.isEmpty ? nil : mine + theirs
         return merged
     }
 

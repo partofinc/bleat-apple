@@ -1906,6 +1906,18 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   ever scrolls off into `TerminalView`'s buffer. A pane's history is reachable
   only through `pane read` — which nothing in the app calls now; see **The
   reader mode is gone** below.
+- **The screen is dark in terminal mode and the phone's own scheme in chat**,
+  via `preferredColorScheme` on `PaneView`. The terminal draws its own black
+  and its chrome has to sit on it; the chat is prose and belongs in whatever
+  the user has set.
+  - **The "hand it back" branch passes `nil`, not `\.colorScheme`.**
+    `preferredColorScheme` is a preference that travels *up* to the
+    presentation, so what it sets comes straight back down as the ambient
+    value — read it and pass it on, and the terminal's `.dark` is re-asserted
+    on every evaluation from then on. Opening the terminal once left the chat
+    dark for the life of the screen, and popping it was the only way out.
+    Measured both ways in `ColorSchemeTests`, which keeps the broken shape
+    beside the fixed one as the reason the line is written the way it is.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

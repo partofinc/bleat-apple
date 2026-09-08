@@ -131,6 +131,20 @@ struct PaneView: View {
             transcript.stop()
             Task { await model.close() }
         }
+        // The terminal draws its own black and its chrome has to sit on it, so
+        // the screen goes dark for that mode and hands the choice back for the
+        // chat, which is ordinary prose and belongs in whatever the phone is
+        // set to.
+        //
+        // **`nil`, not the current scheme.** `preferredColorScheme` is a
+        // preference that travels *up* to the presentation, so what it sets
+        // comes back down as `\.colorScheme` — reading that here and passing it
+        // on for the chat means the terminal's `.dark` is read back as the
+        // ambient value and re-asserted, and the screen never returns to light
+        // once the terminal has been opened. `nil` is the way to say "no
+        // preference"; nothing else on the stack sets one, so the phone's own
+        // setting wins.
+        .preferredColorScheme(mode == .terminal ? .dark : nil)
     }
 }
 

@@ -20,6 +20,11 @@ struct PeerDetailView: View {
     /// rather than needing a fallback here.
     let peer: PairedPeer
     @State private var sessions: RemoteList<SessionInfo>
+    /// Owned here rather than by the overlay, so a launch survives the cover
+    /// being dismissed on top of it — the reply is what says whether a session
+    /// is now running on someone's Mac.
+    @State private var newSession: NewSessionModel
+    @State private var isNaming = false
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
@@ -30,6 +35,7 @@ struct PeerDetailView: View {
         _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
             try await $0.sessions()
         })
+        _newSession = State(wrappedValue: NewSessionModel(connections: connections))
     }
 
     #if DEBUG
@@ -37,6 +43,7 @@ struct PeerDetailView: View {
     init(peer: PairedPeer, previewing state: Loadable<[SessionInfo]>) {
         self.peer = peer
         _sessions = State(wrappedValue: RemoteList(previewing: state))
+        _newSession = State(wrappedValue: NewSessionModel(previewing: ""))
     }
     #endif
 
@@ -50,7 +57,7 @@ struct PeerDetailView: View {
         // failure with a way back, and rows that survive a failed refresh.
         RemoteListView(
             state: sessions.state,
-            empty: "No sessions. Start one on the host with `herdr session attach <name>`.",
+            empty: "No sessions yet. Start one with the button below.",
             retry: { await sessions.load(for: peer) }
         ) { list in
             ForEach(list) { session in
@@ -63,6 +70,17 @@ struct PeerDetailView: View {
         // macOS build has a peer screen with no way into the peer.
         #if os(iOS)
         .toolbar { bottomBar }
+        // A cover rather than an `.overlay`: the bottom bar floats above the
+        // screen's content on iOS 26, so an overlay would leave the plus button
+        // that opened this undimmed and still tappable. See `NewSessionField`.
+        .fullScreenCover(isPresented: $isNaming) {
+            NewSessionField(
+                model: newSession,
+                peer: peer,
+                known: sessions.state.value ?? [],
+                onStarted: { Task { await sessions.load(for: peer) } }
+            )
+        }
         #else
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -80,7 +98,9 @@ struct PeerDetailView: View {
     private var bottomBar: some ToolbarContent {
         ToolbarItem(placement: .bottomBar) {
             Button("Add Session", systemImage: "plus") {
-
+                // Whatever the last attempt said is not about this one.
+                newSession.clearFailure()
+                isNaming = true
             }
             .buttonStyle(.glassProminent)
         }

@@ -139,6 +139,23 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        // Naming a new session, in the four states worth looking at: free,
+        // taken by a running session, taken by a stopped one, and refused by
+        // the host. Rendered bare rather than in its cover — a presentation
+        // does not complete inside `layoutIfNeeded`, so covering it would test
+        // the cover rather than the field.
+        for model in [
+            NewSessionModel(previewing: "scratch"),
+            NewSessionModel(previewing: "work"),
+            NewSessionModel(previewing: "bleat-test"),
+            NewSessionModel(previewing: "my session"),
+            NewSessionModel(previewing: "work", failure: "herdr server is already running"),
+            NewSessionModel(previewing: "scratch", isStarting: true),
+        ] {
+            render(context, NewSessionField(
+                model: model, peer: .preview, known: SessionInfo.samples, onStarted: {}
+            ))
+        }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
         // The host unpaired from underneath the sheet, which the root-level
@@ -294,6 +311,13 @@ struct PreviewSmokeTests {
         await transcript.load(for: .preview)
         await transcript.follow(for: .preview)
         #expect(transcript.entries.count == TranscriptEntry.samples.count)
+
+        // The newest one that reaches out, and the only one that *writes*: a
+        // parked `NewSessionModel` must not launch anything, or opening this
+        // preview would start a session on the dev Mac.
+        let session = NewSessionModel(previewing: "scratch")
+        #expect(await session.start(on: .preview) == false)
+        #expect(session.failure == nil, "a parked launch reported a failure, so it tried")
     }
 }
 #endif

@@ -1995,6 +1995,21 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     program from rows 1–29 to 30–58. A `control` attach that is not a takeover
     is silently inert, so any design that hoped to send a key without seizing
     the pane is not available.
+  - **Settled inside SwiftTerm, 8 Sept 2026, because "surely there is a
+    setting" is the question that keeps coming back.** There is one, it is on,
+    and it works. The same `TerminalView` the app mounts, in one test:
+
+    | fed | newlines | `canScroll` | top visible row |
+    |---|---|---|---|
+    | 200 ordinary lines | 200 | **true** | 168 |
+    | a real pane's stream | **0** | **false** | 0 |
+
+    The second row is `Fixtures/terminal-observe-scrolled.ndjson`, captured
+    from a pane that had *genuinely scrolled 200 lines* with 172 rows of
+    scrollback on the host. `isCurrentBufferAlternate` is false for it too — so
+    it is not even the alternate screen at this end. The emulator is on its
+    normal buffer with exactly one screen in it, because one screen is all it
+    was sent. `ScrollbackTests` pins both rows.
   - **The alternate screen is pty state, not per-client.** One buffer, rendered
     by herdr, identical for every viewer — so there is no per-client scrollback
     to enable and no SwiftTerm option that could differ between the Mac and the

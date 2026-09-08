@@ -4,11 +4,11 @@ import SwiftUI
 
 /// Pages a pane's program up and down.
 ///
-/// **Buttons rather than a swipe, for now.** `TerminalView` is a
-/// `UIScrollView` and already claims vertical drags for a buffer that is
-/// always empty; a gesture fighting it for the same drag is a worse first
-/// version than two controls that plainly work. The swipe can come once these
-/// have proved the keys are right for the program in the pane.
+/// **Buttons as well as the drag, not instead of it.** `PaneScrollGesture`
+/// handles the swipe now that `TerminalView`'s own scrolling is off — it was
+/// consuming every vertical drag for a buffer that can never fill. These stay
+/// because a drag is not reachable by VoiceOver or Switch Control, and because
+/// a discoverable control beats a gesture nothing advertises.
 ///
 /// **These are the program's keys, not a scrollbar.** There is no host
 /// scrollback behind an agent's pane to move through — herdr reports

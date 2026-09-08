@@ -70,7 +70,13 @@ final class PaneTerminalController: UIViewController {
         // there: its TUI is on the alternate screen, whose rows never enter
         // herdr's scrollback. What holds an agent's history is its transcript,
         // which is what chat mode reads.
-        terminalView.isScrollEnabled = true
+        //
+        // **So this is off**, and that is what frees the drag. It was left on
+        // for a while on the theory that a program which did scroll would then
+        // work — but nothing can, so all it did was consume every vertical
+        // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
+        // gets the drag and can turn it into the program's own page keys.
+        terminalView.isScrollEnabled = false
 //        terminalView.getTerminal().changeHistorySize(1500)
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's

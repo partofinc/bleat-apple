@@ -19,6 +19,9 @@ struct PaneSurface: View {
         // most; there is nothing to gain by hiding it.
         TerminalHost(model: model, isActive: isActive)
             .background(.black)
+            // Installed on the terminal itself rather than the whole surface,
+            // so the buttons and the overlays keep their own taps.
+            .paneScrollGesture(model)
             .overlay(alignment: .trailing) {
                 // Only while this screen owns input, because these are the
                 // only circumstances in which they can do anything: the keys

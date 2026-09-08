@@ -2033,10 +2033,19 @@ The first thing Bleat sends to a host, and it is deliberately two keys.
   that launched it in a scratch pane stalled on a workspace-trust prompt before
   it could be asked. If it wants something else, `TerminalKey` is where that
   goes and it is a one-line change.
-- **Buttons, not a swipe, for now.** `TerminalView` is a `UIScrollView` and
-  already claims vertical drags for a buffer that is permanently empty; a
-  gesture fighting it is a worse first version than two controls that plainly
-  work.
+- **A drag pages it, and `TerminalView.isScrollEnabled` is off to allow that.**
+  It was on for a while on the theory that a program which did scroll would
+  then work; nothing can, so all it did was consume every vertical swipe on
+  behalf of a buffer that never fills. `PaneScrollGesture` gets the drag
+  instead and quantises it into page keys — half a terminal of travel per page,
+  pulling **down** for earlier output, the direction a scroll view moves
+  content with the finger.
+  - **It will always feel like paging, not scrolling, and that is structural.**
+    There is no buffer under the finger to move: the earlier output is inside
+    the program, which redraws a whole screen per key. A drag can only decide
+    *when* to ask for the next one.
+  - The two buttons stay. A drag is not reachable by VoiceOver or Switch
+    Control, and a gesture nothing advertises is not an affordance.
 - `PaneControlTests` guards every path into `.controlling`, including the one
   that matters most: a pane with no viewport cannot be seized, because nothing
   is on screen yet to release it.

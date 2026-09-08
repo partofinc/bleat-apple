@@ -22,8 +22,29 @@ public struct PeersView: View {
                     PeerRow(peer: peer)
                 }
                 .buttonStyle(.plain)
+                .swipeActions {
+                    // **Swiping asks; it does not unpair.** Unpairing is not
+                    // list management — it decides what a machine will let in
+                    // — and the record is the only thing that knows how to
+                    // reach the host and which key line is this phone's.
+                    // Dropping it on a swipe threw both away and left a
+                    // working key behind. Declared first, so it is the one a
+                    // full swipe reaches, which is what `onDelete` did here
+                    // before: opening a confirmation is safe to trigger by
+                    // accident in a way that unpairing would not be.
+                    Button("Unpair", systemImage: "trash", role: .destructive) {
+                        context.unpair.ask(about: peer)
+                    }
+                    // The same sheet the gear on the host's own screen opens,
+                    // through the same router — the two screens are in the
+                    // stack at once, and a `.sheet` on each would be two
+                    // presentations of one intent.
+                    Button("Settings", systemImage: "gearshape") {
+                        context.peerSettings.show(peer)
+                    }
+                    .tint(.gray)
+                }
             }
-            .onDelete(perform: unpair)
         }
         .overlay {
             if context.peers.peers.isEmpty, context.peers.failure == nil {
@@ -78,20 +99,6 @@ public struct PeersView: View {
         }
     }
     #endif
-
-    /// Swiping to delete **asks**; it does not unpair.
-    ///
-    /// Unpairing is not list management — it decides what a machine will let
-    /// in — and the record is the only thing that knows how to reach the host
-    /// and which key line is this phone's. Dropping it on a swipe threw both
-    /// away and left a working key behind.
-    ///
-    /// One at a time, because the flow is one modal conversation: a multi-row
-    /// delete offers the first and the rest stay.
-    private func unpair(_ offsets: IndexSet) {
-        guard let first = offsets.first, context.peers.peers.indices.contains(first) else { return }
-        context.unpair.ask(about: context.peers.peers[first])
-    }
 }
 
 #if DEBUG

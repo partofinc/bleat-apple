@@ -28,6 +28,9 @@ public struct RootView: View {
         // while the user is inside a host, where that screen is not being
         // evaluated and its `onOpenURL` would never fire.
         .pairingFlow()
+        // And here, for the third time and the same reason: a swipe on the
+        // peer list and the gear on a peer's own screen open one sheet.
+        .peerSettingsSheet()
     }
 }
 

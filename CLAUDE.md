@@ -962,7 +962,7 @@ zero-trust overlay's private DNS name, held entirely on the client's side. It
 equally covers a port forward or a jump address, which have no discovery story
 at all.
 
-`PeerDetailView`'s "Reachable at" section adds and swipes-to-remove;
+`PeerSettingsView`'s "Reachable at" section adds and swipes-to-remove;
 `PeerRegistry.addEndpoint` / `removeEndpoint` are targeted mutations like the
 rest.
 
@@ -1013,10 +1013,14 @@ rest.
   so deleting it is permanent and undone only by retyping it; and a failed write
   would otherwise leave the row where it was with the message a screen back on
   the peer list, so the swipe would look like it had simply done nothing.
-- `PeerDetailView` takes the peer as a plain value: `RouteView` looks it up by
-  host key on every body evaluation and swaps the whole screen for an
-  unpaired-message when the record goes, so tracking the store here would be
-  redundant.
+- **`PeerSettingsView` takes a host key, not a peer.** `PeerDetailView` can
+  take the record as a plain value because `RouteView` looks it up on every
+  body evaluation and swaps the whole screen out when it goes — but a sheet is
+  presented once, from a router, and a captured `PairedPeer` would be stale the
+  moment the user added or removed an address: the list they were looking at
+  would not change. It looks the peer up itself and shows the same
+  unpaired-message when the record is gone, which the root-level unpair flow
+  can do while the sheet is still on screen.
 
 ### Connecting to a paired peer (Phase 2)
 
@@ -1136,6 +1140,46 @@ failure needs a way back, and neither should look like the other.
   starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
   part that distinguishes one checkout from another.
 
+### A host's screen is its sessions; everything else is a sheet (Phase 2)
+
+`PeerDetailView` used to be a `Form` with the sessions on top and four sections
+of pairing detail under them — user, `herdr` path, host key fingerprint,
+addresses, device marker, unpair. It is the sessions and a bottom bar now, and
+the rest is `PeerSettingsView` behind the gear.
+
+- **It is a `RemoteListView` like the workspaces and agents screens.** The
+  section it used to be drew its spinner *in a row* on purpose, so the details
+  below stayed readable while the host was being reached. With nothing below,
+  that reasoning is spent and the four states belong in the shared list view —
+  which is also where "an empty answer is not a failure" and "a failed refresh
+  keeps its rows" are written once rather than twice. `SessionsSection` was
+  deleted with it; `SessionLink` and `SessionRow` are unchanged.
+- **`PeerSettingsRouter` is the third root-level router, for the third time for
+  the same reason.** The sheet is opened from a swipe on the peer list *and*
+  from the gear on a peer's own screen, and those two are in the navigation
+  stack at the same time — a `.sheet` on each would be two presentations of one
+  intent, of which SwiftUI raises whichever it reaches first and silently drops
+  the other. `PeerSettingsFlow` presents it at the root beside `.unpairFlow()`
+  and `.pairingFlow()`.
+- **Unpairing from inside the sheet closes it first, and that ordering is
+  load-bearing.** The confirmation dialog is presented at the root, *underneath*
+  this sheet, so one raised while it is still up is covered by it and never
+  seen — the Unpair button would appear to do nothing. The router holds the
+  request instead and `PeerSettingsFlow` starts it from the sheet's
+  `onDismiss`, which fires only once the dismissal has finished. A plain close
+  clears it, or a later dismissal would unpair a host nobody asked about.
+  `PreviewSmokeTests.unpairFromSettingsClosesTheSheet` pins both halves.
+- **The sheet yields to a `bleat://` link**, exactly as the device-key sheet
+  does: SwiftUI will not raise a second sheet over one already presented, so a
+  pairing request arriving while settings is up would be lost *and* leave
+  `PairingRouter.isPresented` true with nothing on screen — which makes the
+  Pair button a no-op until the app is relaunched.
+- **The swipe on a peer row still only asks.** It has two actions now, Unpair
+  and Settings, and Unpair is declared first so it stays what a full swipe
+  reaches — which is what `onDelete` did before. That is safe to trigger by
+  accident precisely because it opens a confirmation rather than acting; see
+  the unpair section for why a swipe must never revoke a key on its own.
+
 ### Previews (Phase 2)
 
 Every view has a `#Preview`, and they all take `traits: .sampleData`. The trait
@@ -1180,10 +1224,10 @@ the first screen on a fresh install.
   ids of both lengths, and all five agent states, since a sample list that was
   all `idle` would leave the screen this app is organised around with nothing to
   show.
-- Four files have no preview and say why in place: `QRScannerView` and
+- Five files have no preview and say why in place: `QRScannerView` and
   `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
-  `PairingFlow`/`UnpairFlow` present rather than draw — `RootView` exercises
-  them.
+  `PairingFlow`/`UnpairFlow`/`PeerSettingsFlow` present rather than draw —
+  `RootView` exercises them, and each previews what it presents.
 
 ### The pairing UI (Phase 2)
 

@@ -139,6 +139,11 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
+        render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
+        // The host unpaired from underneath the sheet, which the root-level
+        // unpair flow can do while it is on screen.
+        render(context, PeerSettingsView(hostKey: "ssh-ed25519 not-a-paired-host"))
         await settle(context)
         // Weak on its own — a dial that failed would also leave this nil — but
         // it is free, and `previewingListIsInert` covers the seam properly.
@@ -221,6 +226,33 @@ struct PreviewSmokeTests {
             advice: .check(deviceMarker: nil, deviceFingerprint: "SHA256:abc")
         ))))
         #expect(context.connections.endpoint == nil)
+    }
+
+    /// **The settings sheet must be gone before the unpair starts.**
+    ///
+    /// `UnpairFlow`'s confirmation dialog is presented at the root, underneath
+    /// the sheet, so one raised while the sheet is still up is covered by it
+    /// and never seen — the Unpair button would look like it did nothing.
+    /// `PeerSettingsFlow` runs the handover from `onDismiss`, which is only
+    /// correct if asking for it closes the sheet first.
+    @Test("asking to unpair from the settings sheet closes it first")
+    func unpairFromSettingsClosesTheSheet() {
+        let router = PeerSettingsRouter()
+        router.show(.preview)
+        #expect(router.peer?.id == PairedPeer.preview.hostKey)
+
+        router.requestUnpair(.preview)
+        #expect(router.peer == nil, "the sheet was still up when the unpair was handed over")
+        #expect(router.takePendingUnpair()?.hostKey == PairedPeer.preview.hostKey)
+        // Consumed: a dismissal is the one moment it applies, and leaving it
+        // set would unpair on the next one.
+        #expect(router.takePendingUnpair() == nil)
+
+        // An ordinary close must not leave one armed either.
+        router.show(.preview)
+        router.requestUnpair(.preview)
+        router.close()
+        #expect(router.takePendingUnpair() == nil, "a close left an unpair armed")
     }
 
     /// A parked model must stay parked: `PaneModel.start()` and

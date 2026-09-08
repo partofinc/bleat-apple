@@ -71,7 +71,7 @@ final class PaneTerminalController: UIViewController {
         // herdr's scrollback. What holds an agent's history is its transcript,
         // which is what chat mode reads.
         terminalView.isScrollEnabled = true
-        terminalView.getTerminal().changeHistorySize(1500)
+//        terminalView.getTerminal().changeHistorySize(1500)
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and

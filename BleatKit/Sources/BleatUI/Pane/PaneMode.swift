@@ -25,14 +25,12 @@ enum PaneMode: CaseIterable, Identifiable {
     /// of every line. The chat was never wrapped to anything and reflows.
     case chat
     case terminal
-    case reader
 
     var id: Self { self }
 
     var label: String {
         switch self {
         case .terminal: "Terminal"
-        case .reader: "Reader"
         case .chat: "Chat"
         }
     }
@@ -40,7 +38,6 @@ enum PaneMode: CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .terminal: "apple.terminal"
-        case .reader: "text.alignleft"
         case .chat: "bubble.left.and.bubble.right"
         }
     }

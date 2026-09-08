@@ -107,11 +107,6 @@ struct PaneView: View {
                     .allowsHitTesting(mode == .terminal)
                     .accessibilityHidden(mode != .terminal)
             }
-
-            if mode == .reader {
-                PaneReaderView(lines: text.state, capturedAt: capturedAt, reload: load)
-            }
-
             if mode == .chat {
                 PaneChatView(
                     phase: transcript.phase,
@@ -126,6 +121,7 @@ struct PaneView: View {
         .navigationTitle(title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.clear, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -139,17 +135,8 @@ struct PaneView: View {
                             .accessibilityLabel(mode.label)
                     }
                 }
-                .pickerStyle(.segmented)
+//                .pickerStyle(.segmented)
                 .labelsHidden()
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Says what the screen is, not just what it shows. Herdr allows
-                // one input owner per pane, and a user looking at live output
-                // deserves to know they are not it. True of both modes.
-                Image(systemName: "eye")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Read-only")
             }
         }
         // Loaded when the reader is first shown and not before: it is a whole
@@ -160,8 +147,6 @@ struct PaneView: View {
             switch mode {
             case .terminal:
                 terminalWasAskedFor = true
-            case .reader:
-                if capturedAt == nil { await load() }
             case .chat:
                 if transcript.capturedAt == nil { await transcript.load(for: peer) }
                 // Then keep following. `follow` returns immediately unless the
@@ -193,14 +178,6 @@ struct PaneView: View {
 #Preview("Chat", traits: .sampleData) {
     NavigationStack {
         PaneView(peer: .preview, title: "Auditing the migration", mode: .chat)
-    }
-}
-
-/// The reader: the pane's own output, wrapped to the device. Monospaced on
-/// purpose — an agent's indentation is structural.
-#Preview("Reader", traits: .sampleData) {
-    NavigationStack {
-        PaneView(peer: .preview, title: "swift test", mode: .reader)
     }
 }
 

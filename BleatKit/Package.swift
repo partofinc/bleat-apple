@@ -23,7 +23,7 @@ let sharedSwiftSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "BleatKit",
-    platforms: [.macOS(.v15), .iOS(.v18)],
+    platforms: [.macOS(.v26), .iOS(.v26)],
     // Language mode is explicit rather than inherited from the tools version:
     // that setting is the one that silently lags (see sharedSwiftSettings).
     products: [

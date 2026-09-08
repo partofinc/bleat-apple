@@ -117,9 +117,37 @@ struct PeerDetailView: View {
             }
         }
         .navigationTitle(peer.name)
+        // `.bottomBar` is unavailable on macOS, and `BleatUI` builds for both.
+        #if os(iOS)
+        .toolbar { bottomBar }
+        #endif
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
         .sheet(isPresented: $addingEndpoint) { AddEndpointView(peer: peer) }
+    }
+
+    #if os(iOS)
+    @ToolbarContentBuilder
+    private var bottomBar: some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
+            Button("Add Session", systemImage: "plus") {
+                
+            }
+            .buttonStyle(.glassProminent)
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            Button("Add Session", systemImage: "gearshape") {
+                
+            }
+        }
+    }
+    #endif
+}
+
+struct PeerInfoView: View {
+    var body: some View {
+        
     }
 }
 

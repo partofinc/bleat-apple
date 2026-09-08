@@ -189,7 +189,7 @@ struct PreviewSmokeTests {
             PaneView(peer: .preview, title: "w2:p1", mode: .chat)
         })
         render(context, NavigationStack {
-            PaneView(peer: .preview, title: "w2:p1", mode: .reader)
+            PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
         })
         await settle(context)
     }

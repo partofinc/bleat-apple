@@ -9,16 +9,14 @@ struct AgentLink: View {
     let agent: Agent
 
     var body: some View {
-        Button {
-            context.navigation.push(
-                .pane(
-                    peer: peer.hostKey,
-                    session: session,
-                    target: agent.target,
-                    title: agent.displayTitle
-                )
+        NavigationLink(
+            value: NavigationRouter.Route.pane(
+                peer: peer.hostKey,
+                session: session,
+                target: agent.target,
+                title: agent.displayTitle
             )
-        } label: {
+        ) {
             AgentRow(agent: agent)
         }
         .buttonStyle(.plain)

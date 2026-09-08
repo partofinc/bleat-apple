@@ -18,9 +18,7 @@ public struct PeersView: View {
             }
 
             ForEach(context.peers.peers) { peer in
-                Button {
-                    context.navigation.push(.peer(peer: peer.hostKey))
-                } label: {
+                NavigationLink(value: NavigationRouter.Route.peer(peer: peer.hostKey)) {
                     PeerRow(peer: peer)
                 }
                 .buttonStyle(.plain)
@@ -39,14 +37,15 @@ public struct PeersView: View {
             }
         }
         .navigationTitle("Bleat")
+        // `.bottomBar` is unavailable on macOS, and `BleatUI` builds for both —
+        // `swift build` compiles it for the Mac. Platform branches are allowed
+        // here where they are not in `BleatKit`; `AddEndpointView` and
+        // `PairingView` carry the same one.
+        #if os(iOS)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
-            }
-            ToolbarItem(placement: .secondaryAction) {
-                Button("This device's key", systemImage: "key") { isShowingKey = true }
-            }
+            bottomBar
         }
+        #endif
         .sheet(isPresented: $isShowingKey) { DeviceKeyView() }
         // A `bleat://` link can arrive while this sheet is open — the user goes
         // to the system camera and comes back — and SwiftUI will not raise the
@@ -65,6 +64,20 @@ public struct PeersView: View {
             await context.connections.release()
         }
     }
+
+    #if os(iOS)
+    @ToolbarContentBuilder
+    private var bottomBar: some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
+            Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
+                .buttonStyle(.glassProminent)
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            Button("This device's key", systemImage: "key") { isShowingKey = true }
+        }
+    }
+    #endif
 
     /// Swiping to delete **asks**; it does not unpair.
     ///

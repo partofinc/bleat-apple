@@ -18,6 +18,7 @@ struct PaneSurface: View {
         // sits on top of it. A terminal's bottom row is the one that matters
         // most; there is nothing to gain by hiding it.
         TerminalHost(model: model, isActive: isActive)
+            .background(.black)
             .overlay(alignment: .bottomTrailing) {
                 if case .live = model.phase, let grid = model.grid {
                     GridBadge(grid: grid, isCropped: model.isCropped)

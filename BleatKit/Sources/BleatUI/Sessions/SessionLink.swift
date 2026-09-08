@@ -8,9 +8,7 @@ struct SessionLink: View {
     let session: SessionInfo
 
     var body: some View {
-        Button {
-            context.navigation.push(.workspaces(peer: peer.hostKey, session: session.name))
-        } label: {
+        NavigationLink(value: NavigationRouter.Route.workspaces(peer: peer.hostKey, session: session.name)) {
             SessionRow(session: session)
         }
         .buttonStyle(.plain)

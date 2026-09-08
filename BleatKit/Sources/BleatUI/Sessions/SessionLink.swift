@@ -26,7 +26,16 @@ struct SessionLink: View {
         .swipeActions {
             if let control {
                 ForEach(SessionControlModel.actions(for: session, on: peer), id: \.self) { action in
-                    Button(role: .destructive) {
+                    // **Tinted red rather than given the destructive role**,
+                    // which in a swipe action is not just a colour: SwiftUI
+                    // takes it as "this row is going away" and animates it out
+                    // of the list the moment the button is tapped. These
+                    // buttons only open a confirmation, so the row went missing
+                    // before the user had answered — and stayed missing when
+                    // they cancelled, and after a Stop, which leaves the
+                    // session listed and merely not running. The row must
+                    // change only when the host's answer changes it.
+                    Button {
                         control.ask(action, about: session)
                     } label: {
                         switch action {
@@ -34,6 +43,7 @@ struct SessionLink: View {
                         case .delete: Label("Delete", systemImage: "trash")
                         }
                     }
+                    .tint(.red)
                 }
             }
         }

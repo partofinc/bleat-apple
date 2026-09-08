@@ -25,19 +25,29 @@ struct SessionControlFlow: ViewModifier {
             .confirmationDialog(
                 title, isPresented: $control.isConfirming, titleVisibility: .visible
             ) {
+                // **Captured here, not read back when the task runs.**
+                // SwiftUI clears `isPresented` before running this action, and
+                // that write resets the model's phase — so reading the pending
+                // action inside the closure finds nothing armed and the tap
+                // does nothing, silently. `UnpairFlow` captures its peer for
+                // the same reason.
                 if let pending = control.pending {
                     Button(pending.action == .stop ? "Stop" : "Delete", role: .destructive) {
-                        Task { if await control.confirm(on: peer) { await reload() } }
+                        Task {
+                            if await control.confirm(pending.action, about: pending.session, on: peer) {
+                                await reload()
+                            }
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(message)
             }
-            // An alert rather than a line under the list: the swipe row is gone
-            // by now, so a message anywhere else would be about a session the
-            // user can no longer see, and the commonest cause — the session
-            // being in a state herdr will not do this from — needs reading.
+            // An alert rather than a line under the list: the row is still
+            // there but says nothing about a refusal, and the commonest cause
+            // — the session being in a state herdr will not do this from —
+            // is a sentence worth reading rather than a badge.
             .alert(
                 "That did not happen",
                 isPresented: $control.isShowingFailure

@@ -336,8 +336,9 @@ struct PreviewSmokeTests {
         // And the one that would *end* processes on the dev Mac rather than
         // start them.
         let control = SessionControlModel(previewing: .idle)
-        control.ask(.stop, about: SessionInfo(name: "work", running: true, isDefault: true))
-        #expect(await control.confirm(on: .preview) == false)
+        let target = SessionInfo(name: "work", running: true, isDefault: true)
+        control.ask(.stop, about: target)
+        #expect(await control.confirm(.stop, about: target, on: .preview) == false)
     }
 }
 #endif

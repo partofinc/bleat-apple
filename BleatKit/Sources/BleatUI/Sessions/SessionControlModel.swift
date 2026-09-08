@@ -103,10 +103,21 @@ final class SessionControlModel {
         if case .failed(_, _, let message) = phase { message } else { nil }
     }
 
-    /// Carries out what was confirmed. Returns true if the host's list agrees
-    /// it happened, so the caller can refresh.
-    func confirm(on peer: PairedPeer) async -> Bool {
-        guard case .confirming(let action, let session) = phase else { return false }
+    /// Carries out `action`. Returns true if the host's list agrees it
+    /// happened, so the caller can refresh.
+    ///
+    /// **The action and session are parameters, not read back out of `phase`,
+    /// and that is the whole reason this signature looks redundant.** SwiftUI
+    /// sets a `confirmationDialog`'s binding to false *before* running the
+    /// tapped button's action, and this model's `isConfirming` setter resets
+    /// `phase` to `.idle` on that write — so a version that re-read `phase`
+    /// here found nothing armed and returned without doing anything at all.
+    /// No error, no alert; Stop simply did nothing and the session stayed up.
+    /// `UnpairFlow` carries a comment about this exact hazard, which this code
+    /// walked into anyway. The caller captures the values when it builds the
+    /// dialog; see `SessionControlFlow`.
+    @discardableResult
+    func confirm(_ action: Action, about session: SessionInfo, on peer: PairedPeer) async -> Bool {
         guard let connections, let name = SessionName(session.name) else {
             // Unreachable from a row this phone created — `SessionName` is what
             // minted it — but a name herdr accepted and this build will not is

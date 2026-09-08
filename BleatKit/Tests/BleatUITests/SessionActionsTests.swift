@@ -89,12 +89,44 @@ struct SessionActionsTests {
     @Test("a parked model does nothing when confirmed")
     func parkedActsOnNothing() async {
         let model = SessionControlModel(previewing: .idle)
-        model.ask(.stop, about: session("scratch", running: true))
-        #expect(await model.confirm(on: .preview) == false)
+        let target = session("scratch", running: true)
+        model.ask(.stop, about: target)
+        #expect(await model.confirm(.stop, about: target, on: .preview) == false)
     }
 
-    @Test("confirming with nothing armed does nothing")
-    func nothingArmed() async {
-        #expect(await SessionControlModel(previewing: .idle).confirm(on: .preview) == false)
+    /// **The regression that shipped.** `confirm` used to read the armed action
+    /// back out of `phase`, and SwiftUI clears a `confirmationDialog`'s binding
+    /// *before* running the tapped button — which this model's `isConfirming`
+    /// setter turns into `phase = .idle`. So by the time the action ran there
+    /// was nothing armed, and Stop did nothing at all: no error, no alert, the
+    /// session still running when the screen was reopened.
+    ///
+    /// Pinned by driving it exactly as SwiftUI does — arm, dismiss, then act —
+    /// against a peer with **no endpoints**, which `PeerConnection.connect`
+    /// refuses before it dials anything. So this reaches the transport layer
+    /// and touches no network, which is the only way to tell "it tried and
+    /// could not" apart from "it silently did nothing".
+    @Test("a dismissed dialog does not silently cancel the action it confirmed")
+    func actsAfterTheDialogHasGone() async {
+        let peers = PeerStore(registry: .sample())
+        let model = SessionControlModel(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            peers: peers
+        )
+        let target = session("scratch", running: true)
+        let unreachable = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+        )
+
+        model.ask(.stop, about: target)
+        // What SwiftUI does on the way into the button's action.
+        model.isConfirming = false
+        #expect(model.phase == .idle, "the dialog no longer resets the phase, so this test proves nothing")
+
+        #expect(await model.confirm(.stop, about: target, on: unreachable) == false)
+        #expect(
+            model.failureMessage != nil,
+            "the action returned without trying — the dismissal cancelled it, which is the bug"
+        )
     }
 }

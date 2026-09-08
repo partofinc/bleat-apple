@@ -31,12 +31,14 @@ final class PaneTerminalController: UIViewController {
     private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
     private var reported: TerminalGrid?
     private var announced = false
-    /// Whether this terminal is the one on screen.
+    /// Whether this terminal's geometry is real.
     ///
-    /// It stays mounted while the chat is showing, so that switching
-    /// back is instant — but a hidden view still lays out, and reporting a size
-    /// from one would reopen a stream and `stty` someone's Mac for a view
-    /// nobody is looking at.
+    /// Reporting a size reopens the stream and `stty`s the pane on the user's
+    /// Mac, so it must only ever come from a view that is actually on screen —
+    /// a hidden view still lays out, and a size read from one would be a write
+    /// to someone's machine on behalf of nothing. The chat floats over this
+    /// rather than replacing it, so today it is always true; the guard stays
+    /// because what it protects is a write to a host, not a drawing detail.
     var isActive = true {
         didSet { if isActive, isActive != oldValue { view.setNeedsLayout() } }
     }

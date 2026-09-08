@@ -1918,6 +1918,22 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     dark for the life of the screen, and popping it was the only way out.
     Measured both ways in `ColorSchemeTests`, which keeps the broken shape
     beside the fixed one as the reason the line is written the way it is.
+- **The terminal is the screen's background, and the chat floats on glass over
+  it.** Both are mounted from the moment the screen opens; the mode picker
+  decides which one takes touches and which one VoiceOver reads, not which one
+  exists. `PaneChatView` sits on a `glassEffect` background that ignores the
+  safe area while its text stays inside it — the newest turn is the line the
+  user came for, and it must not slide under the home indicator.
+  - **This moves a write to the user's Mac onto every visit, and that is the
+    price.** Opening the stream resizes the pane's pty (`stty`, see below), so
+    a screen that previously only read a transcript now reflows that pane on
+    the host for whoever is sitting at it. Mounting used to be gated on the
+    terminal being asked for, exactly to avoid that. The gate is gone because a
+    background that is not streaming is a black rectangle — there is no version
+    of this layout that keeps it — so the cost is deliberate rather than
+    overlooked.
+  - `PaneSurface` is handed `isActive: true` in both modes now. The flag guards
+    reporting a geometry, and a terminal visible through glass has a real one.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

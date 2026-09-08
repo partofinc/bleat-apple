@@ -1,11 +1,16 @@
 import BleatKit
 import SwiftUI
 
-/// One pane, read two ways.
+/// One pane, read two ways, one behind the other.
+///
+/// **The terminal is the screen's background and is always live.** The chat
+/// floats on glass over it, so the pane it is describing is visible through the
+/// conversation about it rather than a mode away. That is the whole layout, and
+/// it is what decides the two things below.
 ///
 /// Read-only either way: the chat is a transcript file and the terminal is
-/// `terminal session observe`, neither of which can disturb whoever holds input
-/// on the pane. The keyboard, the accessory row and takeover are Phase 3.
+/// `terminal session observe`, neither of which can take input from whoever
+/// holds the pane. The keyboard, the accessory row and takeover are Phase 3.
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
@@ -13,13 +18,6 @@ struct PaneView: View {
     @State private var model: PaneModel
     @State private var transcript: TranscriptModel
     @State private var mode: PaneMode = .chat
-    /// Whether the terminal has ever been asked for on this screen.
-    ///
-    /// It gates *mounting* the terminal, not showing it. Chat is the default
-    /// now, and mounting the terminal regardless would open an `observe` stream
-    /// — a live exec channel on someone's Mac — for every agent screen that is
-    /// opened and read. Once asked for it stays mounted for the reasons below.
-    @State private var terminalWasAskedFor = false
 
     init(
         peer: PairedPeer,
@@ -62,26 +60,31 @@ struct PaneView: View {
             wrappedValue: transcript ?? TranscriptModel(previewing: .loaded(TranscriptEntry.samples))
         )
         _mode = State(wrappedValue: mode)
-        _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
     }
     #endif
 
     var body: some View {
         ZStack {
-            // **Once mounted, kept mounted rather than swapped out.** Tearing
-            // the terminal down on every toggle would close the stream, and
-            // reopening it costs a dial plus the second `SSHStream.close()`
-            // spends draining — but worse, `close()` is async and a quick flip
-            // back would race the reopen and tear down the fresh stream.
-            // Hidden, the buffer and the stream both survive, so switching back
-            // is instant and shows the screen as it stands rather than waiting
-            // for a redraw the host only sends when a stream opens.
-            if terminalWasAskedFor {
-                PaneSurface(model: model, isActive: mode == .terminal)
-                    .opacity(mode == .terminal ? 1 : 0)
-                    .allowsHitTesting(mode == .terminal)
-                    .accessibilityHidden(mode != .terminal)
-            }
+            // Mounted once and never torn down. Tearing it down on a toggle
+            // would close the stream, and reopening costs a dial plus the
+            // second `SSHStream.close()` spends draining — but worse, `close()`
+            // is async and a quick flip back would race the reopen and tear
+            // down the fresh stream. It is behind the chat rather than swapped
+            // out, so the buffer and the stream both simply stay.
+            //
+            // **`isActive: true` in both modes, because it really is on
+            // screen.** The flag guards reporting a geometry — which reopens
+            // the stream and `stty`s the pane on the user's Mac — and a size
+            // read from a view nobody can see would be a write to someone's
+            // machine on behalf of nothing. Visible through the glass, the
+            // geometry is real.
+            PaneSurface(model: model, isActive: true)
+                // The chat is on top and takes the touches; the terminal
+                // underneath is decoration until it is the mode. VoiceOver
+                // likewise reads the conversation, not the grid behind it.
+                .allowsHitTesting(mode == .terminal)
+                .accessibilityHidden(mode != .terminal)
+
             if mode == .chat {
                 PaneChatView(
                     phase: transcript.phase,
@@ -91,6 +94,17 @@ struct PaneView: View {
                     reload: { await transcript.load(for: peer) },
                     showTerminal: { mode = .terminal }
                 )
+                // Glass rather than a solid fill: the pane stays legible
+                // behind the conversation about it. On the *background* and
+                // ignoring the safe area, so the material runs edge to edge
+                // while the text stays inside it — `ignoresSafeArea` on the
+                // chat itself would slide the newest turn under the home
+                // indicator, which is the line the user came for.
+                .background {
+                    Color.clear
+                        .glassEffect(in: .rect)
+                        .ignoresSafeArea()
+                }
             }
         }
         .navigationTitle(title)
@@ -119,7 +133,9 @@ struct PaneView: View {
         .task(id: mode) {
             switch mode {
             case .terminal:
-                terminalWasAskedFor = true
+                // Nothing to start: the stream is already open, because the
+                // terminal has been on screen behind the chat the whole time.
+                break
             case .chat:
                 if transcript.capturedAt == nil { await transcript.load(for: peer) }
                 // Then keep following. `follow` returns immediately unless the

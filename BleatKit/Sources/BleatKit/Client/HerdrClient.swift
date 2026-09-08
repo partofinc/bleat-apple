@@ -61,6 +61,42 @@ public struct HerdrClient: Sendable {
         return try decode(SessionList.self, from: data, command: ["session", "list"]).sessions
     }
 
+    /// Stops a running session.
+    ///
+    /// **This exits everything in it.** Measured against herdr 0.9.0: stopping
+    /// a session killed its pane's shell outright, so on a session holding
+    /// agents this is their work ending. Nothing in `BleatKit` can judge
+    /// whether that is wanted — `PairedPeer.createdHere` and a confirmation are
+    /// what stand between this and a swipe.
+    ///
+    /// Refused with `session_stop_failed` when the session is not running, so
+    /// callers offer it only for one that is.
+    ///
+    /// - Parameter name: a `SessionName` rather than a `String`, because this
+    ///   is a **positional** argument. A session called `-x` — which herdr
+    ///   itself will happily create — is parsed as a flag here, and herdr
+    ///   answers with its usage line rather than stopping anything.
+    @discardableResult
+    public func stopSession(named name: SessionName) async throws -> SessionChange {
+        let data = try await transport.run(["session", "stop", name.text, "--json"])
+        return try decode(SessionChange.self, from: data, command: ["session", "stop"])
+    }
+
+    /// Deletes a **stopped** session, and its directory with it.
+    ///
+    /// herdr refuses this while the session runs (`session_delete_failed`:
+    /// "stop it before deleting"), so it is the second of two steps rather
+    /// than an alternative to stopping.
+    ///
+    /// **The reply is not evidence** — see `SessionChange`. Deleting a name
+    /// that does not exist answers `{"deleted":true}` and exits 0, so the only
+    /// honest confirmation is the session being gone from `session list`.
+    @discardableResult
+    public func deleteSession(named name: SessionName) async throws -> SessionChange {
+        let data = try await transport.run(["session", "delete", name.text, "--json"])
+        return try decode(SessionChange.self, from: data, command: ["session", "delete"])
+    }
+
     /// One agent row.
     ///
     /// `agents()` would answer the same question, but this screen wants exactly

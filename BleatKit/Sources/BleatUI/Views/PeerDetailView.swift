@@ -11,6 +11,8 @@ import SwiftUI
 /// a header for a page of settings.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
+    /// Published by `PeerSettingsFlow`, which presents the sheet at the root.
+    @Environment(\.peerSettingsNamespace) private var settingsNamespace
     /// Always current: `RouteView` looks the peer up by host key on every body
     /// evaluation and hands the stored value in, so an edit in the settings
     /// sheet is reflected without this screen tracking the store itself — and a
@@ -18,16 +20,30 @@ struct PeerDetailView: View {
     /// rather than needing a fallback here.
     let peer: PairedPeer
     @State private var sessions: RemoteList<SessionInfo>
+    /// Owned here rather than by the overlay, so a launch survives the cover
+    /// being dismissed on top of it — the reply is what says whether a session
+    /// is now running on someone's Mac.
+    @State private var newSession: NewSessionModel
+    @State private var isNaming = false
+    /// Whether this screen has been on screen before, so a return to it can be
+    /// told from the first arrival.
+    @State private var hasAppeared = false
+    /// Stopping and deleting, for the sessions this phone started. Owned by the
+    /// screen rather than the row, so one confirmation and one failure alert
+    /// serve the whole list.
+    @State private var control: SessionControlModel
 
     /// Takes the store rather than reading `AppContext`, so the model exists
     /// from the first body onwards and a refresh cannot rebuild it mid-load.
-    init(peer: PairedPeer, connections: ConnectionStore) {
+    init(peer: PairedPeer, connections: ConnectionStore, peers: PeerStore) {
         self.peer = peer
         // No session prefix: `session list` is a client-side command that
         // reports every session regardless of which one is selected.
         _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
             try await $0.sessions()
         })
+        _newSession = State(wrappedValue: NewSessionModel(connections: connections, peers: peers))
+        _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
     }
 
     #if DEBUG
@@ -35,6 +51,8 @@ struct PeerDetailView: View {
     init(peer: PairedPeer, previewing state: Loadable<[SessionInfo]>) {
         self.peer = peer
         _sessions = State(wrappedValue: RemoteList(previewing: state))
+        _newSession = State(wrappedValue: NewSessionModel(previewing: ""))
+        _control = State(wrappedValue: SessionControlModel(previewing: .idle))
     }
     #endif
 
@@ -48,11 +66,11 @@ struct PeerDetailView: View {
         // failure with a way back, and rows that survive a failed refresh.
         RemoteListView(
             state: sessions.state,
-            empty: "No sessions. Start one on the host with `herdr session attach <name>`.",
+            empty: "No sessions yet. Start one with the button below.",
             retry: { await sessions.load(for: peer) }
         ) { list in
             ForEach(list) { session in
-                SessionLink(peer: peer, session: session)
+                SessionLink(peer: peer, session: session, control: control)
             }
         }
         .navigationTitle(peer.name)
@@ -61,15 +79,37 @@ struct PeerDetailView: View {
         // macOS build has a peer screen with no way into the peer.
         #if os(iOS)
         .toolbar { bottomBar }
+        // A cover rather than an `.overlay`: the bottom bar floats above the
+        // screen's content on iOS 26, so an overlay would leave the plus button
+        // that opened this undimmed and still tappable. See `NewSessionField`.
+        .fullScreenCover(isPresented: $isNaming) {
+            NewSessionField(
+                model: newSession,
+                peer: peer,
+                known: sessions.state.value ?? [],
+                onStarted: { Task { await sessions.load(for: peer) } }
+            )
+        }
         #else
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Settings", systemImage: "gearshape") { context.peerSettings.show(peer) }
+                    .matchedZoomSource(peer.hostKey, in: settingsNamespace)
             }
         }
         #endif
+        .sessionControl(control, on: peer) { _ in await sessions.load(for: peer) }
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }
+        // **A pop does not re-run `.task`.** A session stopped or deleted from
+        // inside it would still be listed here as it was — and tapping a
+        // deleted one pushes a screen that can only error. The first appearance
+        // is left to `.task` so the two do not both load on arrival.
+        .onAppear {
+            defer { hasAppeared = true }
+            guard hasAppeared else { return }
+            Task { await sessions.load(for: peer) }
+        }
     }
 
     #if os(iOS)
@@ -77,7 +117,9 @@ struct PeerDetailView: View {
     private var bottomBar: some ToolbarContent {
         ToolbarItem(placement: .bottomBar) {
             Button("Add Session", systemImage: "plus") {
-
+                // Whatever the last attempt said is not about this one.
+                newSession.clearFailure()
+                isNaming = true
             }
             .buttonStyle(.glassProminent)
         }
@@ -90,6 +132,7 @@ struct PeerDetailView: View {
             Button("Settings", systemImage: "gearshape") {
                 context.peerSettings.show(peer)
             }
+            .matchedZoomSource(peer.hostKey, in: settingsNamespace)
         }
     }
     #endif

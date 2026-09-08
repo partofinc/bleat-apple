@@ -171,6 +171,78 @@ public struct PeerRegistry: Sendable {
         return peers[index]
     }
 
+    /// Remembers that this phone started `session` on the host.
+    ///
+    /// A targeted mutation for the reason `recordHerdrPath` is one: `save`
+    /// merges, and a merge takes the newer record's `lastGoodEndpoint` — this
+    /// runs moments after `recordSuccess`, so writing back an edited copy
+    /// loaded a moment earlier would undo the endpoint that had just won.
+    @discardableResult
+    public func recordCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard !peers[index].createdHere(session) else { return peers[index] }
+        peers[index].createdSessions = (peers[index].createdSessions ?? []) + [session]
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Records that this phone is why `session` is running, which is what Stop
+    /// is offered on. See `PairedPeer.startedSessions`.
+    @discardableResult
+    public func recordStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard !peers[index].startedHere(session) else { return peers[index] }
+        peers[index].startedSessions = (peers[index].startedSessions ?? []) + [session]
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Drops that claim once the session is down again.
+    ///
+    /// **Called on stop, and this is what keeps the claim honest.** It means
+    /// "this phone is why it is running", so a session that is no longer
+    /// running has no such reason. Left standing, starting and stopping the
+    /// user's own `work` session from the phone would leave a permanent claim
+    /// on that name — and a Stop button over whatever they started next.
+    @discardableResult
+    public func forgetStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard peers[index].startedHere(session) else { return peers[index] }
+        let remaining = (peers[index].startedSessions ?? []).filter { $0 != session }
+        peers[index].startedSessions = remaining.isEmpty ? nil : remaining
+        try write(peers)
+        return peers[index]
+    }
+
+    /// Forgets a session this phone started, once it is gone from the host.
+    ///
+    /// **Called on delete, and that is not bookkeeping.** The name is the only
+    /// thing tying a session to this install, so a name left in the list
+    /// outlives the session it referred to — and the next session of that name,
+    /// made by whoever is at the Mac, would inherit the stop and delete actions
+    /// as if the phone had created it. Deleting is exactly when the claim stops
+    /// being true.
+    @discardableResult
+    public func forgetCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
+        guard peers[index].createdHere(session) || peers[index].startedHere(session) else {
+            return peers[index]
+        }
+        let remaining = (peers[index].createdSessions ?? []).filter { $0 != session }
+        peers[index].createdSessions = remaining.isEmpty ? nil : remaining
+        // A deleted session is not running either, so the other claim goes with
+        // it — otherwise a session of that name made later at the Mac would
+        // inherit a Stop button.
+        let started = (peers[index].startedSessions ?? []).filter { $0 != session }
+        peers[index].startedSessions = started.isEmpty ? nil : started
+        try write(peers)
+        return peers[index]
+    }
+
     /// Removes an address the user no longer wants dialled.
     ///
     /// Mostly for what a refresh cannot prune: an endpoint that came from the

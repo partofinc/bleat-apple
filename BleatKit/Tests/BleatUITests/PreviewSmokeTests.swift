@@ -139,6 +139,37 @@ struct PreviewSmokeTests {
             PeerDetailView(peer: .previewSparse, previewing: .loaded([]))
         })
         render(context, AddEndpointView(peer: .preview))
+        // Session rows with the stop/delete swipe armed, on a peer that
+        // started two of them from this phone — and one, `phone`, that it did
+        // not, which is the row proving the guard.
+        render(context, NavigationStack {
+            List {
+                ForEach(SessionInfo.samples) { session in
+                    SessionLink(
+                        peer: .previewOwningSessions,
+                        session: session,
+                        control: SessionControlModel(previewing: .idle)
+                    )
+                }
+            }
+        })
+        // Naming a new session, in the four states worth looking at: free,
+        // taken by a running session, taken by a stopped one, and refused by
+        // the host. Rendered bare rather than in its cover — a presentation
+        // does not complete inside `layoutIfNeeded`, so covering it would test
+        // the cover rather than the field.
+        for model in [
+            NewSessionModel(previewing: "scratch"),
+            NewSessionModel(previewing: "work"),
+            NewSessionModel(previewing: "bleat-test"),
+            NewSessionModel(previewing: "my session"),
+            NewSessionModel(previewing: "work", failure: "herdr server is already running"),
+            NewSessionModel(previewing: "scratch", isStarting: true),
+        ] {
+            render(context, NewSessionField(
+                model: model, peer: .preview, known: SessionInfo.samples, onStarted: {}
+            ))
+        }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
         // The host unpaired from underneath the sheet, which the root-level
@@ -153,6 +184,42 @@ struct PreviewSmokeTests {
     @Test("the list screens render in every state")
     func listScreens() async {
         let context = sampleContext()
+        // The session screen with its bar in each state: ours and running,
+        // ours and stopped, and one this install did not start — which is the
+        // guard, and shows no bar at all. These also exercise the screen
+        // reading `AppContext` for the router it pops with; a version that
+        // reached for a `NavigationRouter` in the environment compiled and
+        // trapped here.
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .previewOwningSessions, session: "work",
+                previewing: .loaded(Workspace.samples),
+                status: SessionInfo(name: "work", running: true, isDefault: true)
+            )
+        })
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .previewOwningSessions, session: "bleat-test",
+                previewing: .failed(.hostSaidNo("no herdr server is running")),
+                status: SessionInfo(name: "bleat-test", running: false, isDefault: false)
+            )
+        })
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .preview, session: "phone",
+                previewing: .loaded(Workspace.samples),
+                status: SessionInfo(name: "phone", running: true, isDefault: false)
+            )
+        })
+        // Somebody else's session, stopped: Start on its own, over the stopped
+        // empty state rather than under the list's `server_not_running` error.
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .preview, session: "default",
+                previewing: .failed(.hostSaidNo("no herdr server is running")),
+                status: SessionInfo(name: "default", running: false, isDefault: true)
+            )
+        })
         render(context, NavigationStack {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
         })
@@ -294,6 +361,20 @@ struct PreviewSmokeTests {
         await transcript.load(for: .preview)
         await transcript.follow(for: .preview)
         #expect(transcript.entries.count == TranscriptEntry.samples.count)
+
+        // The newest one that reaches out, and the only one that *writes*: a
+        // parked `NewSessionModel` must not launch anything, or opening this
+        // preview would start a session on the dev Mac.
+        let session = NewSessionModel(previewing: "scratch")
+        #expect(await session.start(on: .preview) == false)
+        #expect(session.failure == nil, "a parked launch reported a failure, so it tried")
+
+        // And the one that would *end* processes on the dev Mac rather than
+        // start them.
+        let control = SessionControlModel(previewing: .idle)
+        let target = SessionInfo(name: "work", running: true, isDefault: true)
+        control.ask(.stop, about: target)
+        #expect(await control.perform(.stop, about: target, on: .preview) == false)
     }
 }
 #endif

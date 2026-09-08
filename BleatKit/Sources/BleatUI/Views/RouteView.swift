@@ -14,13 +14,13 @@ struct RouteView: View {
         switch route {
         case .peer(let hostKey):
             if let peer = peer(hostKey) {
-                PeerDetailView(peer: peer, connections: context.connections)
+                PeerDetailView(peer: peer, connections: context.connections, peers: context.peers)
             } else {
                 unpaired
             }
         case .workspaces(let hostKey, let session):
             if let peer = peer(hostKey) {
-                WorkspacesView(peer: peer, session: session, connections: context.connections)
+                WorkspacesView(peer: peer, session: session, connections: context.connections, peers: context.peers)
             } else {
                 unpaired
             }

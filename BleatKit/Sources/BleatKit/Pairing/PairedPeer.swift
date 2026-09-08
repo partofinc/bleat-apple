@@ -62,7 +62,70 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// between a stopped Tailscale and a peer that can never be reached again.
     public var hostReport: EndpointDiscovery.Report?
 
+    /// Sessions this phone started on this host, by name.
+    ///
+    /// **What makes stopping and deleting a session safe to offer at all.**
+    /// Either one exits every process in the session — measured: stopping a
+    /// session killed its pane's shell outright — so on a host where somebody
+    /// is working, an accidental swipe is not an inconvenience, it is their
+    /// agents gone. The phone therefore only offers those actions for sessions
+    /// it created itself, which are the ones it knows are empty of anyone
+    /// else's work at the moment they were made.
+    ///
+    /// **Losing this list is the safe direction, and it is expected.** It lives
+    /// in the peer record under Application Support, which is excluded from
+    /// backup and does not restore to a new phone — so a reinstall sees every
+    /// session as somebody else's and offers nothing. That is a feature: the
+    /// list is a record of what this install did, not a claim of ownership the
+    /// host would recognise.
+    ///
+    /// Stored as an optional array rather than a `Set` with a default, purely
+    /// so old records still decode: the synthesized decoder does not apply
+    /// default values for a missing key, and `PeerRegistry.all()` treats an
+    /// undecodable file as a hard failure — which would strand every already
+    /// paired host. Read it through `createdHere(_:)`.
+    public var createdSessions: [String]?
+
+    /// Sessions this phone is the reason are *running*, by name.
+    ///
+    /// Distinct from `createdSessions`, and the distinction is what lets Start
+    /// be offered for a session the phone did not make. Starting one restores
+    /// rather than creates — measured: a stopped session comes back with its
+    /// workspaces, its panes, and a freshly spawned shell in each at its
+    /// recorded cwd — so it ends nothing and is the only way back when the Mac
+    /// has rebooted with nothing up.
+    ///
+    /// But it does spawn processes, and a phone that can start something it
+    /// cannot stop is a worse shape than one that can do neither. So starting
+    /// records the claim, and the claim is what Stop is offered on: **the phone
+    /// may undo what it did.**
+    ///
+    /// **Dropped when the session stops**, which is what keeps it honest. The
+    /// claim is "this phone is why it is running" — not "this phone once
+    /// touched it" — so once it is down the claim has expired. Without that,
+    /// starting and stopping `work` from the phone would leave a standing claim
+    /// on the name, and a Stop button over whatever the person at the Mac
+    /// started next.
+    public var startedSessions: [String]?
+
     public var id: String { hostKey }
+
+    /// Whether this phone is why `session` is currently running, and so may
+    /// stop it. Creating one implies starting it.
+    public func startedHere(_ session: String) -> Bool {
+        startedSessions?.contains(session) ?? false
+    }
+
+    /// Whether this phone is the thing that started `session`.
+    ///
+    /// A name, not an identity: herdr has no notion of who created a session,
+    /// so this can only ever be what this install remembers doing. If a session
+    /// is deleted here and someone at the Mac later makes another of the same
+    /// name, the record is dropped on delete precisely so the new one is not
+    /// mistaken for ours.
+    public func createdHere(_ session: String) -> Bool {
+        createdSessions?.contains(session) ?? false
+    }
 
     /// `SHA256:…` for showing the user. Never used for comparison.
     public var hostKeyFingerprint: String? { SSHPublicKeyLine(line: hostKey)?.fingerprint }
@@ -76,7 +139,9 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         lastGoodEndpoint: Endpoint? = nil,
         deviceMarker: String? = nil,
         session: String? = nil,
-        hostReport: EndpointDiscovery.Report? = nil
+        hostReport: EndpointDiscovery.Report? = nil,
+        createdSessions: [String]? = nil,
+        startedSessions: [String]? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -87,6 +152,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.deviceMarker = deviceMarker
         self.session = session
         self.hostReport = hostReport
+        self.createdSessions = createdSessions
+        self.startedSessions = startedSessions
     }
 
     public init(payload: PairingPayload) {
@@ -138,7 +205,20 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         }
         if let session = other.session { merged.session = session }
         merged.hostReport = other.hostReport ?? hostReport
+        // Unioned, never replaced. A re-pair builds `other` straight from a
+        // scanned QR, which carries no sessions at all — taking the newer value
+        // would make every session this phone started on that host look like
+        // somebody else's, and quietly withdraw the stop and delete actions
+        // from all of them.
+        merged.createdSessions = union(createdSessions, other.createdSessions)
+        merged.startedSessions = union(startedSessions, other.startedSessions)
         return merged
+    }
+
+    private func union(_ mine: [String]?, _ theirs: [String]?) -> [String]? {
+        let mine = mine ?? []
+        let extra = (theirs ?? []).filter { !mine.contains($0) }
+        return mine.isEmpty && extra.isEmpty ? nil : mine + extra
     }
 
     /// Folds a fresh report of the host's own addresses into this record.

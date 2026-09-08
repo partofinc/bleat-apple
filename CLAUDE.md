@@ -100,10 +100,10 @@ push notifications, watchOS, Live Activities, multi-account badges.
   throwaway sshd on 5 Sept 2026, including that the revoked key stops
   authenticating.
 
-## Creating panes and sessions from the phone (Phase 3 note, herdr 0.8.2, 5 Sept 2026)
+## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026)
 
-Read off the live CLI, so this does not have to be rediscovered when Phase 3
-starts. **None of it is built**; it is what is available if we decide to.
+Read off the live CLI, so this does not have to be rediscovered. **Starting a
+session is built** — see below; panes, workspaces and tabs are not.
 
 **Panes, workspaces and tabs can be created, and a plain shell is the default.**
 
@@ -121,30 +121,231 @@ mode — it is the default, and an agent is opt-in afterwards. Mechanically this
 costs nothing new: they are ordinary `herdr` commands over the exec channel the
 transport already opens.
 
-**There is no `session create`.** `herdr session` offers only `list`, `attach`,
-`stop`, `delete`. A named session comes from `herdr --session <name>`, which is
-the TUI launcher and wants a pty — Citadel has `withPTY`/`withTTY` on the
-platforms Bleat targets, but a session started that way would have to survive
-the channel closing, and that is unverified. A probe from this Mac was
-inconclusive for an unrelated reason worth knowing: `herdr --session x` refuses
-with **"nested herdr is disabled by default"** when run from inside a herdr
-pane. Over SSH from a phone that guard would not apply — the login shell has no
-herdr environment — but the pty question stays open.
+### Starting a session: `herdr server`, not `session attach` (built, 8 Sept 2026)
 
-**The gap that matters: the phone cannot start a session from cold.** Every
-creation command above goes over the socket API, and a client command will not
-autostart a server — it returns `server_not_running`. So Bleat can add to a
-session that is already running and cannot revive one that is not. If the Mac
-reboots with nothing up, the phone is locked out until someone touches the
-keyboard. Closing that needs either a detached launch that outlives the channel
-or a login item on the host, and it is a different problem from creating panes.
+**There is still no `session create`** on 0.9.0 — `herdr session` offers only
+`list`, `attach`, `stop`, `delete`. But the thing this file used to call an open
+question is answered, and the answer is not the one the CLI suggests.
+
+`herdr session attach <name>` is the wrong tool twice over. It is the TUI, so it
+wants a pty; and the pty it gets **becomes the session's geometry**, which
+`phone.toml` already records as permanently corrupting a pane's wrapping —
+herdr does not restore the size when the client detaches. `phone-session.sh`
+says it in one line: *"do not attach; talk to it instead."*
+
+`herdr server` is the headless launcher and needs no pty at all:
+
+```
+nohup env -u HERDR_SOCKET_PATH HERDR_SESSION='<name>' '<herdrPath>' server \
+      </dev/null >"${TMPDIR:-/tmp}/bleat-session-<name>.log" 2>&1 &
+```
+
+Verified over a plain (non-pty) shell: the server **reparented to pid 1**,
+survived its shell exiting, and appeared in `session list` as running within
+0.05s. `SessionLaunch` builds exactly this string and the string above was run
+verbatim against the live host, both the success and the failure path.
+
+- **The exit status means nothing.** `nohup … &` returns the *shell's* status,
+  which is 0 whether or not herdr started. So this is a write that has to be
+  **checked**, by reading `session list` back — the same rule as `bleat keys
+  revoke`. `NewSessionModel` polls for it.
+- **The redirect is not tidiness.** A background process still holding the
+  channel's stdout keeps the exec channel open, so the command would never
+  return. It also truncates rather than appends, so the log is always about the
+  latest attempt; appending would leave the previous run's success banner on top
+  of a failure.
+- **The log is the only channel herdr's complaint has.** The commonest failure —
+  a session of that name already running — writes `error: herdr server is
+  already running` there and exits 1, invisibly. The phone fetches it and shows
+  herdr's own sentence.
+- **A new session is empty**: no workspaces, no panes. Creating those is the
+  next step and is not built.
+- **A *stopped* session of that name is resumed, not recreated.** herdr keeps
+  the session directory, so the same command brings back the workspaces it had.
+  The field says so before the tap.
+- **Its geometry comes from the default config**, not from `phone.toml` — that
+  file is reached only via `HERDR_CONFIG_PATH`. So a session started from the
+  phone is `headless_cols`/`headless_rows` wide, 120x40 unless the host's own
+  `config.toml` says otherwise, and is **not** phone-shaped. That stays a host
+  config question, as this file already argues.
+
+**Session names: validated on the phone, never sanitised** — the `Marker(text:)`
+rule. herdr states its own set in its refusals: ASCII letters, numbers, `.`, `_`
+and `-`, and not `.` or `..`. `SessionName` adds one rule herdr does not:
+
+- **A leading dash is refused, and this one is not pedantry.** `HERDR_SESSION=-x
+  herdr server` starts perfectly well and creates `sessions/-x`. After that
+  neither `herdr session stop -- -x` nor `herdr session delete -- -x` can
+  address it — both print their usage line, because the name parses as a flag.
+  The probe's server had to be killed by pid and its directory removed by hand.
+  Without the rule the phone can leave a session running on someone's Mac that
+  the Mac's own CLI cannot stop.
+
+### Stopping and deleting a session (built, 8 Sept 2026)
+
+`herdr session stop <name> --json` and `herdr session delete <name> --json`,
+both client-side commands — explicit `--json`, no envelope, replies captured in
+`Fixtures/session-stop.json` and `session-delete.json`. There is **no "detach"**
+for a headless session: detaching is what a TUI client does, and nothing is
+attached. Stop and delete are the two verbs herdr has.
+
+**Stopping ends every process in the session.** Measured: a session with one
+pane was stopped and its shell was gone a second later, pid and all. On a
+session holding agents that is their work ending, with no undo and nothing at
+the Mac to say who did it. This is the most destructive thing Bleat does —
+unpairing only takes away the phone's own access.
+
+So it is guarded three ways, and all three are needed:
+
+- **The phone may undo what it did, and no more.** Two claims, kept apart on
+  purpose:
+  - **`startedSessions` — "this phone is why it is running"** — is what **Stop**
+    is offered on. Written when a launch the host has confirmed running
+    succeeds, and **dropped when the session stops**, because that is when it
+    stops being true.
+    - **Both claims are derived from what the host said *before* the launch,
+      never from the caller.** `SessionStarter` reads `session list` first. A
+      version that launched and then asked only "is it running now?" answered
+      yes when the launch had failed *because it was already up* — herdr says
+      `error: herdr server is already running` into a log nobody read — and
+      recorded a session somebody was working in as ours, which is a Stop over
+      their agents. A stale row is all it takes. The same look settles the
+      other claim: `createdSessions` only when the host had never heard of the
+      name, so typing the name of somebody's stopped session into the new-
+      session field resumes it without earning a Delete over their layout. Without expiry, starting and stopping the user's own
+    `work` session from the phone would leave a permanent claim on the name and
+    a Stop button over whatever they started next.
+  - **`createdSessions` — "this phone made it from nothing"** — is what
+    **Delete** is offered on, and nothing else. Deleting removes the session
+    *directory*; for a session somebody else set up, that is their layout.
+  - So `SessionControlModel.actions(for:on:)` offers no Stop for a session
+    running for somebody else's reasons — the `work` session someone is sitting
+    in front of has no swipe at all — and no Delete for one this phone merely
+    restarted. It is a name, not an identity: herdr has no notion of who created a
+  session, so this is only ever what this install remembers doing. **A reinstall
+  forgets and then offers nothing**, which is the safe direction — the record
+  lives under Application Support, which is excluded from backup and does not
+  restore to a new phone.
+  - **The claim is dropped on delete**, and that is not tidiness. The name is
+    all that ties a session to this install, so one left behind would be
+    inherited by the next session of that name — made by whoever is at the Mac
+    — handing the phone a Stop action over their work.
+  - **`merging` unions it.** A re-pair builds the incoming record from a
+    scanned QR, which carries no sessions, so taking the newer value would
+    withdraw the actions from every session this phone had started.
+  - Stored as an **optional array**, not a defaulted one: the synthesized
+    decoder does not apply default values for a missing key, and
+    `PeerRegistry.all()` treats an undecodable file as a hard failure — a
+    defaulted `Set` would have stranded every already-paired host on the first
+    launch after this shipped.
+- **A swipe asks; it does not act.** The peer row's rule. The dialog names the
+  session and says what goes with it rather than asking "are you sure?".
+  - **A confirmed action takes its values as parameters, never reads them back
+    out of the model.** SwiftUI clears a `confirmationDialog`'s binding *before*
+    running the tapped button, and a model whose `isConfirming` setter resets
+    its phase on that write then finds nothing armed — so the action returns
+    having done nothing, with no error and no alert. Shipped exactly that: Stop
+    removed the row and left the session running. `UnpairFlow` already carried a
+    comment about the hazard. Pinned by a test that drives it in SwiftUI's order
+    — arm, dismiss, act — against a peer with no endpoints, which
+    `PeerConnection.connect` refuses before dialling.
+  - **Only a line beginning `error: ` is a cause.** The launch log holds
+    herdr's startup banner on success, so a host merely slower than the poll's
+    budget had that banner shown under the heading "That did not happen" —
+    herdr saying it started, offered as the reason it had not.
+  - **The launch log falls back to `$HOME`, never `/tmp`.** The file name is
+    predictable, so under a world-writable directory another local account
+    could pre-create it as a symlink and the redirect would truncate whatever
+    it points at, as the SSH user.
+  - **`session list`, `session stop` and `session delete` take a
+    session-agnostic client.** `useSession` is shared mutable state on one
+    transport, read at command dispatch — and the session screen now asks two
+    questions over one connection, one of which needs the prefix. Passing
+    `session: nil` for the other cleared it out from under an in-flight
+    `workspace list` whenever `.task` and `.refreshable` overlapped.
+    `ConnectionStore.sessionAgnosticClient` exists for the reason `shell` does.
+  - **The refresh belongs to `perform`, not to the dialog's button.** There
+    are two ways an action starts — through the confirmation, and straight from
+    a button for the one action that needs none — and hanging the reload off
+    the first leaves the second working silently: Start brought the session up
+    and the screen went on showing it stopped until the user backed out and
+    came in again. `SessionControlModel.onCompleted` is installed once by the
+    flow and called by `perform`, so every path ends the same way.
+  - **A swipe button must not carry `role: .destructive`.** In a swipe action
+    that is not a colour: SwiftUI reads it as "this row is going away" and
+    animates it out the moment the button is tapped — before the confirmation
+    is answered, and still gone if it is cancelled. Wrong for Stop in any case,
+    which leaves the session listed and merely not running. Tint red instead.
+- **The result is checked, not assumed** — and this one is not paranoia.
+  `herdr session delete nosuchsession --json` answers **`{"deleted":true}` and
+  exits 0**, having deleted nothing. So `deleted` is not evidence; the list is
+  read back and the answer is whether the name is really gone. The same class
+  of lie as a `authorized_keys` removal exiting 0 when it matched nothing.
+
+Two more shapes worth knowing:
+
+- **Delete is refused while the session runs** — `session_delete_failed`,
+  "stop it before deleting" — so the row offers Stop *or* Delete, never both.
+- **Stop is refused when it is not running** (`session_stop_failed`), for the
+  same reason the row does not offer it.
+
+Errors arrive as the unenveloped client-side shape, `{"error":{…}}` on stderr
+with exit 1, which `HerdrError.fromStderr` already parses.
+
+**Three actions, one of which does not ask.** `start` joins them —
+`SessionControlModel` covers all three, and `SessionStarter` holds the launch so
+the field that names a new session and the button that restarts a stopped one
+cannot drift apart. Starting a stopped session is the *same command* as creating
+one, and herdr keeps the session directory, so it resumes with the workspaces it
+had. It ends nothing and the way back is the Stop beside it, so it is the one
+action with no confirmation — `needsConfirmation` says so in one place, and
+`begin(_:about:on:)` is the single entry point so a new button cannot skip the
+question.
+
+- **Start is offered for anyone's stopped session**, and that is deliberate.
+  It restores rather than creates — measured: a stopped session comes back with
+  its workspaces, its panes, and a **freshly spawned shell** in each at its
+  recorded cwd — so it ends nothing, and it is the only way back when the Mac
+  has rebooted with nothing up, which is the gap this file names below.
+  **Agents are not restarted**: `herdr agent start` is a separate step herdr
+  does not replay, so a pane that held one comes back as a plain shell. The
+  stopped empty state says so.
+- A running session offers **Stop** (if the phone started it); a stopped one
+  offers **Start**, then **Delete** if the phone created it — Start first, so a
+  full swipe reaches the harmless one. Never a pair herdr would refuse.
+- **The session screen has a bottom bar too**, the same shape as the peer
+  screen's: the action on the left, prominent, and Delete to the right when
+  there is one. Empty for a session this phone did not start.
+- **`SessionStatus` fetches whether the session is running**, because the route
+  cannot carry it: a route's identity would then change the moment the session
+  stopped, which is exactly when the screen has to stay put. `nil` means "not
+  asked yet", not "stopped" — the bar shows nothing rather than guessing.
+- **A stopped session gets its own empty state, in place of the list and not
+  over it.** There is no server to answer `workspace list`, so the list's own
+  state is a `server_not_running` failure — true and useless. An `.overlay`
+  drew one on top of the other: two headings and two paragraphs interleaved,
+  both legible and neither readable. Replace the list; do not cover it.
+- **Deleting from inside the session pops.** The route names something the host
+  no longer has, so every refresh from there on would fail against it.
+
+**The gap that remains: the phone cannot create a pane, workspace or tab from
+cold.** Those commands go over the socket API, and a client command will not
+autostart a server — it returns `server_not_running`. Starting the session is
+what closes that for sessions, **including sessions the phone did not create**,
+so a Mac that rebooted with nothing up is no longer a walk to the keyboard. The
+rest still needs a session already up.
 
 **It is not a new privilege, but it is a new affordance.** The device key
 already grants a full shell, so nothing here widens what a paired phone *could*
 do. It does change what Bleat *is* — from a remote for what is running to
-something that creates state on someone's Mac — so it belongs behind a
-deliberate gesture that shows the workspace label and cwd before it acts, not
-behind a `+` in a toolbar.
+something that creates state on someone's Mac.
+
+For **panes and workspaces** that still argues for a deliberate gesture showing
+the label and cwd before it acts, rather than a bare `+`. A **session** is the
+one case where a `+` is honest: it takes nothing but a name, touches no pane and
+no agent that already exists, is refused rather than merged if the name is in
+use, and the screen it appears on is a list of sessions. It is behind the plus
+on `PeerDetailView`, and the name is checked before anything leaves the phone.
 
 ## Repository layout
 
@@ -1199,6 +1400,25 @@ the rest is `PeerSettingsView` behind the gear.
   reaches — which is what `onDelete` did before. That is safe to trigger by
   accident precisely because it opens a confirmation rather than acting; see
   the unpair section for why a swipe must never revoke a key on its own.
+- **The plus starts a session, in a cover rather than an overlay.** A scrim over
+  the whole screen with one field above the keyboard and a checkmark beside it.
+  A `fullScreenCover` with `.presentationBackground(.clear)`, because on iOS 26
+  the bottom bar floats above the screen's content — an `.overlay` would leave
+  the navigation bar undimmed and, worse, leave the plus button that opened it
+  drawn on top of the scrim and still tappable. The scrim is the only way out
+  and is **inert while the launch is in flight**, for the reason the pairing
+  sheet cannot be dismissed mid-swap: this is the only place the outcome is
+  reported. See **Starting a session** above for the command.
+- **The gear zooms.** `matchedTransitionSource` on the gear, `.zoom` on the
+  sheet, keyed by host key so it grows out of the gear for *that* host. The
+  namespace cannot be local: the sheet is presented at the root and the gear is
+  two screens down, so `PeerSettingsFlow` declares it and publishes it through
+  `EnvironmentValues.peerSettingsNamespace`. Optional, because a `Namespace.ID`
+  cannot be minted outside a `@Namespace` — a preview of `PeerDetailView` alone
+  has none, and the swipe on the peer list has no gear on screen to grow from.
+  A zoom with an absent source falls back to a plain presentation.
+  **`.zoom` is unavailable on macOS** while `matchedTransitionSource` is not, so
+  the platform branch lives in `zoomTransition` rather than at each call site.
 
 ### Previews (Phase 2)
 

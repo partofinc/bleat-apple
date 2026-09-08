@@ -5,6 +5,7 @@ import SwiftUI
 public struct PeersView: View {
     @Environment(AppContext.self) private var context
     @State private var isShowingKey = false
+    @Namespace private var namespace
 
     public init() {}
 
@@ -81,7 +82,10 @@ public struct PeersView: View {
             }
         }
         #endif
-        .sheet(isPresented: $isShowingKey) { DeviceKeyView() }
+        .sheet(isPresented: $isShowingKey) {
+            DeviceKeyView()
+                .zoomTransition(from: "key", in: namespace)
+        }
         // A `bleat://` link can arrive while this sheet is open — the user goes
         // to the system camera and comes back — and SwiftUI will not raise the
         // pairing sheet from the root over a sheet a descendant already has up.
@@ -110,6 +114,7 @@ public struct PeersView: View {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("This device's key", systemImage: "key") { isShowingKey = true }
+                .matchedZoomSource("key", in: namespace)
         }
     }
     #endif

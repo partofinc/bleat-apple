@@ -24,6 +24,11 @@ struct SessionControlFlow: ViewModifier {
     func body(content: Content) -> some View {
         @Bindable var control = control
         content
+            // Installed once, for every way an action can start. Assigned here
+            // rather than passed to each call site because there are two of
+            // those — the dialog's button and a button that needs no dialog —
+            // and giving it to only the first is exactly the bug this fixes.
+            .onAppear { control.onCompleted = reload }
             .confirmationDialog(
                 title, isPresented: $control.isConfirming, titleVisibility: .visible
             ) {
@@ -35,11 +40,10 @@ struct SessionControlFlow: ViewModifier {
                 // the same reason.
                 if let pending = control.pending {
                     Button(pending.action.title, role: .destructive) {
-                        Task {
-                            if await control.perform(pending.action, about: pending.session, on: peer) {
-                                await reload(pending.action)
-                            }
-                        }
+                        // No reload here: `perform` calls `onCompleted` itself,
+                        // so this path and the one that raises no dialog end
+                        // the same way.
+                        Task { await control.perform(pending.action, about: pending.session, on: peer) }
                     }
                 }
                 Button("Cancel", role: .cancel) {}

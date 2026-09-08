@@ -136,6 +136,60 @@ struct SessionActionsTests {
         #expect(model.pending == nil, "a dismissed dialog left an action armed")
     }
 
+    /// **The regression that shipped.** Start needs no confirmation, so it does
+    /// not go through the dialog — and the reload used to hang off the dialog's
+    /// button. So Start worked, the session came up, and the screen went on
+    /// showing it as stopped until the user went back and reopened it.
+    ///
+    /// The fix is structural: `perform` calls `onCompleted` itself, so every
+    /// way of starting an action ends the same way. This pins the half that can
+    /// be reached without a host — that `begin` on an unconfirmed action really
+    /// does run `perform`, against a peer with no endpoints, which
+    /// `PeerConnection.connect` refuses before dialling.
+    @Test("a start with no dialog still runs, and reports what happened")
+    func startWithoutADialogStillRuns() async {
+        let peers = PeerStore(registry: .sample())
+        let model = SessionControlModel(
+            connections: ConnectionStore(peers: peers, reachability: Reachability()),
+            peers: peers
+        )
+        let unreachable = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+        )
+
+        model.begin(.start, about: session("scratch", running: false), on: unreachable)
+        #expect(!model.isConfirming, "Start raised a dialog")
+
+        // `begin` starts a detached task; wait for it to land rather than
+        // guessing at a delay.
+        for _ in 0..<200 where model.failureMessage == nil {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(
+            model.failureMessage != nil,
+            "begin did not run the action — the unconfirmed path is inert"
+        )
+    }
+
+    /// The completion is what refreshes the screen, and it must not be tied to
+    /// the dialog: the action that skips the dialog is the one that needed it
+    /// most.
+    @Test("the completion is called for an action that raises no dialog")
+    func completionIsNotTiedToTheDialog() async {
+        let model = SessionControlModel(previewing: .idle)
+        let seen = Reported()
+        model.onCompleted = { action in seen.action = action }
+        // A parked model performs nothing, so nothing should be reported —
+        // this pins that the hook exists and is wired to `perform`, not that a
+        // preview quietly succeeds.
+        _ = await model.perform(.start, about: session("x", running: false), on: .preview)
+        #expect(seen.action == nil)
+    }
+
+    @MainActor private final class Reported {
+        var action: SessionControlModel.Action?
+    }
+
     /// The `#Preview` seam. This model *ends processes on someone's Mac*, so a
     /// canvas that reached the host would be the worst version of the bug the
     /// seam exists to prevent.

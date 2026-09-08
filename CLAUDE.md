@@ -239,6 +239,13 @@ So it is guarded three ways, and all three are needed:
     comment about the hazard. Pinned by a test that drives it in SwiftUI's order
     — arm, dismiss, act — against a peer with no endpoints, which
     `PeerConnection.connect` refuses before dialling.
+  - **The refresh belongs to `perform`, not to the dialog's button.** There
+    are two ways an action starts — through the confirmation, and straight from
+    a button for the one action that needs none — and hanging the reload off
+    the first leaves the second working silently: Start brought the session up
+    and the screen went on showing it stopped until the user backed out and
+    came in again. `SessionControlModel.onCompleted` is installed once by the
+    flow and called by `perform`, so every path ends the same way.
   - **A swipe button must not carry `role: .destructive`.** In a swipe action
     that is not a colour: SwiftUI reads it as "this row is going away" and
     animates it out the moment the button is tapped — before the confirmation

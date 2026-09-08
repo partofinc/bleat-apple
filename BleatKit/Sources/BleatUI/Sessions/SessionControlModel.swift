@@ -70,6 +70,19 @@ final class SessionControlModel {
 
     private(set) var phase: Phase = .idle
 
+    /// What to do once something has actually happened: refresh the list, or
+    /// leave a screen whose session has just been deleted. Installed by
+    /// `SessionControlFlow`.
+    ///
+    /// **Held here, and called by `perform` itself, because there is more than
+    /// one way an action starts and the second one was missed.** The reload
+    /// used to hang off the confirmation dialog's button — which meant the one
+    /// action that raises no dialog, Start, ran to completion and left the
+    /// screen showing the session as stopped. It worked; nothing said so, and
+    /// the only way to see it was to go back and come in again. Any caller of
+    /// `perform` now gets the same ending.
+    var onCompleted: ((Action) async -> Void)?
+
     private let connections: ConnectionStore?
     private let peers: PeerStore?
 
@@ -202,7 +215,10 @@ final class SessionControlModel {
                     name, on: peer, connections: connections, peers: peers,
                     claimAsCreated: false
                 ) {
-                case .started: phase = .idle; return true
+                case .started:
+                    phase = .idle
+                    await onCompleted?(action)
+                    return true
                 case .failed(let why): phase = .failed(action, session, why); return false
                 }
             }
@@ -241,6 +257,7 @@ final class SessionControlModel {
             case .start: break // recorded by the starter, once the host agreed
             }
             phase = .idle
+            await onCompleted?(action)
             return true
         } catch {
             await connections.handle(error)

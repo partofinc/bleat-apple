@@ -1977,11 +1977,32 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     the terminal's alternate screen. Rows that leave the alternate screen do
     not enter Herdr's host scrollback" — so for these panes there is nothing to
     fetch, at the Mac or anywhere else.
+  - **What you scroll at the Mac is the agent, not the terminal — and that is
+    the whole answer.** Proved with `less`, a classic alternate-screen pager,
+    on `seq 1 200` in a 30-row pane: `max_offset_from_bottom: 0` and
+    `pane read --source recent` returned **30 lines, not 200** — the same
+    signature as every Claude Code pane. Then two spaces were sent as
+    `terminal.input`, and the visible buffer went from rows **1–29 to 59–87**
+    while the scrollback stayed 0. The earlier content is in *the program*, and
+    the only way to see it is to ask the program.
+  - **So the phone can have it, at a price: it takes input ownership.**
+    `observe` is read-only and sends nothing, which is exactly why the pane
+    looks frozen at the current screen. Scrolling an agent from the phone means
+    `terminal session control` and, whenever someone is attached at the Mac,
+    `--takeover` — seizing the pane from them to scroll it. That is a Phase 3
+    decision, not a rendering bug, and it is the honest shape of the feature:
+    a scroll gesture would send the program its own keys.
+  - **The alternate screen is pty state, not per-client.** One buffer, rendered
+    by herdr, identical for every viewer — so there is no per-client scrollback
+    to enable and no SwiftTerm option that could differ between the Mac and the
+    phone. SwiftTerm's scrollback is implemented and on; nothing is ever
+    written into it.
   - **Therefore**: a history view over `pane read --source recent-unwrapped`
-    would work, and would show real history for a plain shell pane and nothing
-    beyond the current screen for an agent. What holds an agent's history is
-    its transcript, which is what chat mode reads. `HerdrClient.paneText`
-    already wraps the command; nothing in the app calls it.
+    would show real history for a plain shell pane and nothing beyond the
+    current screen for an agent. What holds an agent's history without touching
+    input is its transcript, which is what chat mode reads.
+    `HerdrClient.paneText` already wraps the command; nothing in the app calls
+    it.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

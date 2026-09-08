@@ -76,8 +76,7 @@ final class PaneTerminalController: UIViewController {
         // work — but nothing can, so all it did was consume every vertical
         // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
         // gets the drag and can turn it into the program's own page keys.
-//        terminalView.isScrollEnabled = false
-//        terminalView.getTerminal().changeHistorySize(1500)
+        terminalView.isScrollEnabled = false
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and

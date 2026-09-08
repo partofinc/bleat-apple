@@ -56,6 +56,25 @@ struct LoadFailureTests {
     func transportErrorIsUnreachable() {
         let failure = ErrorMessage.failure(of: TransportError.connectionFailed("none of 3 addresses could be reached"))
         #expect(failure.cause == .unreachable)
+        #expect(ErrorMessage.failure(of: TransportError.channelClosed).cause == .unreachable)
+        #expect(ErrorMessage.failure(of: TransportError.notConnected).cause == .unreachable)
+    }
+
+    /// **Not every `TransportError` is about the network**, and these two are
+    /// the reason this type exists at all. A host that refused the device key
+    /// was *reached* — and a revoked key is the ordinary way to meet that, per
+    /// CLAUDE.md's unpair section — while a changed host key is a machine
+    /// answering with the wrong identity. Titling either "Could not reach the
+    /// host" is the same lie, on the same screen, from the other direction.
+    @Test("a refused key and a changed host key are the host answering")
+    func reachedAndRefusedIsNotUnreachable() {
+        #expect(ErrorMessage.failure(
+            of: TransportError.authenticationFailed("no supported authentication method")
+        ).cause == .hostSaidNo)
+
+        #expect(ErrorMessage.failure(
+            of: TransportError.hostKeyMismatch(expected: "ssh-ed25519 AAAA", actual: "ssh-ed25519 BBBB")
+        ).cause == .hostSaidNo)
     }
 
     /// Reached, answered, and the reply did not fit this build — CLAUDE.md's

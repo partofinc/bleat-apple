@@ -127,10 +127,13 @@ struct PaneView: View {
                 }
                 .labelsHidden()
             }
-            // Only in the terminal, which is the only mode input means
-            // anything in — and only once it has been asked for, so this
-            // cannot be tapped against a pane with no stream behind it.
-            if mode == .terminal, terminalWasAskedFor {
+            // Offered in the terminal, which is the only mode input means
+            // anything in — but shown in **either** mode once the pane is
+            // actually held. Gated on the mode alone, switching to chat hid the
+            // one thing saying the pane was seized *and* the only way to give
+            // it back, leaving release to `onDisappear`. That is the state
+            // `controlButton` itself calls expensive.
+            if model.control == .controlling || (mode == .terminal && terminalWasAskedFor) {
                 ToolbarItem(placement: .primaryAction) { controlButton }
             }
         }

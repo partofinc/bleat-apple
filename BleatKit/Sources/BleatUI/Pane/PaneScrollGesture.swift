@@ -28,17 +28,34 @@ struct PaneScrollGesture: ViewModifier {
     /// reports a cumulative translation, so without this every callback past
     /// the threshold would fire again for the same movement.
     @State private var spent: CGFloat = 0
+    /// Whether a drag is in flight.
+    ///
+    /// `@GestureState` for one reason: it resets itself when the gesture ends
+    /// **or is cancelled**, and `onEnded` does not run on a cancellation. Left
+    /// to `onEnded` alone, a drag interrupted by another recogniser leaves
+    /// `spent` behind, and the next drag is measured against travel that
+    /// already happened — needing roughly double the distance to page, or
+    /// firing one after a flick in the opposite direction.
+    @GestureState private var isDragging = false
 
     func body(content: Content) -> some View {
-        let sized = content.onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height = $0 }
-
-        if model.control == .controlling {
-            sized.gesture(drag)
-        } else {
-            sized
-        }
+        content
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height = $0 }
+            // **Always attached, gated by `including:`.** Branching on the mode
+            // instead — `if controlling { content.gesture(drag) } else
+            // { content }` — builds a `_ConditionalContent`, and switching
+            // branch changes the structural identity of what it wraps. What it
+            // wraps here is `TerminalHost`, a `UIViewControllerRepresentable`:
+            // every Take control and every Release would tear the
+            // `PaneTerminalController` down and build a new one, losing the
+            // rendered buffer and blanking the pane until the reopened stream's
+            // first full frame arrived.
+            .gesture(drag, including: model.control == .controlling ? .all : .subviews)
+            .onChange(of: isDragging) { _, dragging in
+                if !dragging { spent = 0 }
+            }
     }
 
     /// Half the terminal, so a full-screen drag pages twice.
@@ -52,6 +69,7 @@ struct PaneScrollGesture: ViewModifier {
         // Enough to not fire on a tap, small enough that a deliberate drag is
         // recognised immediately.
         DragGesture(minimumDistance: 16)
+            .updating($isDragging) { _, state, _ in state = true }
             .onChanged { value in
                 let moved = value.translation.height - spent
                 guard abs(moved) >= step else { return }

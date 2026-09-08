@@ -57,8 +57,16 @@ struct PeerDetailView: View {
         }
         .navigationTitle(peer.name)
         // `.bottomBar` is unavailable on macOS, and `BleatUI` builds for both.
+        // The `#else` keeps the settings sheet reachable there; without it the
+        // macOS build has a peer screen with no way into the peer.
         #if os(iOS)
         .toolbar { bottomBar }
+        #else
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Settings", systemImage: "gearshape") { context.peerSettings.show(peer) }
+            }
+        }
         #endif
         .refreshable { await sessions.load(for: peer) }
         .task { await sessions.load(for: peer) }

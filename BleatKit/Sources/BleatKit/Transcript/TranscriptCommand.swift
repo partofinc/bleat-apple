@@ -92,6 +92,15 @@ public enum TranscriptCommand {
         // In `awk` rather than `tail -c`, which would cut a record in half and
         // hand the parser a truncated line; and rather than `tail -r`, which is
         // BSD-only and this file is meant to survive a Linux host.
+        //
+        // **The newest record is always kept, whatever it costs.** Starting
+        // `first` past the end and breaking on the first overflow printed
+        // *nothing* when the newest turn alone exceeded the budget — and empty
+        // output is how the caller says "this agent has no transcript", so one
+        // long answer blanked the chat instead of truncating it. The `i < NR`
+        // guard makes the budget a bound on the *older* turns. Reachable at the
+        // defaults only by a hair (the per-record filter is 131072 and so is
+        // this) and trivially at any smaller budget, which is a parameter.
         return """
             f=$(command ls -t \(path) 2>/dev/null | head -1); \
             [ -n "$f" ] && tail -n \(records) "$f" \
@@ -99,9 +108,9 @@ public enum TranscriptCommand {
             | grep -E '"type":"(user|assistant)"' \
             | tail -n \(turns) \
             | awk -v max=\(budget) '{ lines[NR] = $0 } \
-                END { t = 0; first = NR + 1; \
+                END { t = 0; first = NR; \
                       for (i = NR; i >= 1; i--) { t += length(lines[i]) + 1; \
-                                                  if (t > max) break; first = i } \
+                                                  if (t > max && i < NR) break; first = i } \
                       for (i = first; i <= NR; i++) print lines[i] }' || true
             """
     }

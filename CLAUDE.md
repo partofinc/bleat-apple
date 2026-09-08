@@ -2061,6 +2061,15 @@ The first thing Bleat sends to a host, and it is deliberately two keys.
     *when* to ask for the next one.
   - The two buttons stay. A drag is not reachable by VoiceOver or Switch
     Control, and a gesture nothing advertises is not an affordance.
+  - **The gesture is attached always and gated with `including:`.** Branching
+    — `if controlling { content.gesture(drag) } else { content }` — builds a
+    `_ConditionalContent`, and switching branch changes the structural identity
+    of what it wraps. What it wraps is `TerminalHost`, a representable: every
+    take and every release would tear the controller down, lose the rendered
+    buffer and blank the pane until the next full frame.
+  - **The take/release button is shown whenever the pane is held**, not only in
+    terminal mode. Gated on the mode alone, switching to chat hid both the one
+    thing saying the pane was seized and the only way to give it back.
 - `PaneControlTests` guards every path into `.controlling`, including the one
   that matters most: a pane with no viewport cannot be seized, because nothing
   is on screen yet to release it.

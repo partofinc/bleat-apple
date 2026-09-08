@@ -62,9 +62,23 @@ public struct PeersView: View {
         // `swift build` compiles it for the Mac. Platform branches are allowed
         // here where they are not in `BleatKit`; `AddEndpointView` and
         // `PairingView` carry the same one.
+        //
+        // **The `#else` is not ceremony.** Guarding the whole `.toolbar` left
+        // the macOS build with no way to pair and no way to open the device
+        // key — a target that compiles and cannot be used. The placements
+        // below are what was there before the bottom bar.
         #if os(iOS)
         .toolbar {
             bottomBar
+        }
+        #else
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button("This device's key", systemImage: "key") { isShowingKey = true }
+            }
         }
         #endif
         .sheet(isPresented: $isShowingKey) { DeviceKeyView() }

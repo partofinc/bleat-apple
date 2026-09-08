@@ -36,11 +36,21 @@ enum ErrorMessage {
             // and herdr's text is written for a person: "restart the Herdr
             // server before using this command" is the whole answer.
             .hostSaidNo(herdr.message ?? of(herdr))
+        // **Two `TransportError` cases are not about the network**, and this
+        // type exists because of them. A machine that refused this key, or one
+        // presenting a different host key, was *reached* — titling either
+        // "Could not reach the host" sends the user to check a network that is
+        // working, and a revoked device key is the ordinary way to meet the
+        // first (see the unpair section in CLAUDE.md). `PeerConnector` already
+        // promotes both over "nothing answered" for the same reason.
+        case TransportError.authenticationFailed, TransportError.hostKeyMismatch:
+            .hostSaidNo(of(error))
         case is DecodingError:
             .unreadable(of(error))
         default:
             // Everything else reaches the user as "nothing answered", which is
-            // what `TransportError` means and what a cancelled load looks like.
+            // what the rest of `TransportError` means and what a cancelled load
+            // looks like.
             .unreachable(of(error))
         }
     }

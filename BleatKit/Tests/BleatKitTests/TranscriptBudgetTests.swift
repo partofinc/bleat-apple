@@ -55,6 +55,20 @@ struct TranscriptBudgetTests {
         #expect(!c.contains("tac "))
     }
 
+    /// **The newest turn is never dropped**, whatever it costs. Starting past
+    /// the end and breaking on the first overflow printed *nothing* when the
+    /// newest record alone exceeded the budget — and empty output is how the
+    /// caller says "this agent has no transcript", so one long answer blanked
+    /// the chat rather than truncating it. Run against a real transcript at
+    /// `max=10`: this form returns one record, the old one returned zero.
+    @Test("the newest record survives a budget it does not fit in")
+    func keepsAtLeastOne() throws {
+        let c = try command()
+        #expect(c.contains("first = NR;"), "the fallback must start at the newest record")
+        #expect(c.contains("if (t > max && i < NR) break"),
+                "the budget must not be allowed to drop the newest record")
+    }
+
     @Test("the budget is a parameter, not a constant")
     func budgetIsConfigurable() throws {
         #expect(try command(budget: 4096).contains("max=4096"))

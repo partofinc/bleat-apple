@@ -11,6 +11,8 @@ import SwiftUI
 /// a header for a page of settings.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
+    /// Published by `PeerSettingsFlow`, which presents the sheet at the root.
+    @Environment(\.peerSettingsNamespace) private var settingsNamespace
     /// Always current: `RouteView` looks the peer up by host key on every body
     /// evaluation and hands the stored value in, so an edit in the settings
     /// sheet is reflected without this screen tracking the store itself — and a
@@ -65,6 +67,7 @@ struct PeerDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Settings", systemImage: "gearshape") { context.peerSettings.show(peer) }
+                    .matchedZoomSource(peer.hostKey, in: settingsNamespace)
             }
         }
         #endif
@@ -90,6 +93,7 @@ struct PeerDetailView: View {
             Button("Settings", systemImage: "gearshape") {
                 context.peerSettings.show(peer)
             }
+            .matchedZoomSource(peer.hostKey, in: settingsNamespace)
         }
     }
     #endif

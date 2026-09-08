@@ -106,7 +106,7 @@ struct PreviewSmokeTests {
         // A seeded failure is a state somebody wants to see, so it must survive
         // too — `load` moves an empty list to `.loading` on its way in, and
         // returning after that would show a spinner instead.
-        let failed = RemoteList(previewing: Loadable<[Workspace]>.failed("nothing answered"))
+        let failed = RemoteList(previewing: Loadable<[Workspace]>.failed(.unreachable("nothing answered")))
         await failed.load(for: .preview)
         #expect(failed.state.failureMessage == "nothing answered")
     }
@@ -157,7 +157,9 @@ struct PreviewSmokeTests {
             WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
         })
         render(context, NavigationStack {
-            WorkspacesView(peer: .preview, session: "work", previewing: .failed("nothing answered"))
+            WorkspacesView(
+                peer: .preview, session: "work", previewing: .failed(.unreachable("nothing answered"))
+            )
         })
         render(context, NavigationStack {
             AgentsView(
@@ -169,6 +171,21 @@ struct PreviewSmokeTests {
             AgentsView(
                 peer: .preview, session: "work", workspace: nil, title: "bleat-apple",
                 previewing: .loaded([])
+            )
+        })
+        // The other two failure causes. Each draws a different title and a
+        // different symbol, and a symbol that does not exist only shows up in
+        // a render.
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "phone", workspace: nil, title: "bleat-apple",
+                previewing: .failed(.hostSaidNo("restart the Herdr server before using this command"))
+            )
+        })
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "work", workspace: nil, title: "bleat-apple",
+                previewing: .failed(.unreadable("the host sent a reply Bleat could not read"))
             )
         })
         await settle(context)

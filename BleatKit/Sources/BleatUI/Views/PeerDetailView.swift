@@ -111,8 +111,10 @@ struct PeerDetailView: View {
     NavigationStack {
         PeerDetailView(
             peer: .previewOverlayOnly,
-            previewing: .failed("this host is only reachable over a VPN from here, and nothing "
-                                + "answered — check that a VPN reaching it is connected on this device")
+            previewing: .failed(.unreachable(
+                "this host is only reachable over a VPN from here, and nothing answered — check "
+                + "that a VPN reaching it is connected on this device"
+            ))
         )
     }
 }
@@ -130,7 +132,7 @@ struct PeerDetailView: View {
     NavigationStack {
         PeerDetailView(
             peer: .preview,
-            previewing: .stale(SessionInfo.samples, "the connection closed before this finished")
+            previewing: .stale(SessionInfo.samples, .unreachable("the connection closed before this finished"))
         )
     }
 }

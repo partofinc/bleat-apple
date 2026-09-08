@@ -89,7 +89,7 @@ final class RemoteList<Item: Sendable> {
             // spinner that never resolves, with no rows and no way to retry, is
             // the worst of the outcomes available.
             guard !Task.isCancelled else { return }
-            report("the connection closed before this finished", over: previous)
+            report(.unreachable("the connection closed before this finished"), over: previous)
         } catch {
             // Guarded *before* `handle`: a superseded load that finally fails
             // would otherwise tear down the connection a newer, successful one
@@ -97,7 +97,7 @@ final class RemoteList<Item: Sendable> {
             // for it. If the newer load also fails, it calls `handle` itself.
             guard generation == self.generation else { return }
             await connections.handle(error)
-            report(ErrorMessage.of(error), over: previous)
+            report(ErrorMessage.failure(of: error), over: previous)
         }
     }
 
@@ -118,7 +118,7 @@ final class RemoteList<Item: Sendable> {
 
     /// A failure keeps whatever had already arrived, so one dropped packet on a
     /// pull-to-refresh does not replace a good list with an error page.
-    private func report(_ message: String, over previous: [Item]?) {
-        state = previous.map { .stale($0, message) } ?? .failed(message)
+    private func report(_ failure: LoadFailure, over previous: [Item]?) {
+        state = previous.map { .stale($0, failure) } ?? .failed(failure)
     }
 }

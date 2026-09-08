@@ -17,7 +17,11 @@ struct CameraSection: View {
             // refused camera is Settings, and the user should not have to know
             // that.
             ContentUnavailableView {
-                Label("No camera access", systemImage: "camera.slash")
+                // `camera.slash` does not exist in the system symbol set —
+                // UIKit logs "No symbol named" and draws nothing, so the label
+                // came up iconless on the one screen that has to explain
+                // itself. `video.slash` is the shipping name for this.
+                Label("No camera access", systemImage: "video.slash")
             } description: {
                 Text("Bleat needs the camera to read a pairing code. You can still paste the link below.")
             } actions: {

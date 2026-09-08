@@ -56,11 +56,16 @@ final class PaneTerminalController: UIViewController {
         // ignores `terminal.scroll` — sent one, got a single frame and nothing
         // on stderr, not even an "input ignored".
         //
-        // So a pane's history is not reachable here at all. `pane read` is the
-        // only route to it — `HerdrClient.paneText` still wraps it — and
-        // nothing in the app calls one today. The terminal shows the live
-        // screen and only that.
+        // **And there is none on the host either, for these panes.** Measured
+        // 8 Sept 2026: `pane list` reports `max_offset_from_bottom: 0` for
+        // every pane of a real session, and `pane read --source recent` returns
+        // exactly the visible rows. An agent's TUI runs on the alternate
+        // screen, which has no scrollback by definition — its buffer is the
+        // viewport. So this is not a client limitation to work around; the
+        // history of an agent pane is its transcript, which is what chat mode
+        // reads.
         terminalView.isScrollEnabled = true
+        terminalView.getTerminal().changeHistorySize(1500)
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and

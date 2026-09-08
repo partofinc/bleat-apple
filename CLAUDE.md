@@ -317,7 +317,12 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
   five schemas — `request`, `success_response`, `event`, `subscription_event`,
   `error_response` — describing the socket API only. The NDJSON stream protocol
   must be captured empirically into `Fixtures/`.
-- `pane read` caps at ~1000 lines (undocumented). Don't build history views on it.
+- `pane read` caps at ~1000 lines (undocumented). Don't build history views on
+  it — and for an agent pane there is nothing to build one *from*; see
+  **An agent pane has no scrollback, at all** below. Its `--source` takes
+  `visible`, `recent`, `recent-unwrapped` or `detection`, and
+  `recent-unwrapped` is the one worth knowing: the buffer without the host's
+  wrapping, which is the only form that can be reflowed to a phone.
 - Environment: use `HERDR_BIN_PATH`-style absolute paths when a login shell
   might not have `herdr` on PATH. Treat non-zero exit as an error with stderr
   attached.
@@ -1127,6 +1132,21 @@ failure needs a way back, and neither should look like the other.
   data and saying so. An empty-state overlay is `allowsHitTesting(false)` for a
   related reason: it covers the whole list, and "no agents are running here" is
   precisely the message a user wants to pull-to-refresh out of.
+- **A failed load says which of the three error classes it was.** CLAUDE.md's
+  conventions name them — `HerdrError` (host said no), `TransportError`
+  (network), `DecodingError` (contract drift) — and `RemoteListView` used one
+  title for all three: *Could not reach the host*. Found on a live host, 8 Sept
+  2026: a `phone` session whose herdr server was a protocol version behind the
+  client answered with exactly what was wrong and how to fix it, and the phone
+  reported it as a network failure over the top of that message. The user is
+  sent to check a network that is working perfectly — the same lie
+  `TransportError.authenticationFailed` was added to stop one layer down.
+  - `Loadable` carries a `LoadFailure` now rather than a bare string, and
+    `ErrorMessage.failure(of:)` does the classification in one place.
+    `LoadFailureTests` pins it, on the real protocol-mismatch text.
+  - A `HerdrError` shows **herdr's own `message`**, not `description`, which
+    prefixes `herdr workspace list failed (1):`. That is right in a terminal
+    and noise on a phone; herdr's sentence is usually the whole fix.
 - **Ordering is not restated in the UI.** `HerdrClient.agents()` returns them
   already sorted by attention and `workspaces()` likewise, so the app cannot
   disagree with the console tool about what "blocked first" means.
@@ -1903,9 +1923,7 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   nothing on stderr, not even the "input ignored" a bad record earns on
   `control`. Local scrollback is no answer either: an `observe` frame is
   absolute cursor positioning and SGR colour with **zero newlines**, so nothing
-  ever scrolls off into `TerminalView`'s buffer. A pane's history is reachable
-  only through `pane read` — which nothing in the app calls now; see **The
-  reader mode is gone** below.
+  ever scrolls off into `TerminalView`'s buffer.
 - **The screen is dark in terminal mode and the phone's own scheme in chat**,
   via `preferredColorScheme` on `PaneView`. The terminal draws its own black
   and its chrome has to sit on it; the chat is prose and belongs in whatever
@@ -1931,6 +1949,26 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     Once asked for it stays mounted — hidden by `opacity`, with `isActive`
     false alongside, since a hidden view still lays out and a size reported
     from one is that same write on behalf of nothing.
+- **An agent pane has no scrollback, at all — measured 8 Sept 2026.** This
+  file used to say a pane's history was "reachable only through `pane read`".
+  For the panes Bleat exists to show, it is reachable through nothing.
+  - `herdr pane list` reports **`max_offset_from_bottom: 0` on every pane** of
+    the `work` session — all ten, every one running an agent. Herdr itself says
+    there is nowhere to scroll back to.
+  - `pane read` agrees: `--source visible`, `recent` and `recent-unwrapped` all
+    return **exactly the 47 visible rows** for each of them, whatever `--lines`
+    is asked for.
+  - The cause is the alternate screen. An agent's TUI runs on it, and the
+    alternate screen has no scrollback by definition — its buffer *is* the
+    viewport. Nothing scrolls off because nothing scrolls; the program repaints
+    in place. The same reason an `observe` frame carries zero newlines.
+  - So a request to "scroll back in the terminal" cannot be answered by any
+    client, this one included, and it is not answerable at the Mac either. The
+    thing that *does* hold an agent's history is the transcript, which is what
+    chat mode reads — and that is the honest answer to give.
+  - `HerdrClient.paneText` still wraps `pane read`. It would find real history
+    in a **plain shell** pane, which has a normal screen and therefore a
+    buffer; unverified, since no such pane exists in this session to measure.
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
   previews, sample text and render test. It was lossy in exactly the way that

@@ -21,9 +21,9 @@ struct RemoteListView<Item, Rows: View>: View {
         List {
             // A failed refresh keeps its rows and says so above them, rather
             // than replacing a good list with an error page.
-            if case .stale(_, let message) = state {
+            if case .stale(_, let failure) = state {
                 Section {
-                    Label(message, systemImage: "exclamationmark.triangle")
+                    Label(failure.message, systemImage: symbol(for: failure.cause))
                         .foregroundStyle(.orange)
                         .font(.footnote)
                 }
@@ -33,11 +33,11 @@ struct RemoteListView<Item, Rows: View>: View {
             }
         }
         .overlay {
-            if state.value == nil, let message = state.failureMessage {
+            if state.value == nil, let failure = state.failure {
                 ContentUnavailableView {
-                    Label("Could not reach the host", systemImage: "exclamationmark.triangle")
+                    Label(title(for: failure.cause), systemImage: symbol(for: failure.cause))
                 } description: {
-                    Text(message)
+                    Text(failure.message)
                 } actions: {
                     Button("Try again") { Task { await retry() } }
                 }
@@ -55,6 +55,26 @@ struct RemoteListView<Item, Rows: View>: View {
                 // just started one on the host.
                 .allowsHitTesting(false)
             }
+        }
+    }
+
+    /// **Only one of these is about the network**, and saying that one over the
+    /// other two sends the user to check something that is working. A host that
+    /// answered was reached; what it said is in the description right below,
+    /// and for herdr that text is usually the fix.
+    private func title(for cause: LoadFailure.Cause) -> String {
+        switch cause {
+        case .unreachable: "Could not reach the host"
+        case .hostSaidNo: "Herdr said no"
+        case .unreadable: "Could not read the reply"
+        }
+    }
+
+    private func symbol(for cause: LoadFailure.Cause) -> String {
+        switch cause {
+        case .unreachable: "exclamationmark.triangle"
+        case .hostSaidNo: "exclamationmark.bubble"
+        case .unreadable: "questionmark.circle"
         }
     }
 }
@@ -90,7 +110,7 @@ struct RemoteListView<Item, Rows: View>: View {
 
 #Preview("Failed", traits: .sampleData) {
     RemoteListView(
-        state: .failed("none of 3 addresses could be reached"),
+        state: .failed(.unreachable("none of 3 addresses could be reached")),
         empty: "Nothing here.",
         retry: {}
     ) { (items: [Workspace]) in
@@ -102,7 +122,7 @@ struct RemoteListView<Item, Rows: View>: View {
 /// rather than replacing them.
 #Preview("Stale", traits: .sampleData) {
     RemoteListView(
-        state: .stale(Workspace.samples, "the connection closed before this finished"),
+        state: .stale(Workspace.samples, .unreachable("the connection closed before this finished")),
         empty: "Nothing here.",
         retry: {}
     ) { items in

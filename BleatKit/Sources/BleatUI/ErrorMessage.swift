@@ -1,3 +1,4 @@
+import BleatKit
 import Foundation
 
 /// Turns a thrown error into something worth showing a user.
@@ -20,6 +21,27 @@ enum ErrorMessage {
             "cancelled"
         default:
             String(describing: error)
+        }
+    }
+
+    /// The same message, plus which of CLAUDE.md's three error classes it came
+    /// from — so a screen can say whether the host was reached before it says
+    /// what went wrong.
+    static func failure(of error: any Error) -> LoadFailure {
+        switch error {
+        case let herdr as HerdrError:
+            // The host ran the command and reported why it would not do it.
+            // Its own `message` rather than `description`, which prefixes the
+            // command and exit code — right in a terminal, noise on a phone,
+            // and herdr's text is written for a person: "restart the Herdr
+            // server before using this command" is the whole answer.
+            .hostSaidNo(herdr.message ?? of(herdr))
+        case is DecodingError:
+            .unreadable(of(error))
+        default:
+            // Everything else reaches the user as "nothing answered", which is
+            // what `TransportError` means and what a cancelled load looks like.
+            .unreachable(of(error))
         }
     }
 }

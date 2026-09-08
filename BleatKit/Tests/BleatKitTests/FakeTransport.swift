@@ -43,3 +43,31 @@ final class FakeStream: HerdrStream, @unchecked Sendable {
     func send(_ data: Data) async throws { written.append(data) }
     func close() async { closed = true }
 }
+
+/// Records what was sent, for the commands that are writes.
+///
+/// `FakeTransport` answers by exact command string, which is all a read needs:
+/// getting the arguments wrong simply fails to match. A write is the other way
+/// round — the flags *are* the behaviour, and `--no-focus` reaching the host is
+/// the assertion rather than an implementation detail — so this one takes any
+/// command, answers with the same reply, and keeps the log.
+final class RecordingTransport: HerdrTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var log: [[String]] = []
+    private let reply: Data
+
+    /// Everything asked of the host, in order.
+    var commands: [[String]] { lock.withLock { log } }
+
+    init(reply: Data = Data()) { self.reply = reply }
+
+    func run(_ args: [String]) async throws -> Data {
+        lock.withLock { log.append(args) }
+        return reply
+    }
+
+    func openStream(_ args: [String]) async throws -> any HerdrStream {
+        lock.withLock { log.append(args) }
+        return FakeStream(chunks: [])
+    }
+}

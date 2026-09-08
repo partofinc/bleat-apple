@@ -15,6 +15,11 @@ struct WorkspacesView: View {
     /// `SessionStatus`. It is what decides between Start and Stop.
     @State private var status: SessionStatus
     @State private var control: SessionControlModel
+    /// Owned here rather than by the sheet, so a create survives the sheet
+    /// being dismissed on top of it — the reply is what says whether there is
+    /// now a workspace on someone's Mac, and where.
+    @State private var newWorkspace: NewWorkspaceModel
+    @State private var isNaming = false
 
     init(peer: PairedPeer, session: String?, connections: ConnectionStore, peers: PeerStore) {
         self.peer = peer
@@ -24,6 +29,7 @@ struct WorkspacesView: View {
         })
         _status = State(wrappedValue: SessionStatus(connections: connections, name: session))
         _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
+        _newWorkspace = State(wrappedValue: NewWorkspaceModel(connections: connections, session: session))
     }
 
     #if DEBUG
@@ -39,6 +45,7 @@ struct WorkspacesView: View {
         _workspaces = State(wrappedValue: RemoteList(previewing: state))
         _status = State(wrappedValue: SessionStatus(previewing: status))
         _control = State(wrappedValue: SessionControlModel(previewing: .idle))
+        _newWorkspace = State(wrappedValue: NewWorkspaceModel(previewing: ""))
     }
     #endif
 
@@ -66,6 +73,17 @@ struct WorkspacesView: View {
         .navigationTitle(session ?? peer.name)
         #if os(iOS)
         .toolbar { bottomBar }
+        // A sheet rather than the cover the session field uses: this one has a
+        // path and a label to show, and a list of the host's own directories
+        // under them. See `NewWorkspaceForm`.
+        .sheet(isPresented: $isNaming) {
+            NewWorkspaceForm(
+                model: newWorkspace,
+                peer: peer,
+                known: workspaces.state.value ?? [],
+                onCreated: { Task { await workspaces.load(for: peer) } }
+            )
+        }
         #else
         .toolbar { ToolbarItemGroup(placement: .primaryAction) { actionButtons } }
         #endif
@@ -88,6 +106,12 @@ struct WorkspacesView: View {
     /// Only for a session known to be stopped — `nil` is "not asked yet", and
     /// covering the list on that would flash over a perfectly good load.
     private var isStopped: Bool { status.info?.running == false }
+
+    /// And the other way round, which is not the negation: `nil` is neither.
+    /// The plus is offered only once the host has said the session is up,
+    /// because a `workspace create` against a stopped one answers
+    /// `server_not_running`.
+    private var isRunning: Bool { status.info?.running == true }
 
     private var stopped: some View {
         ContentUnavailableView(
@@ -127,29 +151,64 @@ struct WorkspacesView: View {
 
     #if os(iOS)
     /// The same shape as the peer screen's bar: the action that does something
-    /// on the left, prominent, and the rest to the right.
+    /// on the left, prominent, and the rest to the right. Which action that is
+    /// depends on whether the session is up — see below.
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
-        if let info = status.info, let first = actions.first {
+        // **Which button is prominent follows what the session needs.** While
+        // it is running, the useful thing is to add to it and Stop is the
+        // afterthought; while it is stopped there is nothing to add *to* — a
+        // client command against a dead session answers `server_not_running` —
+        // so Start takes the position and the plus is not offered at all.
+        if isRunning {
             ToolbarItem(placement: .bottomBar) {
-                Button(first.title, systemImage: first.symbol) {
-                    control.begin(first, about: info, on: peer)
+                Button("Add Workspace", systemImage: "plus") {
+                    // Whatever the last attempt said is not about this one.
+                    newWorkspace.clearFailure()
+                    isNaming = true
                 }
                 .buttonStyle(.glassProminent)
                 .disabled(control.isWorking)
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                // Only ever Delete, and only for a stopped session — herdr
-                // refuses to delete a running one, so there is nothing to show
-                // beside Stop.
-                if let second = actions.dropFirst().first {
-                    Button(second.title, systemImage: second.symbol) {
-                        control.begin(second, about: info, on: peer)
-                    }
-                    .disabled(control.isWorking)
-                }
+            ToolbarItem(placement: .bottomBar) { sessionActions(prominent: false) }
+        } else if status.info != nil {
+            ToolbarItem(placement: .bottomBar) { sessionActions(prominent: true) }
+        }
+    }
+
+    /// The session's own actions — at most Start and Delete, or Stop alone.
+    ///
+    /// Empty for a session this phone did not start, which is the guard rather
+    /// than an oversight: see `SessionControlModel.actions(for:on:)`.
+    @ViewBuilder
+    private func sessionActions(prominent: Bool) -> some View {
+        if let info = status.info {
+            ForEach(actions, id: \.self) { action in
+                // Only the leading action is ever prominent, and only when
+                // nothing more useful is standing in that position. Two
+                // prominent buttons in one bar is two primary actions, which is
+                // none.
+                actionButton(action, about: info, prominent: prominent && action == actions.first)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func actionButton(
+        _ action: SessionControlModel.Action,
+        about info: SessionInfo,
+        prominent: Bool
+    ) -> some View {
+        let button = Button(action.title, systemImage: action.symbol) {
+            control.begin(action, about: info, on: peer)
+        }
+        .disabled(control.isWorking)
+
+        if prominent {
+            button.buttonStyle(.glassProminent)
+        } else {
+            button
         }
     }
     #endif

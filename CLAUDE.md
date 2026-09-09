@@ -103,8 +103,8 @@ push notifications, watchOS, Live Activities, multi-account badges.
 ## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026)
 
 Read off the live CLI, so this does not have to be rediscovered. **Starting a
-session and creating a workspace are built** — see below; panes and tabs are
-not.
+session, creating a workspace and starting an agent are built** — see below;
+panes and tabs are not.
 
 **Panes, workspaces and tabs can be created, and a plain shell is the default.**
 
@@ -464,8 +464,85 @@ an absolute path is miserable to type on one, but `pane list` already carries
 every pane's `cwd`, so the list of directories in use on the host is free. It is
 best effort: a host that will not answer leaves a form that still works.
 
+### Starting an agent (built, 9 Sept 2026)
+
+```
+herdr agent start <name> --kind <KIND> --pane <ID> --timeout 30000
+```
+
+Twenty-three kinds on 0.9.0, and the value is both the kind and the executable:
+`--kind claude` runs `claude`. `AgentKind` is a string with a known list rather
+than a closed enum, so a herdr that grows a twenty-fourth stays usable — the
+"unknown values must decode, never throw" rule applied to a value.
+
+**The pane must already be at a shell prompt**, and herdr means it: a pane
+running an ordinary `sleep` is refused exactly like one holding an agent, and a
+pane whose shell has not finished spawning is too. So a create-workspace-then-
+start-agent flow has to let the pane settle first.
+
+**Every refusal is instant; exactly one failure is slow.** This is the fact the
+whole screen is shaped around. Measured, all under 30ms:
+
+| code | meaning |
+|---|---|
+| `agent_pane_not_found` | no such pane |
+| `agent_pane_busy` | the pane holds an agent, *or* is running anything else |
+| `invalid_agent_name` | herdr's own name rule, below |
+| `agent_name_taken` | that name is in use in this session |
+| `invalid_agent_timeout` | outside herdr's bounds, below |
+
+The slow one is `timeout`: herdr types the executable into the pane and waits
+for its own detection, so a kind whose binary is missing costs the **full 30
+seconds** and then answers `timed out waiting for agent startup`.
+
+**A timeout is not a refusal, and that is the load-bearing measurement.** Given
+a 3.5s budget against a 4.9s cold `claude` start, herdr timed out — and the pane
+then held a running, detected claude with **`name: null`**, because herdr never
+got to record it. So a caller reporting a timeout as a plain failure invites a
+retry, which lands on `agent_pane_busy`, over the agent the user was just told
+had not started. `AgentStart.isUnknownOutcome` names the one code that means "I
+stopped waiting", and the model reads the host back — the same shape as
+`NewWorkspaceModel.settle` and `SessionStarter` polling `session list`. Three
+answers: an agent in that pane means it came up late and nameless, an empty pane
+means nothing started and a retry is safe, and a host that cannot be asked is
+genuinely unknown and must **disarm**.
+
+**The cause of a timeout is written only in the pane.** herdr's own answer names
+nothing; the pane holds `zsh: command not found: devin`. `AgentStart.diagnosis`
+fetches it and shows the shell's own sentence, the way `SessionStarter.diagnosis`
+reads a launch log — and, like it, **never guesses**: a line has to name the kind
+we asked for *and* be a shell's complaint, or the honest "it did not come up in
+time" is shown instead.
+
+**Agent names are herdr's rule, stated by herdr itself**: `agent name must start
+with a lowercase letter and contain only lowercase letters, digits, '-' or '_'
+(1-32 characters)`. `AgentName` validates, never sanitises, like `SessionName`.
+The capital is the one that surprises — `Reviewer` is refused — so it is
+reported as a character problem rather than a first-character one, since being
+told to start with a lowercase letter about a name that *does* start with a
+letter reads as a contradiction.
+
+**`--timeout` must be greater than 3000ms and at most 300000ms**, which its
+`--help` does not say; below the floor it answers `invalid_agent_timeout` and
+starts nothing. Bleat sends herdr's own default of 30000 explicitly. Shortening
+it is the tempting mistake: it would buy a faster answer to the rare missing
+binary by turning ordinary slow successes into "it may or may not have started",
+which is the worst thing this screen can say.
+
+**An agent started by hand at the Mac has no name**, and that is ordinary rather
+than exotic — herdr only knows a name if it gave one out. `Agent.name` is
+therefore optional, and `Fixtures/agent-list-named.json` carries two named
+agents beside one started by typing `claude` in a pane. The same shape comes
+back from a timed-out start.
+
+**The pane picker offers panes with no agent**, and occupancy is read from
+`agent list` rather than a pane's own fields — both are the host's, and the
+agent list is the one that decides. It cannot see a pane merely busy with a
+command; that refusal is instant, so it costs a tap rather than a wait.
+
 **The gap that remains: the phone cannot create a pane or tab, and nothing at
-all from cold.** Those commands go over the socket API, and a client command
+all from cold.** (An agent needs a free pane, so on a host whose panes are all
+busy the way to another one is a new workspace.) Those commands go over the socket API, and a client command
 will not autostart a server — it returns `server_not_running`. Starting the
 session is what closes that for sessions, **including sessions the phone did not
 create**, so a Mac that rebooted with nothing up is no longer a walk to the

@@ -139,6 +139,53 @@ public struct HerdrClient: Sendable {
         return try await enveloped(args)
     }
 
+    /// Starts a supported agent in a pane that is already at a shell prompt.
+    ///
+    /// herdr types the kind's executable into the pane and waits for its own
+    /// detection to recognise it, so this is a **long call** — measured at 3.5s
+    /// warm and 4.9s cold for `claude` over a unix socket, and rather more over
+    /// SSH from a phone.
+    ///
+    /// Everything that can be refused is refused **instantly**, which is what
+    /// makes the long one bearable. Measured against herdr 0.9.0, all under
+    /// 30ms: `agent_pane_not_found` for a pane that is not there,
+    /// `agent_pane_busy` for one already holding an agent *or* merely running
+    /// an ordinary command, `invalid_agent_name`, `agent_name_taken`, and
+    /// `invalid_agent_timeout`.
+    ///
+    /// - Parameter timeoutMs: how long herdr waits for the agent to become
+    ///   interactive. **Must be greater than 3000 and at most 300000** —
+    ///   herdr's own bound, which its `--help` does not mention and which it
+    ///   reports as `invalid_agent_timeout`.
+    ///
+    /// **A timeout does not mean nothing started.** Measured: a `claude` given
+    /// a 3.5s budget answered `timed out waiting for agent startup`, and the
+    /// pane then held a running, detected claude with `name: null` — herdr
+    /// never got to record the name. A caller that reports that as a plain
+    /// failure invites a retry, which lands on `agent_pane_busy` because the
+    /// pane now holds the agent the user was told had not started. So this
+    /// throws and the caller reads the host back; see `AgentStart`.
+    @discardableResult
+    public func startAgent(
+        named name: AgentName,
+        kind: AgentKind,
+        pane: String,
+        timeoutMs: Int = AgentStart.defaultTimeoutMs
+    ) async throws -> Agent {
+        // The name is positional, like a session's, so it must be a validated
+        // type rather than a String: `--kind` would swallow a name that began
+        // with a dash. `AgentName` refuses those anyway — herdr requires a
+        // lowercase letter first — which is belt and braces the same way
+        // `SessionName` is.
+        let result: AgentInfoResult = try await enveloped([
+            "agent", "start", name.text,
+            "--kind", kind.rawValue,
+            "--pane", pane,
+            "--timeout", String(timeoutMs),
+        ])
+        return result.agent
+    }
+
     /// One agent row.
     ///
     /// `agents()` would answer the same question, but this screen wants exactly

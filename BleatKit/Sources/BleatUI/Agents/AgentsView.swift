@@ -9,6 +9,7 @@ import SwiftUI
 /// ordering the user sees is the one the client and the console tool agree on
 /// rather than a rule restated here.
 struct AgentsView: View {
+    @Environment(AppContext.self) private var context
     let peer: PairedPeer
     let session: String?
     /// nil means every agent in the session, which is what the host answers
@@ -18,6 +19,11 @@ struct AgentsView: View {
     /// both occur — and belongs in a subtitle at most, never in a title bar.
     let title: String
     @State private var agents: RemoteList<Agent>
+    /// Owned here rather than by the sheet, so a start survives the sheet being
+    /// dismissed on top of it — herdr can take half a minute, and the reply is
+    /// what says whether something is now running on someone's Mac.
+    @State private var newAgent: NewAgentModel
+    @State private var isStarting = false
 
     init(
         peer: PairedPeer,
@@ -35,6 +41,9 @@ struct AgentsView: View {
             guard let workspace else { return all }
             return all.filter { $0.workspaceID == workspace }
         })
+        _newAgent = State(wrappedValue: NewAgentModel(
+            connections: connections, session: session, workspace: workspace
+        ))
     }
 
     #if DEBUG
@@ -51,6 +60,7 @@ struct AgentsView: View {
         self.workspace = workspace
         self.title = title
         _agents = State(wrappedValue: RemoteList(previewing: state))
+        _newAgent = State(wrappedValue: NewAgentModel(previewing: ""))
     }
     #endif
 
@@ -65,6 +75,34 @@ struct AgentsView: View {
             }
         }
         .navigationTitle(title)
+        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .bottomBar) {
+                Button("Start Agent", systemImage: "plus") {
+                    // A whole reset, not just the failure: the model outlives
+                    // the sheet. See `NewWorkspaceModel.reset`.
+                    newAgent.reset()
+                    isStarting = true
+                }
+                .buttonStyle(.glassProminent)
+            }
+        }
+        .sheet(isPresented: $isStarting) {
+            NewAgentForm(
+                model: newAgent,
+                peer: peer,
+                onStarted: { Task { await agents.load(for: peer) } }
+            )
+        }
+        // **Yields to a `bleat://` link.** SwiftUI will not raise a second
+        // presentation over one already up, so a pairing request arriving while
+        // this is on screen would be lost *and* leave `PairingRouter.isPresented`
+        // true with nothing visible — which makes the Pair button a no-op until
+        // the app is relaunched. `PeersView` carries the same line.
+        .onChange(of: context.pairing.isPresented) { _, isPairing in
+            if isPairing { isStarting = false }
+        }
+        #endif
         .refreshable { await agents.load(for: peer) }
         .task { await agents.load(for: peer) }
     }

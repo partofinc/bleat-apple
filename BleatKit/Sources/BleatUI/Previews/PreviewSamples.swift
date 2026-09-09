@@ -135,6 +135,28 @@ extension TranscriptEntry {
 }
 
 extension Pane {
+    /// Free panes, for the picker that starts an agent: one per workspace plus
+    /// a split, with the opaque id forms the host really uses.
+    ///
+    /// Read as JSON rather than built with a memberwise initialiser, for the
+    /// reason CLAUDE.md gives about `Agent.target`: a hand-built model can be
+    /// wrong in the same way the code is and the test still passes. This is the
+    /// shape `pane list` really returns.
+    static var samples: [Pane] {
+        let body = """
+        [{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
+          "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
+          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple"},
+         {"pane_id":"w2:p3","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
+          "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
+          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple/BleatKit"},
+         {"pane_id":"w653998617a6031:p1","workspace_id":"w653998617a6031",
+          "tab_id":"w653998617a6031:t1","agent_status":"unknown","focused":false,
+          "cwd":"/Users/ravil/Developer/rawillk/herdr"}]
+        """
+        return (try? JSONDecoder().decode([Pane].self, from: Data(body.utf8))) ?? []
+    }
+
     /// What `NewWorkspaceModel.loadSuggestions` derives from `pane list`: the
     /// distinct directories the host's panes are already sitting in.
     ///

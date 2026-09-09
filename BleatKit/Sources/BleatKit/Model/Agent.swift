@@ -3,6 +3,17 @@ import Foundation
 /// A recognized coding agent occupying a pane, from `herdr agent list`.
 public struct Agent: Codable, Sendable, Identifiable, Hashable {
     public let paneID: String
+    /// What `herdr agent start` recorded this agent as, when it was started
+    /// that way.
+    ///
+    /// **Optional, and the nil case is ordinary rather than exotic.** herdr
+    /// only knows a name if it gave one out, so an agent someone launched by
+    /// typing `claude` in a pane at the Mac is detected, listed, and nameless —
+    /// captured live in `Fixtures/agent-list-named.json`, where two named
+    /// agents sit beside one started by hand. A start that *timed out* leaves
+    /// the same shape: measured, a claude that came up after herdr stopped
+    /// waiting appears with `agent: "claude"` and `name: null`.
+    public let name: String?
     public let workspaceID: String
     public let tabID: String
     public let terminalID: String?
@@ -51,6 +62,7 @@ public struct Agent: Codable, Sendable, Identifiable, Hashable {
     /// a caller states only what it means to say.
     public init(
         paneID: String,
+        name: String? = nil,
         workspaceID: String,
         tabID: String,
         agentStatus: AgentStatus,
@@ -66,6 +78,7 @@ public struct Agent: Codable, Sendable, Identifiable, Hashable {
         stateChangeSeq: Int? = nil
     ) {
         self.paneID = paneID
+        self.name = name
         self.workspaceID = workspaceID
         self.tabID = tabID
         self.terminalID = terminalID
@@ -83,6 +96,7 @@ public struct Agent: Codable, Sendable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case paneID = "pane_id"
+        case name
         case workspaceID = "workspace_id"
         case tabID = "tab_id"
         case terminalID = "terminal_id"

@@ -5,8 +5,9 @@ import Testing
 /// The field that starts a session, above the transport.
 ///
 /// `SessionLaunchTests` covers what is sent; this covers what the screen
-/// decides before anything is sent — which is most of the value, because the
-/// launch is detached and cannot report its own refusal.
+/// decides before anything is sent — which is most of the value, because
+/// `herdr session attach` is idempotent and so cannot tell the caller that the
+/// session was already somebody else's.
 @Suite("Naming a new session")
 @MainActor
 struct NewSessionTests {
@@ -32,10 +33,11 @@ struct NewSessionTests {
         #expect(model.canStart)
     }
 
-    /// The launch is not idempotent — herdr answers `error: herdr server is
-    /// already running` and exits 1, into a redirect the phone would have to
-    /// fetch to discover it. Knowing from the list already on screen is both
-    /// faster and the only way to say so *before* the tap.
+    /// **The launch *is* idempotent, which is why this matters.** `herdr
+    /// session attach` against a running session succeeds silently — same pid,
+    /// no error, no second server — so nothing downstream can tell that the
+    /// name was already somebody's. The list already on screen is both the
+    /// faster answer and the only way to say so *before* the tap.
     @Test("a running session of that name is recognised from the list on screen")
     func spotsARunningSession() {
         let model = NewSessionModel(previewing: "work")

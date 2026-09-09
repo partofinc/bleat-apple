@@ -90,47 +90,58 @@ struct SessionLaunchTests {
         #expect(!command.hasSuffix("&"), "backgrounding a command that already returns")
     }
 
-    /// **The whole string, because this exact one was run against a host.**
-    /// The other tests here check a property each; this pins the command that
-    /// was actually executed over a real SSH exec channel on 9 Sept 2026 —
-    /// success path and refusal path both — so a later edit that looks harmless
-    /// cannot quietly diverge from the thing that was verified.
+    /// **The whole script, because this exact one was run against a host.**
+    /// The other tests here check a property each; this pins what was actually
+    /// executed over a real SSH exec channel on 9 Sept 2026 — success path,
+    /// refusal path and watchdog — so a later edit that looks harmless cannot
+    /// quietly diverge from the thing that was verified.
     @Test("the command is the one that was measured")
     func exactCommand() {
-        #expect(
-            start("scratch")
-                == "env -u HERDR_SOCKET_PATH -u HERDR_SESSION '/opt/homebrew/bin/herdr' "
-                + "session attach 'scratch' </dev/null 2>&1 || true"
-        )
+        #expect(start("scratch") == """
+        exec 2>/dev/null
+        env -u HERDR_SOCKET_PATH -u HERDR_SESSION '/opt/homebrew/bin/herdr' \
+        session attach 'scratch' </dev/null 2>&1 &
+        launch=$!
+        ( sleep 10; kill -TERM $launch ) >/dev/null 2>&1 &
+        watchdog=$!
+        wait $launch
+        kill $watchdog >/dev/null 2>&1
+        true
+        """)
     }
 
-    /// The TUI reads stdin, and its refusal goes to stderr — which is now the
-    /// only account of a failure there will be, since there is no log file.
-    @Test("stdin is closed and stderr is kept")
-    func stdio() {
+    /// **The launch is synchronous now, so it has to be bounded.**
+    ///
+    /// `nohup … &` could not hang: the shell returned whatever herdr did. A
+    /// foreground command can, and a herdr that never exits holds the exec
+    /// channel open forever — `NewSessionModel` never clears `isStarting`, and
+    /// `NewSessionField`'s scrim is deliberately inert while a launch is in
+    /// flight, so the cover cannot be dismissed and the app needs relaunching.
+    ///
+    /// Verified over SSH with a `sleep 600` in herdr's place and a 3s budget:
+    /// the channel returned in 3.12s, the hung process was gone, and the
+    /// command still exited 0.
+    @Test("a launch that hangs is killed rather than held")
+    func bounded() {
         let command = start("scratch")
-        #expect(command.contains("</dev/null"))
-        #expect(command.contains("2>&1"))
+        #expect(command.contains("kill -TERM $launch"))
+        #expect(command.contains("sleep \(SessionLaunch.watchdogSeconds)"))
+        // The watchdog must not be a second writer on the channel, or it holds
+        // the command open for its whole budget on every run — the bug
+        // `EndpointDiscovery` documents in the same shape.
+        #expect(command.contains(") >/dev/null 2>&1 &"))
     }
 
-    /// **Exit 1 is the success path**, which is the sharpest edge here.
-    /// Without a pty the TUI cannot draw, so it prints `Inappropriate ioctl for
-    /// device` and exits 1 *after* the server is up. `ShellRunner.run` throws
-    /// on a non-zero status, so without this every successful start would
-    /// arrive at the user as "the host rejected a command (exit 1)" — the same
-    /// failure `HerdrLookup.command` ends in `|| true` to avoid.
+    /// **Every outcome exits 0, and that is required rather than tidy.**
+    /// The headless success path exits 1 (`Inappropriate ioctl for device`,
+    /// after the server is up) and a killed launch exits on a signal.
+    /// `ShellRunner.run` throws on a non-zero status, so without the trailing
+    /// `true` a successful start would reach the user as "the host rejected a
+    /// command (exit 1)" — the failure `HerdrLookup.command` ends in `|| true`
+    /// to avoid.
     @Test("a non-zero status is the normal answer, not a failed command")
     func successExitsNonZero() {
-        #expect(start("scratch").hasSuffix("|| true"))
-    }
-
-    /// `HERDR_SOCKET_PATH` for the reason `SSHTransport.command` clears it.
-    /// `HERDR_SESSION` is the new one and matters more: the name is a
-    /// positional argument now, so an inherited variable would decide which
-    /// session starts.
-    @Test("both inherited session variables are cleared")
-    func clearsInheritedSelection() {
-        #expect(start("scratch").contains("env -u HERDR_SOCKET_PATH -u HERDR_SESSION"))
+        #expect(start("scratch").hasSuffix("\ntrue"))
     }
 
     /// `SessionName` has already excluded every character that means something
@@ -175,6 +186,41 @@ struct SessionLaunchTests {
     func stripsANSIBeforeMatching() {
         let output = "\u{1B}[1merror:\u{1B}[0m nested herdr is disabled by default."
         #expect(SessionLaunch.diagnosis(inLaunchOutput: output) == "nested herdr is disabled by default.")
+    }
+
+    /// **CSI is not the only escape herdr can emit, and the others break the
+    /// match differently.** A first version stripped `ESC[…` alone, which drops
+    /// the `ESC` of every other form and leaves its *payload* as text — so a
+    /// title set landing on the same line as herdr's complaint (stdout and
+    /// stderr are merged) hid the `error: ` prefix behind `]0;…`, and the user
+    /// got the generic "did not report a session" instead of the sentence that
+    /// explains it.
+    @Test("an OSC title does not hide the error behind it")
+    func stripsOSC() {
+        let output = "\u{1B}]0;herdr — scratch\u{07}error: nested herdr is disabled by default."
+        #expect(SessionLaunch.diagnosis(inLaunchOutput: output) == "nested herdr is disabled by default.")
+    }
+
+    /// The ST-terminated form of the same thing, and a two-byte designator.
+    @Test("the other escape forms are stripped too", arguments: [
+        "\u{1B}]0;title\u{1B}\\error: boom",
+        "\u{1B}(Berror: boom",
+        "\u{1B}=error: boom",
+    ])
+    func stripsOtherForms(_ output: String) {
+        #expect(SessionLaunch.diagnosis(inLaunchOutput: output) == "boom")
+    }
+
+    /// **Narrow on purpose.** This reads a diagnostic, so a sequence the
+    /// stripper does not know must survive into the message rather than being
+    /// eaten — losing half of herdr's sentence is worse than leaving a stray
+    /// byte in it.
+    @Test("an unrecognised escape does not eat the message")
+    func leavesUnknownSequencesAlone() {
+        // Only the ESC byte goes; everything after it survives. Losing half of
+        // herdr's sentence to an over-eager stripper is worse than leaving a
+        // stray character in it, so an unknown form is skipped, not consumed.
+        #expect(SessionLaunch.diagnosis(inLaunchOutput: "error: it \u{1B}qbroke") == "it qbroke")
     }
 
     @Test("nothing worth quoting is nil, never a guess")

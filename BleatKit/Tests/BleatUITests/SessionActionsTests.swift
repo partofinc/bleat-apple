@@ -226,8 +226,9 @@ struct SessionActionsTests {
     }
 
     /// One at a time. `begin` starts an unstructured task, so two quick taps
-    /// enqueue two of these — and two launches share one truncating log, while
-    /// two stops raise a failure alert over one that had already worked.
+    /// enqueue two of these — and two launches hold two exec channels against
+    /// one name, while two stops raise a failure alert over one that had
+    /// already worked.
     @Test("a second action is refused while the first is in flight")
     func noReentrancy() async {
         let peers = PeerStore(registry: .sample())

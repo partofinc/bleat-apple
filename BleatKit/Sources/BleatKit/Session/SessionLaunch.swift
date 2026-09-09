@@ -38,8 +38,8 @@ import Foundation
 /// - **Success exits 1.** The TUI cannot draw without a pty, so it prints
 ///   `herdr: Inappropriate ioctl for device (os error 25)` and exits 1 *after*
 ///   the server is up. That is the ordinary headless path, which is why the
-///   command ends in `|| true` — without it `ShellRunner.run` throws on every
-///   successful start. **Never show that text to the user.**
+///   script ends in a bare `true` — without it `ShellRunner.run` throws on
+///   every successful start. **Never show that text to the user.**
 /// - **A refusal exits 2** and says why, on stderr, synchronously — a real
 ///   improvement on the old command, whose status was the shell's and therefore
 ///   meant nothing at all. `diagnosis(inLaunchOutput:)` reads it.
@@ -49,7 +49,29 @@ import Foundation
 ///   about `herdr server` specifically.
 public enum SessionLaunch {
 
+    /// How long the host is given to run the launch before it is killed.
+    ///
+    /// Measured at 0.14s over a real exec channel, so this is two orders of
+    /// magnitude of headroom rather than a guess at a duration.
+    public static let watchdogSeconds = 10
+
     /// Starts `name` on the host and returns as soon as the server is up.
+    ///
+    /// **Bounded, because this command is now synchronous.** The old
+    /// `nohup … &` could not hang — the shell returned whatever herdr did — and
+    /// giving that up for a foreground command means a herdr that does not exit
+    /// holds the exec channel open forever. `NewSessionModel` never clears
+    /// `isStarting` then, and `NewSessionField`'s scrim is deliberately inert
+    /// while a launch is in flight, so the cover cannot be dismissed and the
+    /// app needs relaunching. That is a worse failure than any this rewrite
+    /// removed, and it is not hypothetical: it is exactly what the *deleted*
+    /// redirect was guarding against one layer down, and a herdr that tolerated
+    /// a non-tty rather than erroring on the ioctl would produce it.
+    ///
+    /// The `( sleep N; kill )` shape is `EndpointDiscovery.tailscaleStatusCommand`'s,
+    /// for the same reason and with the same two details: the watchdog's own
+    /// output goes to `/dev/null` so it is not a second writer holding the
+    /// channel open, and the shell's `Terminated: 15` notice is suppressed.
     ///
     /// - Parameter herdrPath: Absolute, from the `PairedPeer`. A non-login
     ///   shell usually has no `herdr` on `PATH`.
@@ -65,10 +87,21 @@ public enum SessionLaunch {
         // `</dev/null` because the TUI reads stdin, and `2>&1` because herdr's
         // refusal goes to stderr and is the only account of it there will be.
         //
-        // `|| true` for the reason `HerdrLookup.command` has one: the ordinary
-        // outcome here is a non-zero status. Exit 1 *is* the success path.
-        "env -u HERDR_SOCKET_PATH -u HERDR_SESSION \(quote(herdrPath)) "
-            + "session attach \(quote(name.text)) </dev/null 2>&1 || true"
+        // The trailing `true` is `HerdrLookup.command`'s `|| true` in another
+        // shape, and it is required rather than tidy: `wait` yields the
+        // launch's own status, the ordinary success is exit 1, and a watchdog
+        // kill exits on a signal. `ShellRunner.run` throws on any of them.
+        """
+        exec 2>/dev/null
+        env -u HERDR_SOCKET_PATH -u HERDR_SESSION \(quote(herdrPath)) \
+        session attach \(quote(name.text)) </dev/null 2>&1 &
+        launch=$!
+        ( sleep \(watchdogSeconds); kill -TERM $launch ) >/dev/null 2>&1 &
+        watchdog=$!
+        wait $launch
+        kill $watchdog >/dev/null 2>&1
+        true
+        """
     }
 
     /// herdr's own account of why a launch produced no session, or nil.
@@ -99,29 +132,70 @@ public enum SessionLaunch {
 
     private static let errorPrefix = "error: "
 
-    /// Drops CSI sequences (`ESC[…final`) and lone escapes.
+    /// Drops the escape sequences a terminal program writes, so the text
+    /// underneath can be matched.
     ///
-    /// Deliberately narrow: this reads a diagnostic, so anything it does not
-    /// recognise must survive into the message rather than being eaten.
+    /// **CSI is not the only form, and the others are not theoretical here.**
+    /// A first version handled `ESC[…` alone, which drops the `ESC` of every
+    /// other kind and leaves its *payload* as visible text. herdr's TUI writes
+    /// control sequences to a non-tty — the whole reason this function exists —
+    /// and stdout and stderr are merged into one stream by the launch, so a
+    /// title set (`ESC]0;herdr — scratch BEL`) landing on the same line as
+    /// herdr's complaint would leave `]0;herdr — scratch\u{07}error: …`. The
+    /// `error: ` prefix test then fails and the user gets the generic "the host
+    /// did not report a session" in place of herdr's own sentence — the exact
+    /// failure this whole path exists to prevent.
+    ///
+    /// Three forms, and everything else is left alone. Deliberately narrow:
+    /// this reads a diagnostic, so an unrecognised sequence must survive into
+    /// the message rather than being silently eaten.
     private static func stripANSI(_ text: String) -> String {
         var out = ""
         var rest = Substring(text)
-        while let esc = rest.firstIndex(of: "\u{1B}") {
+        while let esc = rest.firstIndex(of: escape) {
             out += rest[rest.startIndex..<esc]
             var scan = rest.index(after: esc)
-            // CSI: `[` then parameter and intermediate bytes, then a final byte
-            // in @-~. Anything else is a lone escape and is simply dropped.
-            if scan < rest.endIndex, rest[scan] == "[" {
+            guard scan < rest.endIndex else { rest = rest[scan...]; break }
+            switch rest[scan] {
+            case "[":
+                // CSI: parameter and intermediate bytes, then a final in @-~.
                 scan = rest.index(after: scan)
                 while scan < rest.endIndex, !("\u{40}"..."\u{7E}").contains(rest[scan]) {
                     scan = rest.index(after: scan)
                 }
                 if scan < rest.endIndex { scan = rest.index(after: scan) }
+            case "]":
+                // OSC: runs to BEL or to ST (`ESC \`). An unterminated one runs
+                // to end of line, which is the right reading — the rest of that
+                // line is the sequence's payload, not a message.
+                scan = rest.index(after: scan)
+                while scan < rest.endIndex {
+                    if rest[scan] == "\u{07}" { scan = rest.index(after: scan); break }
+                    if rest[scan] == escape,
+                       rest.index(after: scan) < rest.endIndex,
+                       rest[rest.index(after: scan)] == "\\" {
+                        scan = rest.index(scan, offsetBy: 2)
+                        break
+                    }
+                    scan = rest.index(after: scan)
+                }
+            case "(", ")", "*", "+", "%", "#":
+                // Two-byte designators (`ESC(B` and friends): the escape, the
+                // intermediate, and one more byte.
+                scan = rest.index(after: scan)
+                if scan < rest.endIndex { scan = rest.index(after: scan) }
+            case "=", ">", "7", "8", "c", "D", "E", "H", "M", "Z":
+                // Two-byte forms with no argument.
+                scan = rest.index(after: scan)
+            default:
+                break
             }
             rest = rest[scan...]
         }
         return out + rest
     }
+
+    private static let escape: Character = "\u{1B}"
 
     /// Single-quotes for `sh`. `SSHTransport.quote` is the same rule; this is
     /// the third place in the module that needs it, and the two existing copies

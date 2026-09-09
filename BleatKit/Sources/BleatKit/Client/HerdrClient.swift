@@ -97,6 +97,48 @@ public struct HerdrClient: Sendable {
         return try decode(SessionChange.self, from: data, command: ["session", "delete"])
     }
 
+    // MARK: - Creating
+
+    /// Creates a workspace, and with it a tab and one pane running a shell.
+    ///
+    /// The first thing Bleat makes *inside* someone's session rather than
+    /// alongside it. It ends nothing and touches no pane that already exists —
+    /// `WorkspaceCreated` records what measuring showed it does produce — but
+    /// it is a write on someone else's Mac, so the rules the rest of this file
+    /// follows apply.
+    ///
+    /// - Parameter directory: where the pane opens. A `WorkspaceDirectory`
+    ///   rather than a `String` because herdr accepts a path that does not
+    ///   exist, and a relative one it resolves against its own working
+    ///   directory. Neither is refused and neither is reported.
+    /// - Parameter label: what to call it. Omitted when empty, which is not the
+    ///   same as sending an empty one: herdr's own default is the basename of
+    ///   `directory`, and `WorkspaceDirectory.suggestedLabel` is that same
+    ///   string so the field can show what leaving it blank will do.
+    ///
+    /// **`--no-focus` is passed explicitly**, and it is the one flag here that
+    /// is about somebody else. Focusing moves the view of whoever is sitting at
+    /// the Mac — the reason `agent focus` is banned outright — and while the
+    /// measured default is already not to focus when another workspace holds
+    /// it, a default is not a promise. Saying so costs seven characters.
+    ///
+    /// Measured, and worth knowing before reading a reply: herdr honours it
+    /// whenever there is a focus to keep, and **ignores it for the first
+    /// workspace in an empty session**, which comes back `focused: true`
+    /// whatever is asked. That is not the flag failing — a session with
+    /// workspaces has to have one focused — and it is the one case where
+    /// focusing takes nothing from anybody, because a moment earlier there was
+    /// nothing to focus.
+    @discardableResult
+    public func createWorkspace(
+        in directory: WorkspaceDirectory,
+        label: String? = nil
+    ) async throws -> WorkspaceCreated {
+        var args = ["workspace", "create", "--cwd", directory.path, "--no-focus"]
+        if let label, !label.isEmpty { args += ["--label", label] }
+        return try await enveloped(args)
+    }
+
     /// One agent row.
     ///
     /// `agents()` would answer the same question, but this screen wants exactly

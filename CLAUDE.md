@@ -103,7 +103,8 @@ push notifications, watchOS, Live Activities, multi-account badges.
 ## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026)
 
 Read off the live CLI, so this does not have to be rediscovered. **Starting a
-session is built** — see below; panes, workspaces and tabs are not.
+session and creating a workspace are built** — see below; panes and tabs are
+not.
 
 **Panes, workspaces and tabs can be created, and a plain shell is the default.**
 
@@ -328,24 +329,163 @@ question.
 - **Deleting from inside the session pops.** The route names something the host
   no longer has, so every refresh from there on would fail against it.
 
-**The gap that remains: the phone cannot create a pane, workspace or tab from
-cold.** Those commands go over the socket API, and a client command will not
-autostart a server — it returns `server_not_running`. Starting the session is
-what closes that for sessions, **including sessions the phone did not create**,
-so a Mac that rebooted with nothing up is no longer a walk to the keyboard. The
-rest still needs a session already up.
+### Creating a workspace (built, 8 Sept 2026)
+
+```
+herdr workspace create --cwd PATH [--label TEXT] --no-focus
+```
+
+One command makes three things — captured into `Fixtures/workspace-create.json`
+and modelled by `WorkspaceCreated`: a workspace holding one tab holding one
+pane, and that pane is a plain login shell (`pane process-info` reports
+`argv: ["-zsh"]`, and `agent list` for the session stays empty). **A workspace
+is never empty, and neither is a tab.** `tab create` behaves the same way and
+answers `tab_created` with its own `root_pane`; `pane split` is the only one of
+the three that adds a pane to a tab that already exists.
+
+**herdr accepts a `--cwd` that is not there, and says nothing.** This is the
+fact the whole design turns on:
+
+```
+$ herdr workspace create --cwd /no/such/dir --label ghost
+{"result":{"root_pane":{"cwd":"/Users/ravil",…},"workspace":{"label":"ghost",…}}}
+```
+
+Exit 0, `workspace_created`, no error — and a workspace called `ghost` sitting
+in the home directory rather than the path that was asked for. The same class of
+lie as `session delete` answering `{"deleted":true}` over a session that never
+existed, and it takes the same answer: check rather than trust. Three checks, in
+the order that costs the user least:
+
+- **The shape, while they type.** `WorkspaceDirectory` refuses a relative path —
+  herdr resolves one against the *server process's* working directory, measured:
+  the CLI run from `/tmp` with `--cwd ../` produced a pane in
+  `/Users/ravil/Developer/rawillk`, the parent of wherever `herdr server` was
+  started. From a phone that directory is unknowable. It also refuses a leading
+  `~`: every argument reaches the host inside single quotes, so nothing expands
+  it, and herdr then falls back to the home directory — which for `~` alone is
+  the right answer *by accident* and for `~/Developer` is not.
+- **The path, resolved by the host, before anything is created.**
+  `DirectoryCheck` runs `cd … && pwd -P` over a plain shell, which settles two
+  questions in one round trip: a directory that cannot be entered has no answer,
+  and the answer that does come back is the form herdr will report. It exits 0
+  either way, for the reason `HerdrLookup.command` ends in `|| true`, and the
+  reply is read as a **prefixed line within** stdout rather than compared whole
+  — `.zshenv` is sourced for every non-interactive zsh and profiles print
+  banners, which is the mistake `PeerConnector`'s `printf ok` probe made. `cd`'s
+  own output is redirected inside the substitution, or a `chpwd` hook that runs
+  `ls` would be read as part of the path.
+  - **Resolving is not tidiness; a plain `test -d` shipped a bug.** herdr
+    reports a **canonical** cwd — measured: `/tmp` → `/private/tmp`, `/var` →
+    `/private/var`, and both `/Users/ravil//Developer` and
+    `/Users/ravil/Developer/../Developer` → `/Users/ravil/Developer`. A phone
+    comparing herdr's answer against the string the user typed therefore
+    reported a workspace as misplaced that had gone exactly where it was asked,
+    for paths as ordinary as `/tmp`. The create sends the resolved form and the
+    comparison is against that.
+- **Where it actually landed.** `WorkspaceCreated.openedElsewhere(than:)`
+  compares the reply's `root_pane.cwd` against the resolved path. With the check
+  in front of it this only catches a race, and it is what stops "created it,
+  somewhere else" being something the user has to notice for themselves.
+- **And on the failure path, whether it happened anyway.** A create that
+  *threw* is not proof that nothing happened: if the connection drops between
+  herdr running the command and the reply arriving, the workspace exists and a
+  plain failure invites the obvious retry, which makes a second one. So the
+  ids from `workspace list` are captured before the write and read back after a
+  throw — the same shape as `SessionStarter` polling `session list`. Three
+  answers, and the third is why it is not a one-liner: nothing new means it is
+  safe to try again, a new workspace means say so, and a read-back that *itself*
+  fails means "I cannot tell", which must **disarm** rather than re-arm.
+  - **A refusal is not a maybe**, and it skips the read-back entirely.
+    `ConnectionPolicy.isRefusalByHost` is the other half of
+    `isFatalToConnection`: a `HerdrError` is the host answering in its own error
+    envelope, having processed the command and declined, so nothing was created.
+    Read as unknown it tells the user something may be on their Mac when it
+    demonstrably is not — and since unknown spends the button, reopening the
+    sheet becomes the only way back from something a retry would have fixed.
+    A `DecodingError` is deliberately *not* a refusal: there the command
+    succeeded and only the reply was unreadable, so the write almost certainly
+    landed and has to be checked.
+- **Optional is not decode tolerance**, which is why `WorkspaceCreated` writes
+  `init(from:)` out. The synthesized decoder's `decodeIfPresent` tolerates a
+  *missing* key and still throws `typeMismatch` on one that is present and
+  malformed — measured with a probe — so a herdr emitting an unexpected type in
+  `tab`, a field nothing reads, would fail the whole decode and report a
+  failure over a workspace sitting on someone's Mac. Each sibling is taken with
+  its own `try?`; only `workspace` still throws.
+- **A settled attempt spends the button, and only reopening the sheet clears
+  it.** The model is `@State` on `WorkspacesView` rather than on the sheet — so
+  an in-flight create survives a dismissal — which means everything it holds
+  outlives the sheet too. `clearFailure` deliberately does not touch the
+  warning, since editing a text field does not undo a workspace; `reset()` does,
+  and the plus button calls it. Without that, one "landed elsewhere" left the
+  button reading "Done" forever over a stale message, with nothing on the screen
+  able to clear it and popping the whole session screen the only way out. The
+  path and label are reset too, or a reopened sheet comes up prefilled *and*
+  armed, one reflexive tap from a second workspace at the same path.
+
+Three smaller measurements, each of which would otherwise be guessed wrong:
+
+- **The label defaults to the basename** — `/tmp` → `tmp`, `…/bleat-apple` →
+  `bleat-apple`, `/` → `/` — **except the home directory, which herdr labels
+  `~`.** The phone cannot know which path that is, so
+  `WorkspaceDirectory.suggestedLabel` is knowingly wrong there and a test pins
+  it as a decision rather than an oversight.
+- **An empty label is omitted rather than sent empty**, so herdr picks that same
+  basename; the field's placeholder shows it, so leaving it blank is not a
+  mystery.
+- **Duplicate labels are allowed.** Two workspaces called `dup` were created and
+  both appear in `workspace list`, so the footer is a heads-up and not a
+  refusal.
+
+**`--no-focus` is passed explicitly**, and it is the one flag here that is about
+somebody else: focusing moves the view of whoever is at the Mac, which is why
+`agent focus` is banned outright. The measured default is already not to focus
+when another workspace holds it, but a default is not a promise. herdr honours
+it whenever there is a focus to keep and **ignores it for the first workspace in
+an empty session** — `focused: true` whatever is asked, which is the one case
+where focusing takes nothing from anybody.
+
+**The plus is offered only while the session is running**, and that changes
+which button is prominent in the bottom bar: while a session is up the useful
+action is adding to it and Stop is the afterthought, while a stopped one has
+nothing to add *to* — a client command against it answers `server_not_running` —
+so Start takes the prominent position and the plus is not shown at all.
+
+**Each bottom-bar button keeps its own `ToolbarItem` with a `ToolbarSpacer`
+between**, and that is load-bearing rather than layout taste. Start and Delete
+are the only pair that appear together and one of them removes somebody's
+session directory; rendering both inside a single item — which a `ForEach`
+does — puts a destructive action flush against the primary one, a tap's width
+apart.
+
+**The directories are suggested, not typed.** The phone has no file browser and
+an absolute path is miserable to type on one, but `pane list` already carries
+every pane's `cwd`, so the list of directories in use on the host is free. It is
+best effort: a host that will not answer leaves a form that still works.
+
+**The gap that remains: the phone cannot create a pane or tab, and nothing at
+all from cold.** Those commands go over the socket API, and a client command
+will not autostart a server — it returns `server_not_running`. Starting the
+session is what closes that for sessions, **including sessions the phone did not
+create**, so a Mac that rebooted with nothing up is no longer a walk to the
+keyboard. Everything else still needs a session already up.
 
 **It is not a new privilege, but it is a new affordance.** The device key
 already grants a full shell, so nothing here widens what a paired phone *could*
 do. It does change what Bleat *is* — from a remote for what is running to
 something that creates state on someone's Mac.
 
-For **panes and workspaces** that still argues for a deliberate gesture showing
-the label and cwd before it acts, rather than a bare `+`. A **session** is the
-one case where a `+` is honest: it takes nothing but a name, touches no pane and
-no agent that already exists, is refused rather than merged if the name is in
-use, and the screen it appears on is a list of sessions. It is behind the plus
-on `PeerDetailView`, and the name is checked before anything leaves the phone.
+For **panes** that still argues for a deliberate gesture showing the label and
+cwd before it acts, rather than a bare `+`. A **workspace** gets one too, and it
+is why `NewWorkspaceForm` is a sheet with a form rather than the one-line bar
+above the keyboard that names a session: a path is long, easy to mistype, and
+the thing herdr is silently wrong about, so both values are on screen before the
+tap. A **session** is the one case where a `+` alone is honest: it takes nothing
+but a name, touches no pane and no agent that already exists, is refused rather
+than merged if the name is in use, and the screen it appears on is a list of
+sessions. It is behind the plus on `PeerDetailView`, and the name is checked
+before anything leaves the phone.
 
 ## Repository layout
 

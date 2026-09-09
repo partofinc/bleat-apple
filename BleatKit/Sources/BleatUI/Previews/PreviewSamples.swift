@@ -134,4 +134,21 @@ extension TranscriptEntry {
     }
 }
 
+extension Pane {
+    /// What `NewWorkspaceModel.loadSuggestions` derives from `pane list`: the
+    /// distinct directories the host's panes are already sitting in.
+    ///
+    /// Sorted, because the model sorts them, and shaped like the real thing —
+    /// several checkouts under one parent, which is the case that makes head
+    /// truncation the right choice in the row.
+    static var sampleDirectories: [String] {
+        [
+            "/Users/ravil/Developer/rawillk/bleat-apple",
+            "/Users/ravil/Developer/rawillk/herdr",
+            "/Users/ravil/Developer/nuvio/nuvio-assess",
+            "/Users/ravil/dotfiles",
+        ].sorted()
+    }
+}
+
 #endif

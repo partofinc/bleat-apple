@@ -170,6 +170,34 @@ struct PreviewSmokeTests {
                 model: model, peer: .preview, known: SessionInfo.samples, onStarted: {}
             ))
         }
+        // Naming a new workspace, in the states that matter: a good path, one
+        // that cannot work, the host saying there is no such directory, and the
+        // one nobody will otherwise ever see — created, somewhere else.
+        for model in [
+            NewWorkspaceModel(
+                previewing: "/Users/ravil/Developer/rawillk/bleat-apple",
+                suggestions: Pane.sampleDirectories
+            ),
+            NewWorkspaceModel(previewing: "Developer/bleat-apple"),
+            NewWorkspaceModel(previewing: "~/Developer"),
+            NewWorkspaceModel(
+                previewing: "/Users/ravil/Developr",
+                failure: "There is no directory at /Users/ravil/Developr on this host."
+            ),
+            NewWorkspaceModel(
+                previewing: "/Users/ravil/Developer",
+                warning: "Created Developer, but its pane opened in /Users/ravil."
+            ),
+            NewWorkspaceModel(
+                previewing: "/Users/ravil/Developer",
+                warning: "the connection closed before this finished"
+            ),
+            NewWorkspaceModel(previewing: "/Users/ravil/Developer", isCreating: true),
+        ] {
+            render(context, NewWorkspaceForm(
+                model: model, peer: .preview, known: Workspace.samples, onCreated: {}
+            ))
+        }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
         // The host unpaired from underneath the sheet, which the root-level
@@ -368,6 +396,12 @@ struct PreviewSmokeTests {
         let session = NewSessionModel(previewing: "scratch")
         #expect(await session.start(on: .preview) == false)
         #expect(session.failure == nil, "a parked launch reported a failure, so it tried")
+
+        // The other write, and the one with a directory check in front of it:
+        // a parked create must not reach the host for `test -d` either.
+        let workspace = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
+        #expect(await workspace.create(on: .preview) == .failed)
+        #expect(workspace.failure == nil, "a parked create reported a failure, so it tried")
 
         // And the one that would *end* processes on the dev Mac rather than
         // start them.

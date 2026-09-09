@@ -21,13 +21,20 @@ enum SessionStarter {
     ///
     /// **The look comes first, and it is what the claims are derived from.**
     /// An earlier version launched and then asked only whether a session of
-    /// that name was running *now* — which is true when the launch failed
-    /// because it was already up. herdr answers `error: herdr server is already
-    /// running` into a log nobody read, the poll saw it running on its first
-    /// try, and the phone recorded "we started this" for a session somebody was
-    /// working in. That is a Stop button over their agents, which is the one
-    /// thing the whole guard exists to prevent, and a stale list is all it
-    /// takes: the row said stopped because it was stopped when the list loaded.
+    /// that name was running *now* — which is true when the launch did nothing
+    /// because it was already up. The poll saw it running on its first try and
+    /// the phone recorded "we started this" for a session somebody was working
+    /// in. That is a Stop button over their agents, which is the one thing the
+    /// whole guard exists to prevent, and a stale list is all it takes: the row
+    /// said stopped because it was stopped when the list loaded.
+    ///
+    /// **`session attach` makes this rule matter more than it used to, not
+    /// less.** The old `herdr server` at least failed loudly at an already-
+    /// running session (`error: herdr server is already running`, into a log
+    /// nobody read). `attach` is idempotent — measured: same pid, no error, no
+    /// second server — so the launch against somebody's live session is
+    /// silently indistinguishable from starting a fresh one. This look is now
+    /// the only thing standing between that and a false claim.
     ///
     /// The same look settles the other claim. The caller used to say whether
     /// this was a creation, and the field that names a session always said yes
@@ -57,17 +64,25 @@ enum SessionStarter {
         }
 
         // A shell, not a herdr command: `HerdrTransport.run` would apply the
-        // screen's own `HERDR_SESSION` prefix and cannot express a detached
-        // launch at all. `ConnectionStore.shell` deliberately leaves the
-        // session prefix alone, which is what keeps the list on screen reading
-        // the session it was already reading.
+        // screen's own `HERDR_SESSION` prefix, which is exactly the variable
+        // this command unsets so the name it was given is the name that starts.
+        // `ConnectionStore.shell` deliberately leaves that prefix alone, which
+        // is what keeps the list on screen reading the session it was already
+        // reading.
         let shell = try await connections.shell(for: peer)
-        _ = try await shell.run(shell: SessionLaunch.startCommand(
+        // **Kept, and it is the whole of the failure report now.** The launch
+        // is synchronous and herdr's refusal arrives on its stderr, so this
+        // string is the only account there will be — there is no log file to
+        // fetch afterwards any more.
+        let launchOutput = try await shell.run(shell: SessionLaunch.startCommand(
             name: name, herdrPath: peer.herdrPath ?? "herdr"
         ))
 
         guard try await isRunning(name, on: peer, connections: connections) else {
-            return .failed(try await diagnosis(for: name, over: shell))
+            return .failed(
+                SessionLaunch.diagnosis(inLaunchOutput: launchOutput)
+                    ?? "The host did not report a session called \(name.text) after starting it."
+            )
         }
         // Recorded only now, and only on a session the host has confirmed
         // running — claiming it before the host agreed would hand these actions
@@ -85,9 +100,12 @@ enum SessionStarter {
     /// Polls `session list` until the name reports running, or the budget runs
     /// out.
     ///
-    /// **The launch cannot report its own failure** — it is detached, so the
-    /// exit status is the shell's and is 0 whichever way it went. Checking is
-    /// the only way to know, exactly as it is for a revocation.
+    /// **The launch cannot confirm its own success.** It reports a *refusal*
+    /// well enough — exit 2, with herdr's sentence on stderr — but the
+    /// headless success path exits 1 with `Inappropriate ioctl for device`,
+    /// which cannot be told apart from a TUI that failed to draw for some
+    /// other reason. So the answer still comes from reading `session list`
+    /// back, exactly as it does for a revocation.
     ///
     /// Measured locally at 0.05s, on the very first poll, but that was a warm
     /// binary over a unix socket; this runs over SSH with an exec channel per
@@ -112,31 +130,5 @@ enum SessionStarter {
             }
         }
         return false
-    }
-
-    /// What the launch printed, turned into something worth reading.
-    ///
-    /// The log is the only channel herdr's complaint has — everything else
-    /// about a detached launch succeeds. Fetching it is best effort: a failure
-    /// to read it must not replace the more useful "it did not start" with an
-    /// error about a `cat`.
-    private static func diagnosis(
-        for name: SessionName,
-        over shell: any ShellRunner
-    ) async throws -> String {
-        let log = (try? await shell.run(shell: SessionLaunch.logCommand(name: name)))?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let unknown = "The host did not report a session called \(name.text) after starting it."
-        // **Only a line that really is an error.** A launch that worked writes
-        // its startup banner and socket paths here, and a host merely slower
-        // than the poll's budget would then have that banner shown to the user
-        // under the heading "That did not happen" — herdr saying it started as
-        // the reason it did not. herdr prefixes its own failures with
-        // `error: `; anything else is not a cause.
-        guard let failure = log.split(separator: "\n")
-            .map({ $0.trimmingCharacters(in: .whitespaces) })
-            .first(where: { $0.hasPrefix("error: ") })
-        else { return unknown }
-        return String(failure.dropFirst("error: ".count))
     }
 }

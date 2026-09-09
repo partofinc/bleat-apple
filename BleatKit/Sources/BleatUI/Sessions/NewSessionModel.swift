@@ -9,18 +9,22 @@ import Observation
 /// that already exists — but it is a write, and writes in this app are checked
 /// rather than assumed. Three reasons, each measured:
 ///
-/// - **The launch cannot report its own failure.** It is detached
-///   (`nohup … &`), so the exit status is the shell's and is 0 whichever way it
-///   went. See `SessionLaunch`.
-/// - **The commonest failure is silent from here.** A session of that name
-///   already running exits 1 with `error: herdr server is already running`,
-///   into a redirect.
+/// - **The launch cannot confirm its own success.** A refusal comes back
+///   clearly enough — exit 2, with herdr's sentence on stderr — but the
+///   headless success path exits 1 (`Inappropriate ioctl for device`, after the
+///   server is up) and cannot be told apart from a TUI that failed to draw for
+///   another reason. See `SessionLaunch`.
+/// - **A session of that name already running is silent from here.**
+///   `herdr session attach` is idempotent — measured: same pid, no error, no
+///   second server — so the launch cannot distinguish it either. Knowing comes
+///   from the list already on screen, and from `SessionStarter`'s look before
+///   the write.
 /// - **A name that cannot work should never leave the phone**, so `SessionName`
 ///   refuses it while the user is still typing.
 ///
 /// So: validate, launch, then read `session list` back until the name appears
-/// running — and if it does not, fetch what the launch actually printed and
-/// show that. herdr's own sentence is nearly always the whole answer.
+/// running — and if it does not, show what the launch printed. herdr's own
+/// sentence is nearly always the whole answer.
 @Observable
 @MainActor
 final class NewSessionModel {

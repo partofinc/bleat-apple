@@ -196,10 +196,11 @@ final class SessionControlModel {
         // **One at a time.** `begin` starts an unstructured task, so two quick
         // taps enqueue two of these; nothing between here and `phase =
         // .working` below suspends, and the main actor runs them in turn, so
-        // the second sees the first's claim. Without it a double tap launches
-        // two `herdr server`s sharing one truncating log, or raises a failure
-        // alert over a stop that had already succeeded. `NewSessionModel.start`
-        // has had this guard from the beginning.
+        // the second sees the first's claim. Without it a double tap runs two
+        // concurrent foreground launches against one name — each holding its
+        // own exec channel for the duration — or raises a failure alert over a
+        // stop that had already succeeded. `NewSessionModel.start` has had this
+        // guard from the beginning.
         guard !isWorking else { return false }
         guard let connections, let name = SessionName(session.name) else {
             // Unreachable from a row this phone created — `SessionName` is what
@@ -213,7 +214,8 @@ final class SessionControlModel {
 
         do {
             // Starting is checked by the launcher itself, which has to poll:
-            // the launch is detached and its exit status says nothing.
+            // the launch's exit status cannot distinguish a server that came up
+            // from a TUI that merely failed to draw.
             if action == .start {
                 switch try await SessionStarter.start(
                     // Which claims this earns is settled by the starter, off

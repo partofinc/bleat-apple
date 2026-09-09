@@ -51,6 +51,13 @@ struct NewAgentForm: View {
         Section {
             if model.isLoadingPanes && model.available.isEmpty {
                 HStack { ProgressView(); Text("Looking for free panes…") }
+            } else if model.available.isEmpty && !model.hasLoadedPanes {
+                // The host was never asked, or could not answer. The failure
+                // row above says so; claiming anything about its panes here
+                // would be a confident statement about a machine we did not
+                // reach.
+                Text("The host has not said which panes are free.")
+                    .foregroundStyle(.secondary)
             } else if model.available.isEmpty {
                 // **Not an error, and not a dead end either.** Every pane
                 // holding an agent is the ordinary state of a working host —

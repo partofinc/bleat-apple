@@ -25,11 +25,22 @@ public enum AgentStart {
     public static let minimumTimeoutMs = 3_001
     public static let maximumTimeoutMs = 300_000
 
-    /// Whether a failed start leaves the pane's fate unknown.
+    /// Whether a failed start proves that **nothing was typed into the pane**.
     ///
-    /// Only `timeout` does. Every other refusal is herdr declining before it
-    /// typed anything — measured under 30ms each — so the pane is untouched and
-    /// a retry is safe:
+    /// This is the question, and it is deliberately not "was it a timeout".
+    /// `agent start` blocks on the host for up to thirty seconds while herdr
+    /// types the executable in and waits — so anything that goes wrong *to the
+    /// connection* during that window says nothing about whether the command
+    /// ran, and an agent may well be sitting in that pane. Only herdr
+    /// answering, in its own error envelope, settles it.
+    ///
+    /// The same shape as `ConnectionPolicy.isRefusalByHost`, with one extra
+    /// clause: `timeout` is a `HerdrError` that means "I stopped waiting", and
+    /// that is emphatically not a refusal. Measured — a `claude` given 3.5s
+    /// against a 4.9s cold start timed out and then came up anyway, nameless.
+    ///
+    /// Everything else herdr says is a refusal made **before it typed
+    /// anything**, each measured under 30ms:
     ///
     /// | code | meaning |
     /// |---|---|
@@ -39,10 +50,12 @@ public enum AgentStart {
     /// | `agent_name_taken` | that name is in use in this session |
     /// | `invalid_agent_timeout` | outside the bounds above |
     ///
-    /// `timeout` is the one that means "I stopped waiting", which is not the
-    /// same as "it did not happen": the agent may be booting in the pane still.
-    public static func isUnknownOutcome(_ error: any Error) -> Bool {
-        (error as? HerdrError)?.code == "timeout"
+    /// So: a non-`timeout` `HerdrError` is safe to retry, and **everything
+    /// else has to be checked** — a dropped connection and a reply this build
+    /// could not read both leave an agent that probably started.
+    public static func isRefusalBeforeTyping(_ error: any Error) -> Bool {
+        guard let herdr = error as? HerdrError else { return false }
+        return herdr.code != "timeout"
     }
 
     /// Reads the real cause of a timeout out of the pane.
@@ -70,14 +83,43 @@ public enum AgentStart {
     ///   cause, which is the mistake `SessionStarter` made with herdr's own
     ///   startup banner.
     public static func diagnosis(inPane lines: [String], kind: AgentKind) -> String? {
-        let interesting = lines
-            .map { $0.trimmingCharactersInWhitespace() }
-            .filter { !$0.isEmpty }
         // A shell's complaint names the command it could not run, which is the
         // one thing that ties a line in this pane to the agent we asked for.
         // Anything else on screen belongs to whatever the user was doing.
-        return interesting.last { line in
-            line.contains(kind.rawValue) && Self.shellComplaints.contains { line.contains($0) }
+        lines
+            .map { $0.trimmingCharactersInWhitespace() }
+            .filter { !$0.isEmpty }
+            .last { line in
+                Self.shellComplaints.contains { line.contains($0) } && names(kind, in: line)
+            }
+    }
+
+    /// Whether `line` names `kind` **as the command**, rather than merely
+    /// containing its letters.
+    ///
+    /// **A substring test is not good enough here, and the short kinds are why.**
+    /// herdr offers `pi`, `amp`, `agy`, `omp` and `kimi`, and one of the
+    /// complaints below is the very generic "No such file or directory" — so
+    /// `cat: /Users/x/api/keys: No such file or directory`, left on screen by
+    /// something the user did earlier, would be quoted back as the reason `pi`
+    /// failed to start. That breaks the promise this function's own
+    /// documentation makes.
+    ///
+    /// Every shell puts the offending command in its own colon-separated field:
+    ///
+    /// ```
+    /// zsh:  command not found: devin
+    /// bash: devin: command not found
+    /// sh: 1: devin: not found
+    /// env: devin: No such file or directory
+    /// ```
+    ///
+    /// So the field has to *be* the kind — or end in it, for the path form a
+    /// shell sometimes echoes. `api` is then not `pi`, and nothing is guessed.
+    private static func names(_ kind: AgentKind, in line: String) -> Bool {
+        line.split(separator: ":").contains { field in
+            let value = String(field).trimmingCharactersInWhitespace()
+            return value == kind.rawValue || value.hasSuffix("/" + kind.rawValue)
         }
     }
 

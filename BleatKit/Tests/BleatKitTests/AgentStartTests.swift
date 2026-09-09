@@ -120,24 +120,37 @@ struct AgentStartTests {
     /// held a running, detected claude with `name: null`. Reporting that as a
     /// plain failure invites a retry, which lands on `agent_pane_busy` because
     /// the pane now holds the agent the user was told had not started.
-    @Test("a timeout leaves the outcome unknown")
-    func aTimeoutIsUnknown() {
-        #expect(AgentStart.isUnknownOutcome(herdr("timeout", "timed out waiting for agent startup")))
+    @Test("a timeout is not a refusal")
+    func aTimeoutIsNotARefusal() {
+        #expect(!AgentStart.isRefusalBeforeTyping(
+            herdr("timeout", "timed out waiting for agent startup")
+        ))
     }
 
-    /// Everything else herdr refuses, it refuses **before typing anything** —
-    /// each measured under 30ms — so the pane is untouched and a retry is safe.
+    /// Everything else herdr says, it says **before typing anything** — each
+    /// measured under 30ms — so the pane is untouched and a retry is safe.
     @Test("every other refusal happened before anything was typed", arguments: [
         "agent_pane_not_found", "agent_pane_busy", "invalid_agent_name",
         "agent_name_taken", "invalid_agent_timeout",
     ])
     func everythingElseIsARefusal(_ code: String) {
-        #expect(!AgentStart.isUnknownOutcome(herdr(code, "refused")))
+        #expect(AgentStart.isRefusalBeforeTyping(herdr(code, "refused")))
     }
 
-    @Test("a transport failure is not a herdr timeout")
-    func transportIsNotATimeout() {
-        #expect(!AgentStart.isUnknownOutcome(TransportError.connectionFailed("closed")))
+    /// **The question is "did herdr answer", not "was it a timeout", and an
+    /// earlier version asked the wrong one.** `agent start` blocks on the host
+    /// for up to thirty seconds while herdr types the executable in, so a
+    /// dropped connection says nothing about whether the command ran — and a
+    /// reply this build could not read means it certainly did. Both were being
+    /// reported as "nothing happened, try again", and the retry lands on
+    /// `agent_pane_busy` over an agent nobody named.
+    @Test("anything that is not herdr answering has to be checked")
+    func onlyHerdrCanSettleIt() {
+        #expect(!AgentStart.isRefusalBeforeTyping(TransportError.connectionFailed("closed")))
+        #expect(!AgentStart.isRefusalBeforeTyping(
+            DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "not json"))
+        ))
+        #expect(!AgentStart.isRefusalBeforeTyping(CancellationError()))
     }
 
     // MARK: - Reading the cause out of the pane
@@ -164,6 +177,21 @@ struct AgentStartTests {
     ])
     func readsOtherShells(_ line: String) {
         #expect(AgentStart.diagnosis(inPane: [line], kind: AgentKind("devin")) == line)
+    }
+
+    /// **A substring is not a mention, and the short kinds are why.** herdr
+    /// offers `pi`, `amp`, `agy`, `omp` and `kimi`, and one of the complaints
+    /// matched is the very generic "No such file or directory" — so a line left
+    /// on screen by something the user did earlier would be quoted back as the
+    /// reason `pi` failed to start.
+    @Test("a line that merely contains the kind's letters is not a cause")
+    func doesNotMatchOnASubstring() {
+        let pane = ["cat: /Users/ravil/api/keys: No such file or directory"]
+        #expect(AgentStart.diagnosis(inPane: pane, kind: AgentKind("pi")) == nil)
+        // And the same complaint that really is about `pi` still reads.
+        #expect(AgentStart.diagnosis(
+            inPane: ["env: pi: No such file or directory"], kind: AgentKind("pi")
+        ) != nil)
     }
 
     /// **Never a guess.** A pane that says nothing about the agent we asked for

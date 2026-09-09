@@ -217,6 +217,12 @@ struct PreviewSmokeTests {
                 workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
                 isAddingPane: true
             ),
+            // The host never answered about its panes, so the screen must not
+            // claim they are all taken.
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2", hasLoadedPanes: false,
+                failure: "none of 3 addresses could be reached"
+            ),
             NewAgentModel(
                 previewing: "reviewer", kind: AgentKind("devin"), pane: "w2:p1",
                 available: Pane.samples, failure: "zsh: command not found: devin"

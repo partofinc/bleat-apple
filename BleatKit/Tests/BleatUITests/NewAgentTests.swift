@@ -135,6 +135,19 @@ struct NewAgentTests {
         #expect(!starting.canAddPane)
     }
 
+    /// **An empty pane list means two different things**, and only one of them
+    /// is a statement about the host. Saying "every pane already has an agent"
+    /// over the top of a connection failure is a confident claim about a
+    /// machine that was never reached.
+    @Test("a host that never answered is not a host with no free panes")
+    func doesNotClaimWhatItDoesNotKnow() {
+        let unasked = NewAgentModel(previewing: "reviewer", workspace: "w2", hasLoadedPanes: false)
+        #expect(!unasked.hasLoadedPanes)
+
+        let answered = NewAgentModel(previewing: "reviewer", workspace: "w2")
+        #expect(answered.hasLoadedPanes, "the parked default is a host that answered")
+    }
+
     /// A parked model must not create a tab either — that is a pane on the dev
     /// Mac, from a canvas.
     @Test("a parked model adds no pane")

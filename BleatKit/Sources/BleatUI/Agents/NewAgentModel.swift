@@ -49,6 +49,13 @@ final class NewAgentModel {
     /// Names already in use in this session. herdr refuses a duplicate.
     private(set) var takenNames: Set<String> = []
     private(set) var isLoadingPanes = false
+    /// Whether the host has actually answered about its panes.
+    ///
+    /// An empty `available` means two very different things — "every pane is
+    /// taken" and "we never found out" — and the form says the first out loud.
+    /// Without this it says it over the top of its own connection error, which
+    /// is a confident claim about a host that could not be reached.
+    private(set) var hasLoadedPanes = false
     /// Adding a tab, which is how another pane is obtained. See `addPane`.
     private(set) var isAddingPane = false
     /// Where a new pane would open: the directory this workspace's panes are
@@ -95,6 +102,7 @@ final class NewAgentModel {
         available: [Pane] = [],
         takenNames: Set<String> = [],
         workspaceDirectory: String? = nil,
+        hasLoadedPanes: Bool = true,
         failure: String? = nil,
         warning: String? = nil,
         isStarting: Bool = false,
@@ -110,6 +118,7 @@ final class NewAgentModel {
         self.available = available
         self.takenNames = takenNames
         self.workspaceDirectory = workspaceDirectory
+        self.hasLoadedPanes = hasLoadedPanes
         self.failure = failure
         self.warning = warning
         self.isStarting = isStarting
@@ -201,10 +210,16 @@ final class NewAgentModel {
             let client = try await connections.client(for: peer, session: session)
             let created = try await client.createTab(inWorkspace: workspace)
             await loadPanes(for: peer)
-            // The reply names the pane, and `pane list` is read back anyway —
-            // so if the reply's own pane did not decode, the newcomer is
-            // whichever pane the refreshed list has that the picker can use.
-            pane = created.rootPane?.paneID ?? available.last?.paneID
+            // **Matched on the new tab, never on "whichever sorts last".** The
+            // fallback here fires exactly when `TabCreated` dropped a malformed
+            // `root_pane`, and in a workspace that already had a free pane
+            // `available.last` is some *pre-existing* pane — which the form
+            // would then silently aim at, possibly a shell somebody at the Mac
+            // is using, since `agent list` cannot see a pane merely busy. The
+            // tab id is required and did decode, so it identifies the newcomer
+            // exactly.
+            pane = created.rootPane?.paneID
+                ?? available.first { $0.tabID == created.tab.tabID }?.paneID
         } catch {
             await connections.handle(error)
             failure = ErrorMessage.failure(of: error).message
@@ -232,6 +247,7 @@ final class NewAgentModel {
 
             let occupied = Set(agents.map(\.paneID))
             takenNames = Set(agents.compactMap(\.name))
+            hasLoadedPanes = true
             let mine = panes.filter { workspace == nil || $0.workspaceID == workspace }
             available = mine.filter { !occupied.contains($0.paneID) }
             // What a new tab would inherit — the workspace's own directory,
@@ -265,13 +281,22 @@ final class NewAgentModel {
             return .started
         } catch {
             await connections.handle(error)
-            guard AgentStart.isUnknownOutcome(error) else {
-                // Refused before anything was typed: the pane is untouched, so
-                // say what herdr said and leave the button armed.
-                failure = ErrorMessage.failure(of: error).message
-                return .failed
+            guard AgentStart.isRefusalBeforeTyping(error) else {
+                // **Anything that is not herdr refusing has to be checked.**
+                // This call blocks on the host for up to thirty seconds while
+                // herdr types the executable in — so a dropped connection or a
+                // reply this build could not read says nothing about whether
+                // the command ran, and an agent may be in that pane. An earlier
+                // version asked "was it a timeout" instead, which sent exactly
+                // those two cases back to the user as "nothing happened, try
+                // again" — and the retry lands on `agent_pane_busy` over an
+                // agent nobody named.
+                return await settle(in: target, on: peer)
             }
-            return await settle(in: target, on: peer)
+            // herdr answered, before it typed anything: the pane is untouched,
+            // so say what it said and leave the button armed.
+            failure = ErrorMessage.failure(of: error).message
+            return .failed
         }
     }
 
@@ -286,21 +311,35 @@ final class NewAgentModel {
     /// - the host cannot be asked — genuinely unknown, which must disarm.
     private func settle(in target: String, on peer: PairedPeer) async -> Outcome {
         guard let connections,
-              let client = try? await connections.client(for: peer, session: session),
-              let agents = try? await client.agents()
+              let client = try? await connections.client(for: peer, session: session)
         else {
-            warning = "herdr stopped waiting for \(kind.label) to start, and the host could not "
-                + "be asked what happened. Pull the list down to see whether it came up."
+            warning = unknownMessage
             return .warned
         }
 
-        if let landed = agents.first(where: { $0.paneID == target }) {
-            warning = "\(landed.agent ?? kind.label) is running in \(target), but it took longer "
-                + "than herdr waited — so it has no name. It will show in the list without one."
-            return .warned
+        // **Polled, not read once, and the reason is what timed out.** herdr
+        // gave up waiting for *its own detection*, so an agent whose binary is
+        // up but not yet recognised is absent from `agent list` at this instant
+        // — and reading once would report "it did not start" about a pane that
+        // is filling up as we ask. Every other write in this app that reads
+        // back polls; `SessionStarter` does the same over `session list`.
+        for attempt in 0..<5 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(700)) }
+            guard let agents = try? await client.agents() else {
+                warning = unknownMessage
+                return .warned
+            }
+            if let landed = agents.first(where: { $0.paneID == target }) {
+                warning = "\(landed.agent ?? kind.label) is running in \(target), but it took "
+                    + "longer than herdr waited — so it has no name. It will show in the list "
+                    + "without one."
+                return .warned
+            }
         }
 
-        // Nothing in the pane, so nothing started and the pane is free again.
+        // Nothing has appeared in the pane after several seconds, so nothing
+        // started and the pane is free again.
+        //
         // **The pane is the only place the cause is written**: herdr's own
         // answer is "timed out waiting for agent startup", which names nothing,
         // while the pane holds the shell's own complaint.
@@ -311,5 +350,10 @@ final class NewAgentModel {
             failure = "\(kind.label) did not start in \(target) within 30 seconds."
         }
         return .failed
+    }
+
+    private var unknownMessage: String {
+        "herdr stopped waiting for \(kind.label) to start, and the host could not be asked what "
+            + "happened. Pull the list down to see whether it came up."
     }
 }

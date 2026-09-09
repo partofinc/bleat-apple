@@ -103,8 +103,10 @@ push notifications, watchOS, Live Activities, multi-account badges.
 ## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026)
 
 Read off the live CLI, so this does not have to be rediscovered. **Starting a
-session, creating a workspace and starting an agent are built** — see below;
-panes and tabs are not.
+session, creating a workspace, adding a tab and starting an agent are built** —
+see below. `pane split` is not, deliberately: a tab is the better way to get
+another pane, and the measurement that decides it is under **Another pane is a
+tab, not a split**.
 
 **Panes, workspaces and tabs can be created, and a plain shell is the default.**
 
@@ -397,6 +399,12 @@ the order that costs the user least:
   safe to try again, a new workspace means say so, and a read-back that *itself*
   fails means "I cannot tell", which must **disarm** rather than re-arm.
   - **A refusal is not a maybe**, and it skips the read-back entirely.
+    (`AgentStart.isRefusalBeforeTyping` is the same rule one command along, with
+    one extra clause: `timeout` is a `HerdrError` that means "I stopped
+    waiting", so it is the one herdr answer that is *not* a refusal. Asking
+    "was it a timeout" instead of "did herdr answer" is a mistake that shipped
+    here once — it sent a dropped connection and an unreadable reply back as
+    "nothing happened, try again", over an agent that had probably started.)
     `ConnectionPolicy.isRefusalByHost` is the other half of
     `isFatalToConnection`: a `HerdrError` is the host answering in its own error
     envelope, having processed the command and declined, so nothing was created.
@@ -579,21 +587,27 @@ why the measurement is written down.
   reached a prompt; a new *tab's* pane took an agent immediately. Both are worth
   knowing before wiring create-then-start into one gesture.
 
-**The gap that remains: the phone cannot create a pane or tab, and nothing at
-all from cold.** (An agent needs a free pane, so on a host whose panes are all
-busy the way to another one is a new workspace.) Those commands go over the socket API, and a client command
-will not autostart a server — it returns `server_not_running`. Starting the
-session is what closes that for sessions, **including sessions the phone did not
-create**, so a Mac that rebooted with nothing up is no longer a walk to the
+**The gap that remains: nothing can be made from cold, and a pane cannot be
+split.** Every one of these commands goes over the socket API, and a client
+command will not autostart a server — it returns `server_not_running`. Starting
+the session is what closes that for sessions, **including sessions the phone did
+not create**, so a Mac that rebooted with nothing up is no longer a walk to the
 keyboard. Everything else still needs a session already up.
+
+Splitting is the one command deliberately left out rather than merely not
+reached: a tab gives a full-width pane and costs no existing pane anything,
+which a split does not. What the phone cannot do is arrange panes *within* a
+tab, and that is a layout decision belonging to whoever is looking at the
+screen.
 
 **It is not a new privilege, but it is a new affordance.** The device key
 already grants a full shell, so nothing here widens what a paired phone *could*
 do. It does change what Bleat *is* — from a remote for what is running to
 something that creates state on someone's Mac.
 
-For **panes** that still argues for a deliberate gesture showing the label and
-cwd before it acts, rather than a bare `+`. A **workspace** gets one too, and it
+For a **pane** that still argues for a deliberate gesture showing where it will
+open before it acts, rather than a bare `+` — which is why "Add a pane" names
+the directory it will inherit, even though it asks for nothing. A **workspace** gets one too, and it
 is why `NewWorkspaceForm` is a sheet with a form rather than the one-line bar
 above the keyboard that names a session: a path is long, easy to mistype, and
 the thing herdr is silently wrong about, so both values are on screen before the

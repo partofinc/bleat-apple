@@ -94,14 +94,11 @@ struct AgentsView: View {
                 onStarted: { Task { await agents.load(for: peer) } }
             )
         }
-        // **Yields to a `bleat://` link.** SwiftUI will not raise a second
-        // presentation over one already up, so a pairing request arriving while
-        // this is on screen would be lost *and* leave `PairingRouter.isPresented`
-        // true with nothing visible — which makes the Pair button a no-op until
-        // the app is relaunched. `PeersView` carries the same line.
-        .onChange(of: context.pairing.isPresented) { _, isPairing in
-            if isPairing { isStarting = false }
-        }
+        // Stands aside for a `bleat://` link — but not mid-start, or a
+        // thirty-second start's outcome would have nowhere to be reported. See
+        // `PairingYield`.
+        .yieldsToPairing(whileBusy: newAgent.isStarting || newAgent.isAddingPane,
+                         presenting: $isStarting)
         #endif
         .refreshable { await agents.load(for: peer) }
         .task { await agents.load(for: peer) }

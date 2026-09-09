@@ -172,7 +172,8 @@ struct NewWorkspaceForm: View {
     }
 
     private var duplicate: String? {
-        let wanted = model.label.isEmpty ? model.directory?.suggestedLabel : model.label
+        let typed = model.trimmedLabel
+        let wanted = typed.isEmpty ? model.directory?.suggestedLabel : typed
         guard let wanted, !wanted.isEmpty else { return nil }
         return known.first { $0.label == wanted }?.label
     }

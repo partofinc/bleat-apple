@@ -46,6 +46,40 @@ struct WorkspaceCreateTests {
         #expect(created.rootPane == nil)
     }
 
+    /// **Optional is not tolerance, which is why `init(from:)` is written
+    /// out.** The synthesized decoder's `decodeIfPresent` throws
+    /// `typeMismatch` on a key that is present and malformed — measured with a
+    /// probe — so a future herdr emitting `"number": "1"` in the tab would fail
+    /// the whole decode. The create would then be reported as a failure over a
+    /// workspace sitting on someone's Mac, which is the exact outcome the
+    /// optionality was there to prevent.
+    @Test("a sibling this build cannot read does not cost the workspace")
+    func toleratesAMalformedSibling() throws {
+        let body = Data(#"""
+        {"workspace":{"workspace_id":"w9","label":"x","number":9,"agent_status":"idle",
+                      "focused":false,"pane_count":1,"tab_count":1},
+         "tab":{"tab_id":"w9:t1","workspace_id":"w9","number":"1"},
+         "root_pane":{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1",
+                      "agent_status":"unknown","focused":false,"cwd":"/tmp"}}
+        """#.utf8)
+        let created = try JSONDecoder().decode(WorkspaceCreated.self, from: body)
+        #expect(created.workspace.workspaceID == "w9")
+        #expect(created.tab == nil, "a malformed tab should be dropped, not thrown")
+        // And the sibling that *does* read is still read, so the placement
+        // check survives one bad neighbour.
+        #expect(created.rootPane?.cwd == "/tmp")
+    }
+
+    /// The workspace itself is the part the screen needs, so it is the one
+    /// thing that must still throw.
+    @Test("a reply with no readable workspace is a decode failure")
+    func requiresTheWorkspace() {
+        let body = Data(#"{"tab":{"tab_id":"w9:t1","workspace_id":"w9"}}"#.utf8)
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(WorkspaceCreated.self, from: body)
+        }
+    }
+
     // MARK: - Where it actually landed
 
     /// **The measurement this whole design turns on.**

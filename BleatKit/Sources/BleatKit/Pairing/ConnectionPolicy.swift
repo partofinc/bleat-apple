@@ -50,4 +50,28 @@ public enum ConnectionPolicy {
     public static func isFatalToConnection(_ error: any Error) -> Bool {
         error is TransportError
     }
+
+    /// Whether an error is the host having run the command and refused it —
+    /// rather than the command's fate being unknown.
+    ///
+    /// The other half of the question above, and it matters for a **write**.
+    /// A failed write is not proof that nothing happened: a connection that
+    /// drops between herdr running a command and its reply arriving leaves the
+    /// work done and the caller none the wiser, which is why `SessionStarter`
+    /// polls `session list` and `bleat keys revoke` re-reads the file.
+    ///
+    /// A `HerdrError` is the one failure that settles it without asking. The
+    /// host answered, in its own error envelope, having processed the command
+    /// and declined — so nothing was created, stopped or deleted, and a retry
+    /// is safe. Treating it as unknown is not merely cautious: it tells the
+    /// user something may have happened on their Mac when it demonstrably did
+    /// not, and any sensible response to "may have" is to stop and go look.
+    ///
+    /// A `DecodingError` is deliberately *not* included, and that is the
+    /// interesting case: the command succeeded and it is only the reply this
+    /// build could not read, so the write almost certainly landed. That one has
+    /// to be checked, never assumed away.
+    public static func isRefusalByHost(_ error: any Error) -> Bool {
+        error is HerdrError
+    }
 }

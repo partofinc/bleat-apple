@@ -133,6 +133,37 @@ struct NewWorkspaceTests {
         #expect(model.directory?.path == "/Users/ravil/Developer")
     }
 
+    /// A field holding nothing but a pasted newline is still an untouched
+    /// field. With `.whitespaces` on the guard — which excludes newlines — it
+    /// fell through to `WorkspaceDirectory`, which reported `.empty`, so "Give
+    /// the workspace a directory." appeared in red under what looks blank.
+    @Test("a field holding only whitespace is still the resting state")
+    func whitespaceIsStillEmpty() {
+        for path in ["\n", "   ", " \n "] {
+            #expect(NewWorkspaceModel(previewing: path).pathProblem == nil,
+                    "a blank-looking field complained")
+        }
+    }
+
+    /// **A label of spaces is not an empty label.** `createWorkspace` omits the
+    /// flag only for an exactly empty string, so `"   "` would be sent as
+    /// `--label '   '` and the workspace created with a blank-looking name
+    /// instead of the basename the placeholder promised.
+    @Test("a label of nothing but spaces falls back to the folder's name")
+    func blankLabelIsNoLabel() {
+        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer", label: "   ")
+        #expect(model.trimmedLabel.isEmpty)
+        #expect(model.labelPlaceholder == "Developer")
+    }
+
+    /// And the same string is what the duplicate hint compares, or a trailing
+    /// space typed after an existing name suppresses a warning about a name
+    /// herdr will render identically.
+    @Test("a trailing space does not hide a duplicate")
+    func trimsBeforeComparing() {
+        #expect(NewWorkspaceModel(previewing: "/x", label: "forge ").trimmedLabel == "forge")
+    }
+
     /// The suggestions are a convenience, so a host that cannot answer must
     /// leave a usable form rather than an error about a list nobody asked for.
     @Test("a parked model fetches no suggestions and does not complain")

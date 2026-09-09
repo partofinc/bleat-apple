@@ -396,6 +396,23 @@ the order that costs the user least:
   answers, and the third is why it is not a one-liner: nothing new means it is
   safe to try again, a new workspace means say so, and a read-back that *itself*
   fails means "I cannot tell", which must **disarm** rather than re-arm.
+  - **A refusal is not a maybe**, and it skips the read-back entirely.
+    `ConnectionPolicy.isRefusalByHost` is the other half of
+    `isFatalToConnection`: a `HerdrError` is the host answering in its own error
+    envelope, having processed the command and declined, so nothing was created.
+    Read as unknown it tells the user something may be on their Mac when it
+    demonstrably is not — and since unknown spends the button, reopening the
+    sheet becomes the only way back from something a retry would have fixed.
+    A `DecodingError` is deliberately *not* a refusal: there the command
+    succeeded and only the reply was unreadable, so the write almost certainly
+    landed and has to be checked.
+- **Optional is not decode tolerance**, which is why `WorkspaceCreated` writes
+  `init(from:)` out. The synthesized decoder's `decodeIfPresent` tolerates a
+  *missing* key and still throws `typeMismatch` on one that is present and
+  malformed — measured with a probe — so a herdr emitting an unexpected type in
+  `tab`, a field nothing reads, would fail the whole decode and report a
+  failure over a workspace sitting on someone's Mac. Each sibling is taken with
+  its own `try?`; only `workspace` still throws.
 - **A settled attempt spends the button, and only reopening the sheet clears
   it.** The model is `@State` on `WorkspacesView` rather than on the sheet — so
   an in-flight create survives a dismissal — which means everything it holds

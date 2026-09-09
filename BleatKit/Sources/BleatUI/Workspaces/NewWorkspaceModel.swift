@@ -101,7 +101,12 @@ final class NewWorkspaceModel {
     /// Nil while the field is empty as well as while it is valid: an empty
     /// field is the resting state, not an error to shout about.
     var pathProblem: String? {
-        guard !path.trimmingCharacters(in: .whitespaces).isEmpty,
+        // The same character set `WorkspaceDirectory.problem` trims by. With
+        // `.whitespaces` — which excludes newlines — a field holding nothing
+        // but a pasted newline passed this guard and then reported `.empty`,
+        // so "Give the workspace a directory." appeared in red under what
+        // looks like an untouched field.
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let problem = WorkspaceDirectory.problem(with: path)
         else { return nil }
         return problem.message
@@ -110,6 +115,17 @@ final class NewWorkspaceModel {
     /// herdr's own default for an omitted label, so the field is not silent
     /// about what leaving it blank will do.
     var labelPlaceholder: String { directory?.suggestedLabel ?? "Label" }
+
+    /// The label as it will actually be sent.
+    ///
+    /// **Trimmed, because `HerdrClient.createWorkspace` omits the flag only for
+    /// an exactly empty string.** A label of `"   "` would otherwise be sent as
+    /// `--label '   '` and the workspace created with a blank-looking name,
+    /// instead of falling back to the basename the placeholder promised. The
+    /// duplicate hint compares this too, or a trailing space typed after an
+    /// existing name suppresses a warning about a name herdr will render
+    /// identically.
+    var trimmedLabel: String { label.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// False once the attempt has settled into something a retry would only
     /// make worse — see `warning`.
@@ -212,13 +228,24 @@ final class NewWorkspaceModel {
             // trying again is safe. Only this call can fail with a workspace on
             // the host.
             do {
-                let created = try await client.createWorkspace(in: resolved, label: label)
+                let created = try await client.createWorkspace(in: resolved, label: trimmedLabel)
                 if let actual = created.openedElsewhere(than: resolved) {
                     warning = "Created \(created.workspace.label), but its pane opened in "
                         + "\(actual) rather than \(resolved.path)."
                     return .warned
                 }
                 return .created
+            } catch where ConnectionPolicy.isRefusalByHost(error) {
+                // **The host ran the command and said no**, so nothing was
+                // created and trying again is safe. Sending this through the
+                // read-back would answer "may or may not have been created"
+                // about a create that demonstrably did not happen — and that
+                // answer spends the button, leaving closing and reopening the
+                // sheet as the only way back from a refusal a retry would have
+                // fixed. `HerdrError` does not discard the connection either,
+                // for the reason `ConnectionPolicy` gives.
+                failure = ErrorMessage.failure(of: error).message
+                return .failed
             } catch {
                 await connections.handle(error)
                 return await settle(error, since: before, on: peer)
@@ -249,21 +276,33 @@ final class NewWorkspaceModel {
         on peer: PairedPeer
     ) async -> Outcome {
         let message = ErrorMessage.failure(of: error).message
-        guard let connections,
-              let client = try? await connections.client(for: peer, session: session),
-              let now = try? await client.workspaces()
-        else {
+        guard let connections else { failure = message; return .failed }
+        do {
+            let client = try await connections.client(for: peer, session: session)
+            let now = try await client.workspaces()
+            guard let landed = now.first(where: { !before.contains($0.workspaceID) }) else {
+                // The host answered and has nothing new, so nothing was created
+                // and trying again is safe.
+                failure = message
+                return .failed
+            }
+            warning = "\(message)\n\nThe workspace was created anyway, as \(landed.label)."
+            return .warned
+        } catch {
+            // The read-back failed too, so this really is unknown — a refusal
+            // *here* says the server is gone now, which is silent about whether
+            // the create ran before it went. Unknown disarms: a second
+            // workspace on someone's Mac is worse than a message asking them to
+            // look.
+            //
+            // Released rather than swallowed, for the reason `loadSuggestions`
+            // does it: a `TransportError` means the connection is dead, and
+            // leaving it installed spends the user's next action discovering
+            // the same thing.
+            await connections.handle(error)
             warning = "\(message)\n\nThe workspace may or may not have been created — "
                 + "pull the list down to see."
             return .warned
         }
-        guard let landed = now.first(where: { !before.contains($0.workspaceID) }) else {
-            // The host answered and has nothing new, so nothing was created and
-            // trying again is safe.
-            failure = message
-            return .failed
-        }
-        warning = "\(message)\n\nThe workspace was created anyway, as \(landed.label)."
-        return .warned
     }
 }

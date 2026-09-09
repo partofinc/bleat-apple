@@ -139,6 +139,25 @@ public struct HerdrClient: Sendable {
         return try await enveloped(args)
     }
 
+    /// Adds a tab to a workspace, and with it one pane running a shell.
+    ///
+    /// **This is how the phone gets another pane to put an agent in**, and a
+    /// tab rather than a `pane split` is a measured choice — see `TabCreated`
+    /// for the geometry that decides it. A split halves the pane it came from;
+    /// a tab costs no existing pane anything.
+    ///
+    /// **No `--cwd`, deliberately.** Measured: a new tab's pane inherits the
+    /// *workspace's* directory rather than the server's — the opposite of
+    /// `workspace create` — so the default is already right and asking the user
+    /// for a path would be asking them to retype something the host knows.
+    ///
+    /// `--focus` is not sent either, for the reason `createWorkspace` does not
+    /// send it: focusing moves the view of whoever is at the Mac.
+    @discardableResult
+    public func createTab(inWorkspace workspace: String) async throws -> TabCreated {
+        try await enveloped(["tab", "create", "--workspace", workspace, "--no-focus"])
+    }
+
     /// Starts a supported agent in a pane that is already at a shell prompt.
     ///
     /// herdr types the kind's executable into the pane and waits for its own

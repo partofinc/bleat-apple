@@ -95,6 +95,57 @@ struct NewAgentTests {
         #expect(!model.canStart)
     }
 
+    // MARK: - Getting another pane
+
+    /// **The dead end this screen had, and the fix for it.** A workspace made
+    /// from the phone holds exactly one pane; one agent fills it; and then
+    /// Start is correctly disabled with nothing on screen to do about it.
+    /// Measured on the dev Mac: every workspace in the live `work` session has
+    /// one pane and every one is occupied.
+    @Test("with no free pane there is still a way to get one")
+    func offersAWayOut() {
+        let model = NewAgentModel(previewing: "reviewer", workspace: "w2")
+        #expect(model.available.isEmpty)
+        #expect(!model.canStart, "there is nothing to start in")
+        #expect(model.canAddPane, "and no way to get somewhere to start in")
+    }
+
+    /// **Only inside a workspace.** A tab belongs to one, and the session-wide
+    /// agents list is not in one — guessing which workspace should gain a pane
+    /// would put one in somebody's project.
+    @Test("the session-wide list cannot add a pane, because it has no workspace")
+    func noWorkspaceNoPane() {
+        #expect(!NewAgentModel(previewing: "reviewer").canAddPane)
+    }
+
+    /// One action at a time: a start in flight must not be joined by a tab
+    /// appearing underneath the picker it is reading from.
+    @Test("adding and starting do not overlap")
+    func oneAtATime() {
+        let adding = NewAgentModel(
+            previewing: "reviewer", pane: "w2:p1", workspace: "w2",
+            available: Pane.samples, isAddingPane: true
+        )
+        #expect(!adding.canStart)
+
+        let starting = NewAgentModel(
+            previewing: "reviewer", pane: "w2:p1", workspace: "w2",
+            available: Pane.samples, isStarting: true
+        )
+        #expect(!starting.canAddPane)
+    }
+
+    /// A parked model must not create a tab either — that is a pane on the dev
+    /// Mac, from a canvas.
+    @Test("a parked model adds no pane")
+    func parkedAddsNothing() async {
+        let model = NewAgentModel(previewing: "reviewer", workspace: "w2")
+        await model.addPane(for: .preview)
+        #expect(model.pane == nil)
+        #expect(model.available.isEmpty)
+        #expect(model.failure == nil, "a parked add reported a failure, so it tried")
+    }
+
     /// The `#Preview` seam, and it matters most here: a canvas that dialled
     /// would start a real agent in a real pane on the dev Mac.
     @Test("a parked model starts nothing")

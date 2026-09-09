@@ -208,7 +208,15 @@ struct PreviewSmokeTests {
                 previewing: "builder", pane: "w2:p1",
                 available: Pane.samples, takenNames: ["builder"]
             ),
-            NewAgentModel(previewing: "reviewer"),
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2",
+                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple"
+            ),
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2",
+                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
+                isAddingPane: true
+            ),
             NewAgentModel(
                 previewing: "reviewer", kind: AgentKind("devin"), pane: "w2:p1",
                 available: Pane.samples, failure: "zsh: command not found: devin"

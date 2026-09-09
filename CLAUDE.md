@@ -540,6 +540,45 @@ back from a timed-out start.
 agent list is the one that decides. It cannot see a pane merely busy with a
 command; that refusal is instant, so it costs a tap rather than a wait.
 
+### Another pane is a tab, not a split (built, 9 Sept 2026)
+
+**One agent per workspace is a dead end, and it is the one this shipped with.**
+A workspace made from the phone holds exactly one pane; one agent fills it; and
+then Start is correctly disabled with nothing on screen to do about it. Found on
+device, and confirmed against the live host: every workspace in the `work`
+session has one pane and every one of them is occupied. "Add a workspace to get
+another pane" is true and useless.
+
+`herdr tab create --workspace <id> --no-focus` is the way out, and **a tab
+rather than a `pane split` is decided by geometry**. Both give a pane an agent
+can start in immediately — measured at 3.9s and 4.4s — but in a 120-column
+session:
+
+| | pane rect |
+|---|---|
+| `pane split --direction right` | **60** × 40 |
+| `tab create` | **120** × 40 |
+
+A split halves the new pane *and* the one it came from, and this file spends
+pages on what a narrow grid does to an agent's output: the program wraps to its
+pty's width and no client can reflow it. A tab takes nothing from any pane that
+already exists. The split is the thing that *looks* like the answer, which is
+why the measurement is written down.
+
+- **No `--cwd` is sent, and that is measured rather than lazy.** A new tab's
+  pane inherits the *workspace's* directory — verified against a workspace in
+  `/Users/ravil/Developer` while the server had been started in the repo root.
+  This is the **opposite of `workspace create`**, which takes the server's cwd
+  and must therefore always be told. So adding a pane needs no path typed on a
+  phone; the directory is shown before the tap rather than asked for.
+- **Only from inside a workspace.** A tab belongs to one, and the session-wide
+  agents list is not in one — guessing which workspace should gain a pane puts
+  one in somebody's project.
+- **A freshly created pane is not always ready.** A new *workspace's* root pane
+  answered `agent_pane_busy` moments after creation, because its shell had not
+  reached a prompt; a new *tab's* pane took an agent immediately. Both are worth
+  knowing before wiring create-then-start into one gesture.
+
 **The gap that remains: the phone cannot create a pane or tab, and nothing at
 all from cold.** (An agent needs a free pane, so on a host whose panes are all
 busy the way to another one is a new workspace.) Those commands go over the socket API, and a client command

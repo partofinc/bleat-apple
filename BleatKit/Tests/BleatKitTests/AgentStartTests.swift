@@ -203,6 +203,84 @@ struct AgentStartTests {
         #expect(byHand.agent == "claude")
     }
 
+    // MARK: - Getting another pane
+
+    /// **A tab, not a `pane split`, and the geometry is the whole argument.**
+    /// Both give a pane an agent can start in immediately — measured, 3.9s and
+    /// 4.4s. What differs is what they cost whoever is at the Mac, in a
+    /// 120-column session:
+    ///
+    /// | | pane rect |
+    /// |---|---|
+    /// | `pane split --direction right` | 60 × 40 |
+    /// | `tab create` | 120 × 40 |
+    ///
+    /// A split halves the pane it came from as well as the new one, and this
+    /// codebase spends pages on what a narrow grid does to an agent's output.
+    @Test("another pane is asked for as a tab")
+    func addsATab() async throws {
+        let transport = RecordingTransport(reply: try Fixture.data("tab-create.json"))
+        _ = try await HerdrClient(transport: transport).createTab(inWorkspace: "w1")
+
+        let args = try #require(transport.commands.first)
+        #expect(args.prefix(2) == ["tab", "create"])
+        #expect(args.contains("--workspace"))
+        #expect(args.contains("w1"))
+        #expect(args.contains("split") == false)
+    }
+
+    /// **No `--cwd`, and that is measured rather than lazy.** A new tab's pane
+    /// inherits the *workspace's* directory, not the server's — verified
+    /// against a workspace in `/Users/ravil/Developer` while the server had
+    /// been started in the repo root. `workspace create` is the opposite, which
+    /// is why that one must always be told. So adding a pane needs no path
+    /// typed on a phone.
+    @Test("a tab inherits the workspace's directory, so none is sent")
+    func sendsNoDirectory() async throws {
+        let transport = RecordingTransport(reply: try Fixture.data("tab-create.json"))
+        _ = try await HerdrClient(transport: transport).createTab(inWorkspace: "w1")
+        #expect(try #require(transport.commands.first).contains("--cwd") == false)
+    }
+
+    /// The same rule as everywhere else: focusing moves the view of whoever is
+    /// at the Mac.
+    @Test("adding a tab does not take focus")
+    func doesNotFocus() async throws {
+        let transport = RecordingTransport(reply: try Fixture.data("tab-create.json"))
+        _ = try await HerdrClient(transport: transport).createTab(inWorkspace: "w1")
+        let args = try #require(transport.commands.first)
+        #expect(args.contains("--no-focus"))
+        #expect(args.contains("--focus") == false)
+    }
+
+    /// A tab is never empty either — it arrives holding one pane running a
+    /// shell. The fixture's pane id is `w1:pA`, a reminder that these are
+    /// opaque: both `p2` and `pA` forms occur.
+    @Test("the reply carries the tab and the pane it brought")
+    func decodesTheTabReply() throws {
+        let created = try JSONDecoder()
+            .decode(HerdrEnvelope<TabCreated>.self, from: Fixture.data("tab-create.json"))
+            .result
+        #expect(created.tab.tabID == "w1:t2")
+        #expect(created.rootPane?.paneID == "w1:pA")
+        #expect(created.rootPane?.tabID == "w1:t2")
+    }
+
+    /// The same `try?`-per-sibling tolerance `WorkspaceCreated` has, for the
+    /// same measured reason: a plain optional throws on a malformed key, and
+    /// that would report a failure over a tab that exists on someone's Mac.
+    @Test("a pane this build cannot read does not cost the tab")
+    func toleratesAMalformedPane() throws {
+        let body = Data(#"""
+        {"tab":{"tab_id":"w1:t2","workspace_id":"w1"},
+         "root_pane":{"pane_id":"w1:pA","workspace_id":"w1","tab_id":"w1:t2",
+                      "agent_status":"unknown","focused":"yes"}}
+        """#.utf8)
+        let created = try JSONDecoder().decode(TabCreated.self, from: body)
+        #expect(created.tab.tabID == "w1:t2")
+        #expect(created.rootPane == nil, "a malformed pane should be dropped, not thrown")
+    }
+
     private func herdr(_ code: String, _ message: String) -> HerdrError {
         HerdrError(
             command: ["agent", "start"], exitCode: 1, stderr: "", code: code, message: message

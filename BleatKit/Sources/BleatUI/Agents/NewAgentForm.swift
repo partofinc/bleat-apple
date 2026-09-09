@@ -52,9 +52,13 @@ struct NewAgentForm: View {
             if model.isLoadingPanes && model.available.isEmpty {
                 HStack { ProgressView(); Text("Looking for free panes…") }
             } else if model.available.isEmpty {
-                // Not an error: every pane holding an agent is a session being
-                // used, which is the ordinary state of a working host.
-                Text("Every pane here already has an agent. Add a workspace to get another.")
+                // **Not an error, and not a dead end either.** Every pane
+                // holding an agent is the ordinary state of a working host —
+                // measured, every workspace in the live `work` session has one
+                // pane and every one is occupied. A workspace made from the
+                // phone holds exactly one pane, so this is where the second
+                // agent used to become impossible.
+                Text("Every pane here already has an agent.")
                     .foregroundStyle(.secondary)
             } else {
                 Picker("Pane", selection: $model.pane) {
@@ -70,6 +74,7 @@ struct NewAgentForm: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             }
+            addPane
         } header: {
             Text("Pane")
         } footer: {
@@ -77,6 +82,46 @@ struct NewAgentForm: View {
                  + "shell prompt — herdr refuses one that is busy.")
         }
         .disabled(model.isStarting)
+    }
+
+    /// The way out when every pane is taken — and worth offering even when one
+    /// is free, since wanting a *fresh* pane is not the same as wanting the
+    /// only spare one.
+    ///
+    /// **A new tab, not a split.** Measured in a 120-column session: a split
+    /// pane is 60 columns wide against a tab's 120, and it narrows the pane it
+    /// came from as well. Narrow grids are what this codebase spends pages on.
+    /// The directory is shown rather than asked for, because a tab inherits the
+    /// workspace's — also measured.
+    @ViewBuilder
+    private var addPane: some View {
+        if model.canAddPane || model.isAddingPane {
+            Button {
+                Task { await model.addPane(for: peer) }
+            } label: {
+                HStack {
+                    if model.isAddingPane {
+                        ProgressView()
+                        Text("Adding a pane…")
+                    } else {
+                        Label("Add a pane", systemImage: "plus.rectangle")
+                    }
+                    Spacer()
+                }
+            }
+            .disabled(!model.canAddPane)
+
+            if let directory = model.workspaceDirectory, !model.isAddingPane {
+                // Shown before the tap, which is the rule CLAUDE.md sets for
+                // creating a pane: it opens in the workspace's own directory,
+                // and the user should not have to find that out afterwards.
+                Text("Opens a new tab here, in \(directory).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .truncationMode(.head)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private var kindSection: some View {
@@ -198,9 +243,22 @@ struct NewAgentForm: View {
     ))
 }
 
-/// Not a failure: every pane on a busy host is doing something.
+/// **Not a failure, and no longer a dead end.** Every pane on a busy host is
+/// doing something; the way to another is a new tab, which costs no existing
+/// pane any width.
 #Preview("No free panes", traits: .sampleData) {
-    NewAgentPreview(model: NewAgentModel(previewing: "reviewer"))
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", workspace: "w2",
+        workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple"
+    ))
+}
+
+#Preview("Adding a pane", traits: .sampleData) {
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", workspace: "w2",
+        workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
+        isAddingPane: true
+    ))
 }
 
 /// **The cause herdr does not give.** Its own answer is "timed out waiting for

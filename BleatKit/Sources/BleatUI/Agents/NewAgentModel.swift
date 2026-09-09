@@ -49,12 +49,35 @@ final class NewAgentModel {
     /// Names already in use in this session. herdr refuses a duplicate.
     private(set) var takenNames: Set<String> = []
     private(set) var isLoadingPanes = false
+    /// Adding a tab, which is how another pane is obtained. See `addPane`.
+    private(set) var isAddingPane = false
+    /// Where a new pane would open: the directory this workspace's panes are
+    /// in, which a new tab inherits. Shown before the tap, per the rule
+    /// CLAUDE.md sets for creating panes.
+    private(set) var workspaceDirectory: String?
 
     private let connections: ConnectionStore?
     private let session: String?
     /// nil means every pane in the session, which is what the agents screen
     /// shows when it is not narrowed to one workspace.
     private let workspace: String?
+
+    /// The workspace a new tab would join, when there is one.
+    var addTo: String? {
+        #if DEBUG
+        workspace ?? previewWorkspace
+        #else
+        workspace
+        #endif
+    }
+
+    #if DEBUG
+    /// Preview-only override, because `workspace` is otherwise set only by the
+    /// screen. Without it a parked model can never show the "add a pane"
+    /// affordance, and the previews for the state that most needs looking at —
+    /// no free panes — would show the dead end rather than the way out.
+    private var previewWorkspace: String?
+    #endif
 
     init(connections: ConnectionStore, session: String?, workspace: String?) {
         self.connections = connections
@@ -68,23 +91,29 @@ final class NewAgentModel {
         previewing name: String,
         kind: AgentKind = .claude,
         pane: String? = nil,
+        workspace: String? = nil,
         available: [Pane] = [],
         takenNames: Set<String> = [],
+        workspaceDirectory: String? = nil,
         failure: String? = nil,
         warning: String? = nil,
-        isStarting: Bool = false
+        isStarting: Bool = false,
+        isAddingPane: Bool = false
     ) {
         self.connections = nil
         self.session = nil
         self.workspace = nil
+        self.previewWorkspace = workspace
         self.name = name
         self.kind = kind
         self.pane = pane
         self.available = available
         self.takenNames = takenNames
+        self.workspaceDirectory = workspaceDirectory
         self.failure = failure
         self.warning = warning
         self.isStarting = isStarting
+        self.isAddingPane = isAddingPane
     }
     #endif
 
@@ -113,8 +142,16 @@ final class NewAgentModel {
 
     var canStart: Bool {
         AgentName(name) != nil && !takenNames.contains(name)
-            && pane != nil && !isStarting && warning == nil
+            && pane != nil && !isStarting && !isAddingPane && warning == nil
     }
+
+    /// Whether another pane can be asked for.
+    ///
+    /// **Only when the screen is inside one workspace.** A tab belongs to a
+    /// workspace, and the session-wide agents list is not in one — there would
+    /// be no honest answer to which workspace the pane should join, and
+    /// guessing puts a pane in somebody's project.
+    var canAddPane: Bool { addTo != nil && !isAddingPane && !isStarting && warning == nil }
 
     /// A failure is about the attempt that produced it; left standing while the
     /// user edits the name it reads as a verdict on the new one.
@@ -135,6 +172,43 @@ final class NewAgentModel {
         pane = nil
         failure = nil
         warning = nil
+    }
+
+    /// Adds a tab to this workspace, and selects the pane it brings.
+    ///
+    /// **This is the way out of the dead end this screen otherwise has.** A
+    /// workspace made from the phone holds exactly one pane; one agent fills
+    /// it; and then there is nothing to start a second agent in. Measured on
+    /// the dev Mac, every workspace in the live `work` session has one pane and
+    /// every one of them is occupied — so "add a workspace to get another pane"
+    /// is true and useless.
+    ///
+    /// **A tab, not a `pane split`.** Both give a pane an agent can start in
+    /// immediately, but measured in a 120-column session a split pane is 60
+    /// columns wide against a tab's 120 — and a narrow grid is exactly what
+    /// this codebase spends pages on, because the program wraps to its pty and
+    /// no client can reflow it. A split also narrows the pane it came from,
+    /// which belongs to whoever is at the Mac.
+    ///
+    /// The new pane is selected, because asking for a pane and then having to
+    /// find it in a list is a step that exists for no reason.
+    func addPane(for peer: PairedPeer) async {
+        guard let connections, let workspace = addTo, !isAddingPane else { return }
+        isAddingPane = true
+        failure = nil
+        defer { isAddingPane = false }
+        do {
+            let client = try await connections.client(for: peer, session: session)
+            let created = try await client.createTab(inWorkspace: workspace)
+            await loadPanes(for: peer)
+            // The reply names the pane, and `pane list` is read back anyway —
+            // so if the reply's own pane did not decode, the newcomer is
+            // whichever pane the refreshed list has that the picker can use.
+            pane = created.rootPane?.paneID ?? available.last?.paneID
+        } catch {
+            await connections.handle(error)
+            failure = ErrorMessage.failure(of: error).message
+        }
     }
 
     /// The panes that can take an agent, and the names that are spoken for.
@@ -158,9 +232,11 @@ final class NewAgentModel {
 
             let occupied = Set(agents.map(\.paneID))
             takenNames = Set(agents.compactMap(\.name))
-            available = panes
-                .filter { !occupied.contains($0.paneID) }
-                .filter { workspace == nil || $0.workspaceID == workspace }
+            let mine = panes.filter { workspace == nil || $0.workspaceID == workspace }
+            available = mine.filter { !occupied.contains($0.paneID) }
+            // What a new tab would inherit — the workspace's own directory,
+            // which its panes are the only record of here.
+            workspaceDirectory = mine.compactMap(\.cwd).first
             // Picking the only candidate is not a decision the user has to be
             // asked to make; leaving it unselected is a tap for nothing.
             if pane == nil, available.count == 1 { pane = available.first?.paneID }

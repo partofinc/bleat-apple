@@ -198,6 +198,46 @@ struct PreviewSmokeTests {
                 model: model, peer: .preview, known: Workspace.samples, onCreated: {}
             ))
         }
+        // Starting an agent, in the states that matter: armed, a name herdr's
+        // own rule refuses, one already taken, a host with no free pane, the
+        // cause read out of the pane, and the ambiguous late arrival.
+        for model in [
+            NewAgentModel(previewing: "reviewer", pane: "w2:p1", available: Pane.samples),
+            NewAgentModel(previewing: "Reviewer", pane: "w2:p1", available: Pane.samples),
+            NewAgentModel(
+                previewing: "builder", pane: "w2:p1",
+                available: Pane.samples, takenNames: ["builder"]
+            ),
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2",
+                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple"
+            ),
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2",
+                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
+                isAddingPane: true
+            ),
+            // The host never answered about its panes, so the screen must not
+            // claim they are all taken.
+            NewAgentModel(
+                previewing: "reviewer", workspace: "w2", hasLoadedPanes: false,
+                failure: "none of 3 addresses could be reached"
+            ),
+            NewAgentModel(
+                previewing: "reviewer", kind: AgentKind("devin"), pane: "w2:p1",
+                available: Pane.samples, failure: "zsh: command not found: devin"
+            ),
+            NewAgentModel(
+                previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+                warning: "claude is running in w2:p1, but it took longer than herdr waited."
+            ),
+            NewAgentModel(
+                previewing: "reviewer", pane: "w2:p1",
+                available: Pane.samples, isStarting: true
+            ),
+        ] {
+            render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}))
+        }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))
         // The host unpaired from underneath the sheet, which the root-level
@@ -402,6 +442,12 @@ struct PreviewSmokeTests {
         let workspace = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
         #expect(await workspace.create(on: .preview) == .failed)
         #expect(workspace.failure == nil, "a parked create reported a failure, so it tried")
+
+        // The one that starts a *program* in someone's pane, and the slowest
+        // to fail: a parked start must not reach the host at all.
+        let agent = NewAgentModel(previewing: "reviewer", pane: "w2:p1", available: Pane.samples)
+        #expect(await agent.start(on: .preview) == .failed)
+        #expect(agent.failure == nil, "a parked start reported a failure, so it tried")
 
         // And the one that would *end* processes on the dev Mac rather than
         // start them.

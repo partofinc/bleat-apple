@@ -90,15 +90,7 @@ struct PeerDetailView: View {
                 onStarted: { Task { await sessions.load(for: peer) } }
             )
         }
-        // **Yields to a `bleat://` link.** SwiftUI will not raise a second
-        // presentation over one already up, so a pairing request arriving while
-        // the new-session cover is on screen would be lost *and* leave `PairingRouter.isPresented`
-        // true with nothing visible — which makes the Pair button a no-op until
-        // the app is relaunched. `PeersView` carries the same line for the
-        // device-key sheet, and `PeerSettingsFlow` for the settings sheet.
-        .onChange(of: context.pairing.isPresented) { _, isPairing in
-            if isPairing { isNaming = false }
-        }
+        .yieldsToPairing(whileBusy: newSession.isStarting, presenting: $isNaming)
         #else
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

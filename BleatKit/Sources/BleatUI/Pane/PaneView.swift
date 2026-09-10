@@ -170,6 +170,10 @@ struct PaneView: View {
             case .terminal:
                 terminalWasAskedFor = true
             case .chat:
+                // Cleared rather than merely hidden, so switching back to the
+                // terminal does not silently raise a keyboard nobody asked for
+                // again — and so the toggle's own icon stays honest.
+                model.setWantsKeyboard(false)
                 if transcript.capturedAt == nil { await transcript.load(for: peer) }
                 // Then keep following. `follow` returns immediately unless the
                 // agent is working, so this costs nothing on an idle pane.

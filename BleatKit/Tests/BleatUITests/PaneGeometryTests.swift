@@ -156,6 +156,64 @@ struct PaneGeometryTests {
         #expect(reports.last == before)
     }
 
+    /// **`keyboardDidHide` cannot be the only way out of the freeze.** With a
+    /// hardware keyboard attached no software keyboard appears, so the
+    /// notification never arrives — and SwiftTerm's accessory bar, which might
+    /// otherwise put one on screen, has been removed. The grid would then stay
+    /// frozen for the life of the screen, so a later rotation would report
+    /// nothing and the stream and the pane's pty would sit at a size the view
+    /// no longer is.
+    ///
+    /// No notification is posted anywhere in this test, which is the point.
+    @Test("the grid thaws even when no keyboard ever appeared")
+    func thawsWithoutAKeyboard() {
+        let controller = PaneTerminalController()
+        var reports: [TerminalGrid] = []
+        controller.onSize = { reports.append($0) }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 1)
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 381)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 1, "the freeze did not hold")
+
+        controller.wantsKeyboard = false
+        // A genuinely different height, so a report here can only mean the
+        // terminal is sizing itself to the view again.
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 600)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 2, "the grid stayed frozen with no keyboard to hide")
+    }
+
+    /// **A rotation thaws it**, because the frozen size holds the width too.
+    /// Turning the device with the keyboard up would otherwise draw a
+    /// 393pt-wide terminal inside an 852pt view — a strip down one side with
+    /// black beside it — and nothing would correct it until the keyboard went
+    /// down.
+    @Test("rotating with the keyboard up gives up the frozen width")
+    func rotationThawsTheFreeze() {
+        let controller = PaneTerminalController()
+        var reports: [TerminalGrid] = []
+        controller.onSize = { reports.append($0) }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 381)
+        controller.view.layoutIfNeeded()
+        let frozen = reports.count
+
+        controller.view.frame = CGRect(x: 0, y: 0, width: 852, height: 330)
+        controller.view.layoutIfNeeded()
+        #expect(
+            reports.count > frozen,
+            "the terminal kept its portrait width in landscape"
+        )
+        #expect((110...125).contains(reports.last?.cols ?? 0), "got \(reports.last?.cols ?? -1) columns")
+    }
+
     /// Rotation must produce a *different* grid, or nothing downstream reopens
     /// the stream and the screen keeps frames drawn for the old shape.
     @Test("rotating changes the reported grid")

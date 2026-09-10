@@ -2903,8 +2903,51 @@ prompt and the input line, which is what is being typed into.
     keyboard that cannot be dismissed because the stream is reopening is half a
     screen gone with no way back.
 - **The keyboard comes down with the pane.** `releaseControl()` and `close()`
-  both clear it: one left up over a pane this screen no longer holds would drop
-  every keystroke in silence.
+  both clear it, and so do a stream that ends or fails: one left up over a pane
+  this screen no longer holds would drop every keystroke in silence.
+  - **And with the *mode*.** Switching to chat leaves `PaneSurface` mounted at
+    `opacity(0)`, which does **not** resign first responder — so the keyboard
+    stayed up over the transcript with its only dismiss button hidden behind it,
+    and anything typed still reached the live agent. `wantsKeyboard` is passed
+    into `TerminalHost` as `model.wantsKeyboard && isActive`, and `PaneView`
+    clears the flag outright when the mode changes.
+  - **`wantsKeyboard` is passed in, not read off the model inside
+    `updateUIViewController`.** Nothing in `PaneSurface.body` reads it, so
+    flipping it invalidates only `PaneKeyBar` — a child, whose re-render need
+    not drive a representable update. It worked, by accident; `isActive` is
+    passed in for this exact reason and the comment saying so was three lines
+    above the code ignoring it.
+- **Input is serialised, and this is not theoretical.** Every keystroke used to
+  get its own unstructured `Task`. Each runs on the main actor only until
+  `stream.send` suspends, after which any number are inside `SSHStream.send` at
+  once with nothing sequencing the writes — fast typing could transpose two
+  characters into a live agent, and SwiftTerm's `paste` calls `send` **three
+  times in one runloop turn** (bracketed-paste start, text, end), so the markers
+  could land around or after the payload they wrap. `PaneModel` queues and
+  drains one at a time, and `start()` clears the queue so a key typed at a dead
+  stream cannot arrive at its replacement.
+- **`allowMouseReporting` is forced off.** Taking the keyboard re-arms it:
+  SwiftTerm gates its tap and pan handlers on `isFirstResponder` and the flag
+  defaults to true, so once a pane can be typed into, a tap on it sends a mouse
+  press to any program in mouse mode — on an agent at a dialog, a click on one
+  of its buttons. That is precisely the accidental input the "a button, not a
+  tap on the pane" rule exists to prevent.
+- **The freeze has two ways out, because one was not enough.**
+  `keyboardDidHide` is the normal path, but with a hardware keyboard no software
+  keyboard appears and no notification is ever posted — and SwiftTerm's own
+  accessory, which might have shown one, has been removed. The grid would then
+  stay frozen for the life of the screen. `thawIfIdle()` also runs on the
+  down-edge of `wantsKeyboard`, and **a width change thaws it too**: the frozen
+  size holds the width, so rotating with the keyboard up drew a 393pt terminal
+  in an 852pt view — a strip with black beside it, measured at 53 columns in
+  landscape — until the keyboard went down.
+- **Ctrl and Tab are currently unreachable while typing**, and that is a known
+  gap rather than a decision. `dropBuiltInAccessory()` removes SwiftTerm's
+  `TerminalAccessory`, which was the only source of both, and the iOS software
+  keyboard has neither key. So there is no way to send Ctrl-C to interrupt an
+  agent from the phone. Both are named in the Phase 3 gate line;
+  `terminalAccessory?.controlModifier` falls back to `controlModifier`, so a
+  Ctrl toggle in `PaneKeyBar` is a small addition when it is wanted.
 
 **`swift build` does not compile any of this.** Every file under `Pane/` is
 `#if canImport(UIKit)`, and `swift build` targets macOS — so the whole screen is

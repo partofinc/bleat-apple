@@ -221,6 +221,10 @@ final class PaneModel {
         // Dropped, not kept: anything buffered was drawn for the size the old
         // stream was opened at, and feeding it into the new one would wrap.
         pending.removeAll()
+        // The same for input going the other way: a keystroke typed at the old
+        // stream must not arrive at whatever replaces it, seconds later and out
+        // of context.
+        outgoing.removeAll()
         let previous = stream
         stream = nil
         // Closed *alongside* the new dial, not before it. `SSHStream.close()`
@@ -266,6 +270,19 @@ final class PaneModel {
         await send(bytes: key.bytes)
     }
 
+    /// Input waiting to go out, oldest first, and whether anyone is draining it.
+    ///
+    /// **Order is the whole point.** Every keystroke used to get its own
+    /// unstructured `Task`, and a task per chunk is a race: each one runs on
+    /// the main actor only until `stream.send` suspends, after which any number
+    /// of them are inside `SSHStream.send` at once with nothing sequencing the
+    /// writes. Fast typing could transpose two characters into a live agent —
+    /// and SwiftTerm's `paste` is worse, calling `send` three times in one
+    /// runloop turn (bracketed-paste start, the text, the end), so the markers
+    /// could land around or after the payload they are meant to wrap.
+    private var outgoing: [Data] = []
+    private var isDraining = false
+
     /// Sends what the keyboard produced, byte for byte.
     ///
     /// **`.bytes`, never `.text`.** SwiftTerm hands over the encoded bytes a
@@ -279,8 +296,18 @@ final class PaneModel {
     /// this layer's business, and a filter would break exactly the control
     /// sequences an agent's UI is driven by.
     func send(bytes: Data) async {
-        guard control == .controlling, let stream, !bytes.isEmpty else { return }
-        try? await stream.send(.bytes(bytes))
+        guard control == .controlling, !bytes.isEmpty else { return }
+        // Enqueued and drained by one caller at a time. Both halves run on the
+        // main actor with no suspension between the append and the check, so
+        // the queue order is the order the keys were pressed.
+        outgoing.append(bytes)
+        guard !isDraining else { return }
+        isDraining = true
+        defer { isDraining = false }
+        while !outgoing.isEmpty {
+            guard let stream else { return outgoing.removeAll() }
+            try? await stream.send(.bytes(outgoing.removeFirst()))
+        }
     }
 
     /// Asks for or dismisses the system keyboard.
@@ -423,7 +450,13 @@ final class PaneModel {
             }
             // The host closed it. On a pane that was removed, or a session that
             // stopped, this is the normal ending rather than an error.
-            if !Task.isCancelled { phase = .ended }
+            if !Task.isCancelled {
+                phase = .ended
+                // Nothing left to type into. The key bar greys itself out here;
+                // the system keyboard cannot, so it has to be put away or every
+                // keystroke is dropped in silence.
+                wantsKeyboard = false
+            }
         } catch is CancellationError {
             // The screen went away, or a reopen replaced this reader.
         } catch {
@@ -434,6 +467,7 @@ final class PaneModel {
             guard !Task.isCancelled else { return }
             await connections.handle(error)
             phase = .failed(ErrorMessage.of(error))
+            wantsKeyboard = false
         }
     }
 

@@ -17,7 +17,17 @@ struct PaneSurface: View {
         // — but the pane's last row is its input line, and the home indicator
         // sits on top of it. A terminal's bottom row is the one that matters
         // most; there is nothing to gain by hiding it.
-        TerminalHost(model: model, isActive: isActive)
+        // **`&& isActive`, or the keyboard outlives the terminal.** Switching
+        // to chat leaves this surface mounted at `opacity(0)`, which does not
+        // resign first responder — so the keyboard stayed up over the
+        // transcript with its only dismiss button hidden behind it, and
+        // anything typed still went to the live agent. Reading it here also
+        // puts it in a body, which is what makes SwiftUI observe it.
+        TerminalHost(
+            model: model,
+            isActive: isActive,
+            wantsKeyboard: model.wantsKeyboard && isActive
+        )
             .background(.black)
             // Installed on the terminal itself rather than the whole surface,
             // so the buttons and the overlays keep their own taps.

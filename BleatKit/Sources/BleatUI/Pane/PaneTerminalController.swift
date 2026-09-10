@@ -63,6 +63,9 @@ final class PaneTerminalController: UIViewController {
             } else {
                 // Drops first responder via `acceptsKeyboard`'s own `didSet`.
                 terminalView.acceptsKeyboard = false
+                // If no software keyboard was ever up there is no `didHide`
+                // coming, so this is the only chance to thaw.
+                thawIfIdle()
             }
         }
     }
@@ -135,6 +138,14 @@ final class PaneTerminalController: UIViewController {
         // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
         // gets the drag and can turn it into the program's own page keys.
         terminalView.isScrollEnabled = false
+
+        // **Taking the keyboard re-arms mouse reporting, and that undoes the
+        // "a button, not a tap on the pane" rule.** SwiftTerm gates its tap and
+        // pan handlers on `isFirstResponder`, and `allowMouseReporting`
+        // defaults to true — so once the pane can be typed into, a tap on it
+        // sends a mouse press to any program that has enabled mouse mode. On an
+        // agent sitting at a dialog that is a click on one of its buttons.
+        terminalView.allowMouseReporting = false
         // Turns on `rangeChanged`, which is off by default. It is the only
         // hook that proves a repaint pass ran; one delegate call per repaint.
         terminalView.notifyUpdateChanges = true
@@ -172,17 +183,51 @@ final class PaneTerminalController: UIViewController {
             name: UIResponder.keyboardDidHideNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidShow),
+            name: UIResponder.keyboardDidShowNotification,
+            object: nil
+        )
     }
 
+    @objc private func keyboardDidShow() { keyboardIsUp = true }
+
     @objc private func keyboardDidHide() {
-        guard frozen != nil, !wantsKeyboard else { return }
+        keyboardIsUp = false
+        thawIfIdle()
+    }
+
+    /// Lets the terminal size itself again, once nothing is holding it.
+    ///
+    /// **`keyboardDidHide` cannot be the only way out.** With a hardware
+    /// keyboard attached no software keyboard appears, so no notification ever
+    /// arrives — and `dropBuiltInAccessory()` has removed the accessory that
+    /// would otherwise be shown, so there is not even a bar to post one. The
+    /// grid would then stay frozen for the life of the screen: rotation would
+    /// report nothing, and the stream and the pane's pty would sit at a size
+    /// the view no longer is.
+    private func thawIfIdle() {
+        guard frozen != nil, !wantsKeyboard, !keyboardIsUp else { return }
         frozen = nil
         view.setNeedsLayout()
     }
 
+    /// Whether a software keyboard is actually on screen.
+    private var keyboardIsUp = false
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard view.bounds.width > 0, view.bounds.height > 0 else { return }
+        // **A rotation thaws it.** The frozen size holds the width as well as
+        // the height, so turning the device with the keyboard up would draw a
+        // 393pt-wide terminal inside an 852pt view — a strip down one side with
+        // black beside it, and nothing to correct it until the keyboard went
+        // down. Letting go costs one reopen, which is what a rotation costs
+        // anyway, and is much the better of the two.
+        if let held = frozen, held.width != view.bounds.width {
+            frozen = nil
+        }
         if let frozen {
             // Bottom-anchored at its frozen size: the keyboard takes the space,
             // the terminal slides up under the navigation bar, and the rows that

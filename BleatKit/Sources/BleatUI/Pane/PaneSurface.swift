@@ -64,6 +64,51 @@ struct PaneSurface: View {
                     }
                 }
             }
+            // **A bar rather than an overlay, so it cannot cover the pane's
+            // last row.** That row is the input line — the whole reason this
+            // surface respects the safe area instead of extending under it —
+            // and a floating pill over the bottom of a terminal would hide
+            // exactly the line a dialog's `Enter to confirm` sits on.
+            //
+            // **Insetting is not free, and it is worth knowing what it
+            // costs.** `PaneTerminalController` sets `terminalView.frame =
+            // view.bounds` and the pty is resized to match — the outer scroll
+            // view and the pane-grid sizing this comment used to describe were
+            // deleted when that landed. So the bar really does change the grid
+            // (measured: 46 rows without it, 43 with), and taking or releasing
+            // control therefore reopens the stream and writes an `stty` to the
+            // user's Mac. That is correct rather than wasteful: the terminal
+            // genuinely got shorter and the pane must follow.
+            //
+            // It costs a *second* reopen, though: `takeControl()` and
+            // `releaseControl()` each call `start()` themselves, and the layout
+            // pass that follows the bar appearing or disappearing reports a new
+            // grid and calls it again. The first reader is normally cancelled
+            // at the `guard !Task.isCancelled` before `resizePty`, so nothing
+            // is written twice — but the gesture is a beat slower than it
+            // looks, and reserving the bar's height in both modes is the way to
+            // collapse it if that ever matters.
+            // **Gated on `control` alone — never on `phase`, and that is not a
+            // simplification.** This bar takes space, and `PaneTerminalController`
+            // derives the grid from its own bounds, so showing it makes the
+            // terminal shorter, which reports a new grid, which reopens the
+            // stream and `stty`s the pane. Adding `phase == .live` to this
+            // condition therefore built a loop: bar shows → terminal shrinks →
+            // reopen → `.opening` → bar hides → terminal grows → reopen →
+            // `.live` → bar shows, forever, with a write to the user's Mac on
+            // every pass. It reached a device as a spinner that never stopped.
+            //
+            // `PaneScrollControl` carries the same `phase` test safely because
+            // it is an `.overlay`, which draws without changing layout. Anything
+            // in a safe area is layout, and layout here is the stream's size.
+            .safeAreaBar(edge: .bottom) {
+                // Only while this screen owns input: `PaneModel.send` is a no-op
+                // while observing, and a row of keys that silently does nothing
+                // is worse than no row at all.
+                if model.control == .controlling {
+                    PaneKeyBar(model: model)
+                }
+            }
         #else
         ContentUnavailableView(
             "No terminal here",

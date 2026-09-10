@@ -2762,9 +2762,15 @@ has one.
 - **It is a bar, not an overlay.** A floating pill over the bottom of a terminal
   covers the pane's last row — which is the input line, and on a dialog is
   literally `Enter to confirm · Esc to cancel`. `.safeAreaBar(edge: .bottom)`
-  insets instead. That costs nothing normally, since the terminal is sized to the
-  *pane's* grid and panned; only the cropped fallback, sized to the phone,
-  reopens its stream a little shorter.
+  insets instead. **That is not free**, and an earlier draft of this bullet
+  claimed it was, on the strength of a design that no longer exists: the
+  terminal is `terminalView.frame = view.bounds` with the pty resized to match,
+  not a pane-sized grid inside a scroll view. So the bar changes the grid in the
+  *ordinary* case — 46 rows without it, 43 with — and taking or releasing
+  control reopens the stream and `stty`s the pane. Correct, since the terminal
+  really did get shorter, but each gesture costs two `start()`s: its own, and
+  the one the layout pass triggers when the bar appears. Reserving the bar's
+  height in both modes is how to collapse that if it ever matters.
 - **No text entry, deliberately.** Typing is `agent prompt`'s job — it handles
   bracketed paste and ordered submission — and what the phone lacked was only the
   *navigation* of a dialog already on screen.

@@ -42,6 +42,15 @@ struct PaneKeyBar: View {
         }
         .padding(6)
         .glassEffect(in: .capsule)
+        // **Capped, because these are key caps.** A physical Esc key does not
+        // grow with the system's text size, and six of these have to fit across
+        // the narrowest phone — at accessibility sizes `.body` outgrows the cap
+        // vertically and `esc` truncates, on the one control that exists
+        // *because* the drag gesture is unreachable by VoiceOver and Switch
+        // Control. So the type is bounded and the caps grow to meet it rather
+        // than clipping. The labels carry the meaning for anyone who needs it
+        // larger, and they are read out in full whatever this is set to.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         // **Disabled, not hidden**, while the stream is between opens — taking
         // control reopens it, and so does the shrink this bar itself causes.
         // Hiding it would change the layout again, which is the loop described
@@ -85,8 +94,10 @@ struct PaneKeyBar: View {
         } label: {
             cap()
                 // 44pt on the axis a finger misses on, which for a row of keys
-                // is the horizontal one.
-                .frame(width: 44, height: 38)
+                // is the horizontal one. `min`, not fixed: with the type size
+                // bounded above, a larger setting grows the cap instead of
+                // being cut off by it.
+                .frame(minWidth: 44, minHeight: 38)
         }
         .buttonStyle(.plain)
         .contentShape(.rect)

@@ -113,6 +113,10 @@ final class PaneModel {
     /// for, rather than a fallback.
     private var viewport: TerminalGrid?
 
+    /// Whether `close()` has begun. Once it has, nothing may open a stream —
+    /// including a layout pass caused by the close itself.
+    private var isClosing = false
+
     /// Read by `PaneGeometryTests` to check that the chrome around the terminal
     /// does not change its size between phases — the shape of bug that put an
     /// endless spinner on a device. `terminalFrameForTesting` exists for the
@@ -188,6 +192,8 @@ final class PaneModel {
     }
 
     private func start() {
+        // A close is in flight and the screen is going: see `close()`.
+        guard !isClosing else { return }
         #if DEBUG
         // A preview: the phase was handed in and there is no stream to open.
         // Before the assignment below, or a seeded `.failed` would be replaced
@@ -247,6 +253,19 @@ final class PaneModel {
 
     /// Closes the stream, releasing input first if this screen took it.
     func close() async {
+        // **Set first, because closing changes the layout.** Dropping `control`
+        // to `.observing` below removes `PaneKeyBar` from the safe area, which
+        // makes the terminal taller, which reports a new grid — and this
+        // function suspends twice, so SwiftUI gets a layout pass in the middle
+        // of it. `show()` would then find `opened` already nil and call
+        // `start()`, opening a fresh `observe` channel and `stty`-ing the pane
+        // *after the user has left the screen* — an orphaned stream on their
+        // Mac, which is the one thing `ConnectionStore` promises not to leave.
+        //
+        // The same "layout is the stream's size" hazard `PaneSurface` documents
+        // one level up, reached from the other end. Nothing may reopen once a
+        // close has begun.
+        isClosing = true
         // **Before the reader is cancelled**, or there is no live stream left
         // to send it on and the pane stays owned by a phone that has walked
         // away — herdr would hold it until the channel drops.

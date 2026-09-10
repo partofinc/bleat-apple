@@ -70,13 +70,24 @@ struct PaneSurface: View {
             // and a floating pill over the bottom of a terminal would hide
             // exactly the line a dialog's `Enter to confirm` sits on.
             //
-            // Insetting costs nothing in the ordinary case: the terminal is
-            // sized to the *pane's* grid and panned inside a scroll view, so a
-            // shorter viewport shows fewer rows of it rather than asking the
-            // host for a smaller pane. The one exception is the cropped
-            // fallback, where the grid really is the phone's — there the bar
-            // reopens the stream a couple of rows shorter, which is correct and
-            // self-correcting.
+            // **Insetting is not free, and it is worth knowing what it
+            // costs.** `PaneTerminalController` sets `terminalView.frame =
+            // view.bounds` and the pty is resized to match — the outer scroll
+            // view and the pane-grid sizing this comment used to describe were
+            // deleted when that landed. So the bar really does change the grid
+            // (measured: 46 rows without it, 43 with), and taking or releasing
+            // control therefore reopens the stream and writes an `stty` to the
+            // user's Mac. That is correct rather than wasteful: the terminal
+            // genuinely got shorter and the pane must follow.
+            //
+            // It costs a *second* reopen, though: `takeControl()` and
+            // `releaseControl()` each call `start()` themselves, and the layout
+            // pass that follows the bar appearing or disappearing reports a new
+            // grid and calls it again. The first reader is normally cancelled
+            // at the `guard !Task.isCancelled` before `resizePty`, so nothing
+            // is written twice — but the gesture is a beat slower than it
+            // looks, and reserving the bar's height in both modes is the way to
+            // collapse it if that ever matters.
             // **Gated on `control` alone — never on `phase`, and that is not a
             // simplification.** This bar takes space, and `PaneTerminalController`
             // derives the grid from its own bounds, so showing it makes the

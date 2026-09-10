@@ -1822,7 +1822,7 @@ the first screen on a fresh install.
   all `idle` would leave the screen this app is organised around with nothing to
   show.
 - Five files have no preview and say why in place: `QRScannerView` and
-  `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
+  `TerminalHost`/`PaneTerminalView` need a camera or a live stream, and
   `PairingFlow`/`UnpairFlow`/`PeerSettingsFlow` present rather than draw —
   `RootView` exercises them, and each previews what it presents.
 
@@ -2846,6 +2846,172 @@ detection` gives the region as **text**. Nothing hands out
   row, and only then send Enter — falling back to the raw region when it did not
   land. That is this codebase's existing "the result is checked, not assumed"
   shape.
+
+### Typing into a pane (Phase 3, built 10 Sept 2026)
+
+The keyboard, which is the rest of the Phase 3 gate line. `PaneTerminalView`
+(was `ReadOnlyTerminalView` — the refusal is a switch now, still off by default)
+takes first responder while the pane is held, and
+`TerminalViewDelegate.send(source:data:)` forwards what SwiftTerm produces
+straight to `PaneModel.send(bytes:)`. **The bytes are never inspected**: they
+are what a terminal would have sent, and filtering them would break the very
+sequences an agent's UI is driven by. `.bytes` not `.text`, for the reason
+`TerminalKey` travels that way — a raw ESC is not legal in a JSON string.
+
+**The keyboard would have resized the user's pane, and that is the whole
+design.** This terminal derives its grid from its own bounds and the pty is
+`stty`'d to match, so a keyboard covering half the screen takes a pane from ~46
+rows to ~24 on the way up and back on the way down. That is a live Claude Code
+reflowing on someone's Mac because a phone user tapped a key. Measured by
+disabling the fix: **one show/hide round trip reports three grids** — three
+stream reopens and three writes to the host.
+
+So the grid is **frozen** and the terminal is **translated, not resized**: it
+keeps its full frozen height with its bottom pinned above the keyboard and its
+top clipped by the view (`clipsToBounds`). The grid never changes, nothing is
+written to the host, and what stays on screen is the bottom of the pane — the
+prompt and the input line, which is what is being typed into.
+
+- **Frozen before the keyboard animates in, thawed on `keyboardDidHide`.**
+  Not `willHide`: unfreezing on the way down reports a grid per frame of the
+  dismissal animation. On the way back up the restored grid equals the one it
+  left, so `report`'s own de-duplication swallows it and nothing reopens.
+- **`PaneGeometryTests` pins both halves**, and both were checked against the
+  bug rather than only the fix — with the freeze removed they fail at 2 and 3
+  reports respectively.
+- **Raised by an explicit toolbar button, never by tapping the pane.** A tap on
+  a surface whose whole job is to be dragged is easy to trigger by accident, and
+  the cost is keystrokes into a live agent. The button is also the only version
+  VoiceOver and Switch Control can reach.
+- **`PaneKeyBar` stays in the safe area, and that is also the bar that rides the
+  keyboard.** SwiftUI's keyboard avoidance lifts a `safeAreaBar` clear by
+  itself, so one bar covers both cases: nothing appears, disappears or has to be
+  kept in step, and the bar cannot vary with anything (which is the rule the
+  spinner bug wrote).
+  - **It was a `UIKit inputAccessoryView` for a day, and the device said no.**
+    Riding the keyboard put the keys hard against the bottom edge, a reach away
+    from the arrows they belong beside. `KeyBarAccessoryView` is deleted.
+  - **The keyboard toggle lives in the bar too**, for the same reason: in the
+    toolbar it sat at the opposite corner from the keys it governs.
+  - **SwiftTerm's own accessory has to be taken off**, or its Esc/Tab/Ctrl bar
+    rides the keyboard under ours. It installs a `TerminalAccessory` from its
+    `setup()`, so `PaneTerminalView.dropBuiltInAccessory()` nils it once.
+    **Assigned, not overridden**: `TerminalView.inputAccessoryView` is a settable
+    `public override var` backed by SwiftTerm's own storage, so a subclass
+    override is refused outright.
+  - **The keys are disabled between stream opens; the toggle is not.** A
+    keyboard that cannot be dismissed because the stream is reopening is half a
+    screen gone with no way back.
+- **The keyboard comes down with the pane.** `releaseControl()` and `close()`
+  both clear it, and so do a stream that ends or fails: one left up over a pane
+  this screen no longer holds would drop every keystroke in silence.
+  - **And with the *mode*.** Switching to chat leaves `PaneSurface` mounted at
+    `opacity(0)`, which does **not** resign first responder — so the keyboard
+    stayed up over the transcript with its only dismiss button hidden behind it,
+    and anything typed still reached the live agent. `wantsKeyboard` is passed
+    into `TerminalHost` as `model.wantsKeyboard && isActive`, and `PaneView`
+    clears the flag outright when the mode changes.
+  - **`wantsKeyboard` is passed in, not read off the model inside
+    `updateUIViewController`.** Nothing in `PaneSurface.body` reads it, so
+    flipping it invalidates only `PaneKeyBar` — a child, whose re-render need
+    not drive a representable update. It worked, by accident; `isActive` is
+    passed in for this exact reason and the comment saying so was three lines
+    above the code ignoring it.
+- **Input is serialised, and this is not theoretical.** Every keystroke used to
+  get its own unstructured `Task`. Each runs on the main actor only until
+  `stream.send` suspends, after which any number are inside `SSHStream.send` at
+  once with nothing sequencing the writes — fast typing could transpose two
+  characters into a live agent, and SwiftTerm's `paste` calls `send` **three
+  times in one runloop turn** (bracketed-paste start, text, end), so the markers
+  could land around or after the payload they wrap. `PaneModel` queues and
+  drains one at a time, and `start()` clears the queue so a key typed at a dead
+  stream cannot arrive at its replacement.
+- **`allowMouseReporting` is forced off.** Taking the keyboard re-arms it:
+  SwiftTerm gates its tap and pan handlers on `isFirstResponder` and the flag
+  defaults to true, so once a pane can be typed into, a tap on it sends a mouse
+  press to any program in mouse mode — on an agent at a dialog, a click on one
+  of its buttons. That is precisely the accidental input the "a button, not a
+  tap on the pane" rule exists to prevent.
+- **The freeze has two ways out, because one was not enough.**
+  `keyboardDidHide` is the normal path, but with a hardware keyboard no software
+  keyboard appears and no notification is ever posted — and SwiftTerm's own
+  accessory, which might have shown one, has been removed. The grid would then
+  stay frozen for the life of the screen. `thawIfIdle()` also runs on the
+  down-edge of `wantsKeyboard`, and **a width change thaws it too**: the frozen
+  size holds the width, so rotating with the keyboard up drew a 393pt terminal
+  in an 852pt view — a strip with black beside it, measured at 53 columns in
+  landscape — until the keyboard went down.
+- **Ctrl and Tab are currently unreachable while typing**, and that is a known
+  gap rather than a decision. `dropBuiltInAccessory()` removes SwiftTerm's
+  `TerminalAccessory`, which was the only source of both, and the iOS software
+  keyboard has neither key. So there is no way to send Ctrl-C to interrupt an
+  agent from the phone. Both are named in the Phase 3 gate line;
+  `terminalAccessory?.controlModifier` falls back to `controlModifier`, so a
+  Ctrl toggle in `PaneKeyBar` is a small addition when it is wanted.
+
+**`swift build` does not compile any of this.** Every file under `Pane/` is
+`#if canImport(UIKit)`, and `swift build` targets macOS — so the whole screen is
+compiled out and a green `swift build` says nothing about it. This was found the
+obvious way: a renamed type left a dangling reference that built clean twice.
+Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
+or the simulator test run, which is what actually compiles it.
+
+### An agent started from the phone cannot reach the login keychain (10 Sept 2026)
+
+Found on device, and it is a limit of the whole start-a-session-from-the-phone
+flow rather than a bug in anything. A `claude` agent started in a session the
+phone created came up and then refused to work:
+
+```
+⎿  Not logged in · Please run /login
+   · Run in another terminal: security unlock-keychain
+```
+
+**Why:** `session attach` runs over an SSH exec channel, and the herdr server it
+daemonises inherits that context. An SSH session does not get the login keychain
+unlocked the way the GUI session does, so every pane that server spawns is in a
+security session where Claude Code's stored credentials are unreadable. Agents in
+a session started *at the Mac* — `work` — are unaffected.
+
+So the phone can create a session, add a tab and start an agent, and the agent
+will still need someone at the Mac to unlock the keychain before it can log in.
+Worth knowing before treating "start an agent from the phone" as a finished
+story; nothing in the app can fix it.
+
+### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
+
+**Unresolved. Recorded so it is not investigated from scratch twice.** Reported
+on device: with a pane held, typing landed and Enter worked, but the screen did
+not visibly change until the pane was reopened or control released. It later
+stopped reproducing without a code change, so the cause was never found.
+
+What was *measured* and can be trusted:
+
+- **herdr delivers.** A `terminal session control --takeover` stream sent 9
+  frames while input was typed at it. Not a host-side problem.
+- **The frames reach the renderer.** Device logging showed every frame arriving
+  with a live sink and being fed — including the small 77B per-keystroke deltas
+  and the larger redraws.
+- **Feeding those exact frames repaints**, including while the keyboard has the
+  grid frozen and the terminal translated to a negative origin, and the drawn
+  viewport stays on the live screen. `PaneRepaintTests` pins this against
+  `Fixtures/terminal-control-typing.ndjson` — real captured frames, because a
+  synthesised one would lack the `ESC[?2026h`/`l` markers that make the case
+  interesting.
+- **Synchronized output is handled by SwiftTerm.** `queuePendingDisplay` and
+  `updateDisplay` both early-return while `synchronizedOutputActive`, and herdr
+  wraps *every* frame in those markers — but `endSynchronizedOutput` calls
+  `refresh` and the delegate re-queues the display, so the pause is closed
+  properly. This looked like the answer and is not.
+
+Two things that cost time and are worth knowing next time:
+
+- **`notifyUpdateChanges` is `false` by default**, so `rangeChanged` never
+  fires and an attempt to use it as a repaint probe silently proves nothing. It
+  is turned on now, which is what makes `PaneRepaintTests` possible.
+- **`TerminalView.draw(_:)` cannot be overridden** (not `open`), so the paint
+  itself is not directly observable from this side; the delegate callback is
+  the only hook.
 
 ## Concurrency settings (verified 4 Sept 2026)
 

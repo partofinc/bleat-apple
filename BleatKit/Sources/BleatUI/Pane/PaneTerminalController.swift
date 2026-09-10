@@ -19,6 +19,10 @@ import UIKit
 ///
 /// A view controller rather than a bare view for the layout hook: the size is
 /// only knowable after a layout pass.
+///
+/// **The one exception to "it sizes itself" is the keyboard**, which would
+/// otherwise resize the user's pane every time it appeared. See
+/// `wantsKeyboard`.
 final class PaneTerminalController: UIViewController {
     /// The grid the terminal is showing, whenever it changes. Both "what to ask
     /// the host for" and "what the stream is being rendered at" — they are the
@@ -26,9 +30,66 @@ final class PaneTerminalController: UIViewController {
     var onSize: ((TerminalGrid) -> Void)?
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
+    /// What the keyboard produced, byte for byte, on its way to the host.
+    var onInput: ((Data) -> Void)?
 
-    /// Read-only: it renders, and it will not take the keyboard.
-    private lazy var terminalView = ReadOnlyTerminalView(frame: .zero, font: nil)
+    /// Whether the keyboard should be up.
+    ///
+    /// **Setting this freezes the grid, and that is the whole reason it is a
+    /// property rather than a `becomeFirstResponder()` at the call site.** The
+    /// keyboard covers something like half the screen, and this terminal
+    /// derives its columns and rows from its own bounds — which are then
+    /// `stty`'d onto the pane. Left alone, raising the keyboard would resize
+    /// somebody's live agent from ~46 rows to ~24 and put it back on dismissal,
+    /// every single time. Reflowing a person's Claude Code because a phone user
+    /// tapped a key is not a trade worth making.
+    ///
+    /// So the terminal is **translated, not resized**: it keeps its full frozen
+    /// height, its bottom pinned above the keyboard, and its top clipped by the
+    /// view. The grid never changes, nothing is written to the host, and what
+    /// stays on screen is the bottom of the pane — the prompt and the input
+    /// line, which is exactly what is being typed into.
+    var wantsKeyboard = false {
+        didSet {
+            guard wantsKeyboard != oldValue else { return }
+            if wantsKeyboard {
+                // Frozen *before* the keyboard animates in, so no intermediate
+                // size is ever reported. Unfreezing waits for `keyboardDidHide`
+                // — unfreezing on the way down would report a grid per frame of
+                // the dismissal animation, and each one is a stream reopen.
+                frozen = terminalView.frame.size
+                terminalView.acceptsKeyboard = true
+                _ = terminalView.becomeFirstResponder()
+            } else {
+                // Drops first responder via `acceptsKeyboard`'s own `didSet`.
+                terminalView.acceptsKeyboard = false
+                // If no software keyboard was ever up there is no `didHide`
+                // coming, so this is the only chance to thaw.
+                thawIfIdle()
+            }
+        }
+    }
+
+    /// The size the terminal is held at while the keyboard is up. `nil` means
+    /// it may size itself to the view again.
+    private var frozen: CGSize?
+
+    /// How many repaint passes SwiftTerm has run, for `PaneRepaintTests`.
+    private(set) var repaints = 0
+
+    /// Where the drawn viewport sits relative to the live screen. Equal means
+    /// the terminal is showing the bottom — what herdr is actually painting.
+    var scrollStateForTesting: (position: Double, canScroll: Bool) {
+        (terminalView.scrollPosition, terminalView.canScroll)
+    }
+
+    /// Feeds bytes as if they had come off the stream. Tests only.
+    func feedForTesting(_ data: Data) {
+        terminalView.feed(byteArray: ArraySlice(data))
+    }
+
+    /// Takes the keyboard only when `wantsKeyboard` says so; renders always.
+    private lazy var terminalView = PaneTerminalView(frame: .zero, font: nil)
     private var reported: TerminalGrid?
     private var announced = false
     /// Whether this terminal is the one on screen.
@@ -78,19 +139,109 @@ final class PaneTerminalController: UIViewController {
         // gets the drag and can turn it into the program's own page keys.
         terminalView.isScrollEnabled = false
 
+        // **Taking the keyboard re-arms mouse reporting, and that undoes the
+        // "a button, not a tap on the pane" rule.** SwiftTerm gates its tap and
+        // pan handlers on `isFirstResponder`, and `allowMouseReporting`
+        // defaults to true — so once the pane can be typed into, a tap on it
+        // sends a mouse press to any program that has enabled mouse mode. On an
+        // agent sitting at a dialog that is a click on one of its buttons.
+        terminalView.allowMouseReporting = false
+        // Turns on `rangeChanged`, which is off by default. It is the only
+        // hook that proves a repaint pass ran; one delegate call per repaint.
+        terminalView.notifyUpdateChanges = true
+
+        // **The keys live in the safe area, not on the keyboard.** SwiftUI's
+        // keyboard avoidance already lifts a `safeAreaBar` clear of the
+        // keyboard, so `PaneKeyBar` stays where it is and rides up with it —
+        // which keeps it a thumb's reach from the arrows rather than stranded
+        // at the far edge of the screen, and removes an entire second copy of
+        // the bar. What has to go is SwiftTerm's own accessory, or its keys and
+        // ours are both on screen.
+        terminalView.dropBuiltInAccessory()
+
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and
         // sets that property to `UIColor.clear`, so asking the obvious thing
         // paints a transparent band — white under a black terminal in light
         // mode.
         view.backgroundColor = terminalView.layer.backgroundColor.map(UIColor.init(cgColor:))
+        // The frozen terminal is taller than this view while the keyboard is
+        // up, and the overhang is meant to be hidden rather than drawn over the
+        // navigation bar.
+        view.clipsToBounds = true
         view.addSubview(terminalView)
+
+        // **`didHide`, not `willHide`.** Unfreezing while the keyboard is still
+        // animating away reports a new grid on every frame of it, and every one
+        // of those is a stream reopen and an `stty` on the user's Mac. Waiting
+        // until it has gone means exactly one layout pass, which reports the
+        // grid the terminal had before any of this — so `report`'s own
+        // de-duplication swallows it and nothing reopens at all.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidHide),
+            name: UIResponder.keyboardDidHideNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidShow),
+            name: UIResponder.keyboardDidShowNotification,
+            object: nil
+        )
     }
+
+    @objc private func keyboardDidShow() { keyboardIsUp = true }
+
+    @objc private func keyboardDidHide() {
+        keyboardIsUp = false
+        thawIfIdle()
+    }
+
+    /// Lets the terminal size itself again, once nothing is holding it.
+    ///
+    /// **`keyboardDidHide` cannot be the only way out.** With a hardware
+    /// keyboard attached no software keyboard appears, so no notification ever
+    /// arrives — and `dropBuiltInAccessory()` has removed the accessory that
+    /// would otherwise be shown, so there is not even a bar to post one. The
+    /// grid would then stay frozen for the life of the screen: rotation would
+    /// report nothing, and the stream and the pane's pty would sit at a size
+    /// the view no longer is.
+    private func thawIfIdle() {
+        guard frozen != nil, !wantsKeyboard, !keyboardIsUp else { return }
+        frozen = nil
+        view.setNeedsLayout()
+    }
+
+    /// Whether a software keyboard is actually on screen.
+    private var keyboardIsUp = false
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard view.bounds.width > 0, view.bounds.height > 0 else { return }
-        terminalView.frame = view.bounds
+        // **A rotation thaws it.** The frozen size holds the width as well as
+        // the height, so turning the device with the keyboard up would draw a
+        // 393pt-wide terminal inside an 852pt view — a strip down one side with
+        // black beside it, and nothing to correct it until the keyboard went
+        // down. Letting go costs one reopen, which is what a rotation costs
+        // anyway, and is much the better of the two.
+        if let held = frozen, held.width != view.bounds.width {
+            frozen = nil
+        }
+        if let frozen {
+            // Bottom-anchored at its frozen size: the keyboard takes the space,
+            // the terminal slides up under the navigation bar, and the rows that
+            // go are the oldest ones at the top rather than the input line at
+            // the bottom. `clipsToBounds` on the view is what hides them.
+            terminalView.frame = CGRect(
+                x: 0,
+                y: view.bounds.height - frozen.height,
+                width: frozen.width,
+                height: frozen.height
+            )
+        } else {
+            terminalView.frame = view.bounds
+        }
         // `TerminalView` recomputes its cols and rows in its own
         // `layoutSubviews`, which runs *after* this method — so without forcing
         // it, the size read below is `TerminalOptions`' default 80x25, a size
@@ -147,9 +298,12 @@ extension PaneTerminalController: TerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        // Phase 3. Dropping input silently is correct for now: the alternative
-        // is `terminal session control`, which seizes the pane from whoever
-        // holds it.
+        // Straight through, unexamined. These are the bytes a terminal would
+        // have sent, escape sequences and all, and `PaneModel` refuses them
+        // unless this screen holds the pane — which is the only gate that
+        // belongs on them. Filtering here would break the very sequences an
+        // agent's UI is driven by.
+        onInput?(Data(data))
     }
 
     func scrolled(source: TerminalView, position: Double) {}
@@ -171,6 +325,10 @@ extension PaneTerminalController: TerminalViewDelegate {
 
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
-    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
+        // Fires from inside SwiftTerm's `updateDisplay`, so it is the only
+        // observable proof from out here that a repaint pass actually ran.
+        repaints += 1
+    }
 }
 #endif

@@ -9,6 +9,12 @@ struct TerminalHost: UIViewControllerRepresentable {
     /// Whether the terminal is the mode on screen. Passed from the view body
     /// rather than read off the model, so SwiftUI observes it.
     let isActive: Bool
+    /// Whether the keyboard should be up — **also passed in rather than read
+    /// off the model**, for exactly the reason above. Nothing in
+    /// `PaneSurface.body` reads `wantsKeyboard`, so flipping it invalidates
+    /// only `PaneKeyBar`, a child whose re-render need not drive a
+    /// representable update at all. Relying on that is relying on an accident.
+    let wantsKeyboard: Bool
 
     func makeUIViewController(context: Context) -> PaneTerminalController {
         let controller = PaneTerminalController()
@@ -21,6 +27,9 @@ struct TerminalHost: UIViewControllerRepresentable {
             }
         }
         controller.isActive = isActive
+        controller.onInput = { [model] data in
+            Task { await model.send(bytes: data) }
+        }
         controller.onSize = { [model] grid in
             // The terminal has sized itself to the screen. That is what the
             // host is asked to make the pane, and what the stream is opened at.
@@ -31,6 +40,7 @@ struct TerminalHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PaneTerminalController, context: Context) {
         controller.isActive = isActive
+        controller.wantsKeyboard = wantsKeyboard
     }
 }
 #endif

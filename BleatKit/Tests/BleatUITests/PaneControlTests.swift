@@ -1,4 +1,5 @@
 import BleatKit
+import Foundation
 import Testing
 @testable import BleatUI
 
@@ -42,6 +43,49 @@ struct PaneControlTests {
         await model.send(.pageDown)
         #expect(model.control == .observing)
         #expect(model.phase == .live, "sending disturbed a pane that was only being watched")
+    }
+
+    /// Typed bytes are gated exactly as the key bar's are. A keystroke that
+    /// escaped while observing would be input on a pane this screen explicitly
+    /// does not hold.
+    @Test("typed bytes are not sent while observing")
+    func typingIsInert() async {
+        let model = PaneModel(previewing: .live)
+        await model.send(bytes: Data("rm -rf /".utf8))
+        #expect(model.control == .observing)
+        #expect(model.phase == .live, "typing disturbed a pane that was only being watched")
+    }
+
+    /// **The keyboard cannot be raised over a pane this screen does not hold.**
+    /// It would have nowhere to put a keystroke — `send` drops them — so it
+    /// would be a keyboard that silently does nothing, over somebody else's
+    /// agent.
+    @Test("the keyboard is refused while observing")
+    func keyboardNeedsControl() {
+        let model = PaneModel(previewing: .live)
+        model.setWantsKeyboard(true)
+        #expect(model.wantsKeyboard == false, "a keyboard was raised over a pane being watched")
+    }
+
+    /// Giving the pane back must take the keyboard down with it, or it sits
+    /// over a pane that is no longer held, dropping everything typed into it.
+    @Test("releasing the pane puts the keyboard away")
+    func releasingDismissesTheKeyboard() async {
+        let model = PaneModel(previewing: .live, control: .controlling)
+        model.setWantsKeyboard(true)
+        #expect(model.wantsKeyboard)
+        await model.releaseControl()
+        #expect(model.control == .observing)
+        #expect(model.wantsKeyboard == false, "the keyboard outlived the control that justified it")
+    }
+
+    /// Same for leaving the screen entirely.
+    @Test("closing puts the keyboard away")
+    func closingDismissesTheKeyboard() async {
+        let model = PaneModel(previewing: .live, control: .controlling)
+        model.setWantsKeyboard(true)
+        await model.close()
+        #expect(model.wantsKeyboard == false)
     }
 
     /// Releasing what was never taken must not reopen the stream, which is what

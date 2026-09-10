@@ -21,9 +21,6 @@ struct TerminalHost: UIViewControllerRepresentable {
             }
         }
         controller.isActive = isActive
-        // Built once and kept: an accessory rebuilt on every update would tear
-        // the bar out from under the keyboard mid-edit.
-        controller.accessory = KeyBarAccessoryView(model: model)
         controller.onInput = { [model] data in
             Task { await model.send(bytes: data) }
         }

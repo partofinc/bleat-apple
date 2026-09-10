@@ -23,22 +23,33 @@ struct PaneKeyBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            key(.left, symbol: "arrow.left", label: "Left arrow")
-            key(.up, symbol: "arrow.up", label: "Up arrow")
-            key(.down, symbol: "arrow.down", label: "Down arrow")
-            key(.right, symbol: "arrow.right", label: "Right arrow")
+            // **Disabled as a group, so the keyboard toggle stays live.** The
+            // keys need a stream to go to; the toggle does not, and a keyboard
+            // that cannot be dismissed because the stream is between opens is a
+            // trap — half the screen gone with no way back.
+            HStack(spacing: 2) {
+                key(.left, symbol: "arrow.left", label: "Left arrow")
+                key(.up, symbol: "arrow.up", label: "Up arrow")
+                key(.down, symbol: "arrow.down", label: "Down arrow")
+                key(.right, symbol: "arrow.right", label: "Right arrow")
 
-            divider
+                divider
 
-            // The one word. `esc` lower-cased is how it is printed on a key.
-            key(.escape, label: "Escape") {
-                Text("esc")
-                    .font(.caption.weight(.bold))
+                // The one word. `esc` lower-cased is how it is printed on a key.
+                key(.escape, label: "Escape") {
+                    Text("esc")
+                        .font(.caption.weight(.bold))
+                }
+
+                divider
+
+                key(.enter, symbol: "return", label: "Enter")
             }
+            .disabled(!isLive)
 
             divider
 
-            key(.enter, symbol: "return", label: "Enter")
+            keyboardToggle
         }
         .padding(6)
         .glassEffect(in: .capsule)
@@ -57,7 +68,31 @@ struct PaneKeyBar: View {
         // in `PaneSurface`; `disabled` is drawn, not laid out, so it is safe.
         // A key pressed now would be dropped by `PaneModel.send` anyway, and a
         // dead tap that looks live is worse than a greyed one.
-        .disabled(!isLive)
+    }
+
+    /// Raises and dismisses the system keyboard.
+    ///
+    /// **Here rather than in the toolbar**, which is where it started: on a
+    /// device the two ended up at opposite edges of the screen, and this is a
+    /// key row — the thing you reach for while typing belongs beside the keys
+    /// you reach for while typing.
+    ///
+    /// **A button, not a tap on the pane.** Tapping the terminal to type is
+    /// what a text field does and is wrong here: this surface's whole job is to
+    /// be dragged, a drag misread as a tap is ordinary, and the cost is
+    /// keystrokes into somebody's live agent. It is also the only version
+    /// VoiceOver and Switch Control can reach.
+    private var keyboardToggle: some View {
+        Button {
+            model.setWantsKeyboard(!model.wantsKeyboard)
+        } label: {
+            Image(systemName: model.wantsKeyboard ? "keyboard.chevron.compact.down" : "keyboard")
+                .font(.body.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 38)
+        }
+        .buttonStyle(.plain)
+        .contentShape(.rect)
+        .accessibilityLabel(model.wantsKeyboard ? "Hide the keyboard" : "Show the keyboard")
     }
 
     private var isLive: Bool {

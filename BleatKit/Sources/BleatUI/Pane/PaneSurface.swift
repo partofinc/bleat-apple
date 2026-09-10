@@ -105,16 +105,14 @@ struct PaneSurface: View {
                 // Only while this screen owns input: `PaneModel.send` is a no-op
                 // while observing, and a row of keys that silently does nothing
                 // is worse than no row at all.
-                // Not while the keyboard is up: `KeyBarAccessoryView` is
-                // carrying the same bar directly above the keys, and SwiftUI's
-                // own keyboard avoidance would lift this one to sit right on
-                // top of it — two identical bars, stacked.
-                //
-                // Safe to vary despite everything above, and only because of
-                // *when*: the grid is frozen for the whole time the keyboard is
-                // up, so this appearing and disappearing cannot report a new
-                // size. Outside that window it never changes.
-                if model.control == .controlling, !model.wantsKeyboard {
+                // Shown whenever the pane is held, keyboard or not. SwiftUI's
+                // keyboard avoidance lifts a safe-area bar clear of the
+                // keyboard by itself, so this is also the bar that rides above
+                // the keys — there is no second copy and nothing to keep in
+                // step. It was an `inputAccessoryView` for a day; on a device
+                // that put the keys at the far edge of the screen, a reach away
+                // from the arrows they belong beside.
+                if model.control == .controlling {
                     PaneKeyBar(model: model)
                 }
             }

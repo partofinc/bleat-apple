@@ -39,17 +39,21 @@ final class PaneTerminalView: TerminalView {
 
     override var canBecomeFirstResponder: Bool { acceptsKeyboard }
 
-    /// Installs the bar that rides above the keyboard.
+    /// Takes SwiftTerm's own accessory bar off the keyboard.
+    ///
+    /// It installs a `TerminalAccessory` — Esc, Tab, Ctrl, arrows — from its
+    /// `setup()`, so without this there are two bars: SwiftTerm's riding the
+    /// keyboard and `PaneKeyBar` above it. One set of keys, and it is ours,
+    /// because ours is the one wired to `PaneModel` and gated on holding the
+    /// pane.
     ///
     /// **Assigned, not overridden.** `TerminalView.inputAccessoryView` is a
-    /// settable `public override var` backed by SwiftTerm's own storage, so
-    /// subclassing it is refused ("cannot override mutable property with
-    /// read-only property"). Writing to it is the supported route, and it is
-    /// also what displaces SwiftTerm's built-in `TerminalAccessory` — which it
-    /// installs itself, and which would otherwise appear instead of ours.
-    func useAccessory(_ view: UIView?) {
-        guard inputAccessoryView !== view else { return }
-        inputAccessoryView = view
+    /// settable `public override var` backed by SwiftTerm's own storage, so a
+    /// subclass override is refused outright ("cannot override mutable property
+    /// with read-only property"). Writing to it is the supported route.
+    func dropBuiltInAccessory() {
+        guard inputAccessoryView != nil else { return }
+        inputAccessoryView = nil
         reloadInputViews()
     }
 }

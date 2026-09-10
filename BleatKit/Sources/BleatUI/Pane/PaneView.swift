@@ -139,18 +139,6 @@ struct PaneView: View {
             if model.control == .controlling || (mode == .terminal && terminalWasAskedFor) {
                 ToolbarItem(placement: .primaryAction) { controlButton }
             }
-            // **A button, not a tap on the pane.** Tapping the terminal to type
-            // is what a text field does, and it is wrong here: this surface's
-            // whole job is to be dragged, a drag misread as a tap is ordinary,
-            // and the cost of that mistake is keystrokes into somebody's live
-            // agent. A button also gives VoiceOver and Switch Control a way in,
-            // which a tap on a `TerminalView` does not.
-            //
-            // Only in the terminal, and only while the pane is held: there is
-            // nowhere for a keystroke to go otherwise.
-            if mode == .terminal, model.control == .controlling {
-                ToolbarItem(placement: .primaryAction) { keyboardButton }
-            }
         }
         // **Asked, not done.** Herdr allows one input owner per pane, and there
         // is no way to send a key **on this stream** without becoming it:
@@ -207,20 +195,6 @@ struct PaneView: View {
         // setting wins.
         .preferredColorScheme(mode == .terminal ? .dark : nil)
         .animation(.easeInOut, value: mode)
-    }
-
-    /// Raises and dismisses the system keyboard over the pane.
-    ///
-    /// Its own button rather than a mode, because it is genuinely transient:
-    /// the keyboard costs half the screen, and reading a pane is most of what
-    /// this screen is for even while it is held.
-    private var keyboardButton: some View {
-        Button(
-            model.wantsKeyboard ? "Hide the keyboard" : "Show the keyboard",
-            systemImage: model.wantsKeyboard ? "keyboard.chevron.compact.down" : "keyboard"
-        ) {
-            model.setWantsKeyboard(!model.wantsKeyboard)
-        }
     }
 
     /// Says which of the two states the pane is in, because they are not

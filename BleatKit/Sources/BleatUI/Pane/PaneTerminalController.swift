@@ -59,19 +59,12 @@ final class PaneTerminalController: UIViewController {
                 // the dismissal animation, and each one is a stream reopen.
                 frozen = terminalView.frame.size
                 terminalView.acceptsKeyboard = true
-                terminalView.useAccessory(accessory)
                 _ = terminalView.becomeFirstResponder()
             } else {
                 // Drops first responder via `acceptsKeyboard`'s own `didSet`.
                 terminalView.acceptsKeyboard = false
             }
         }
-    }
-
-    /// The bar that rides above the keyboard. Set by `TerminalHost`, which is
-    /// the only place that has the model to build it from.
-    var accessory: UIView? {
-        didSet { if wantsKeyboard { terminalView.useAccessory(accessory) } }
     }
 
     /// The size the terminal is held at while the keyboard is up. `nil` means
@@ -128,6 +121,15 @@ final class PaneTerminalController: UIViewController {
         // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
         // gets the drag and can turn it into the program's own page keys.
         terminalView.isScrollEnabled = false
+
+        // **The keys live in the safe area, not on the keyboard.** SwiftUI's
+        // keyboard avoidance already lifts a `safeAreaBar` clear of the
+        // keyboard, so `PaneKeyBar` stays where it is and rides up with it —
+        // which keeps it a thumb's reach from the arrows rather than stranded
+        // at the far edge of the screen, and removes an entire second copy of
+        // the bar. What has to go is SwiftTerm's own accessory, or its keys and
+        // ours are both on screen.
+        terminalView.dropBuiltInAccessory()
 
         // Read off the **layer**, not `nativeBackgroundColor`: SwiftTerm's
         // `setupOptions` moves the real colour into `layer.backgroundColor` and

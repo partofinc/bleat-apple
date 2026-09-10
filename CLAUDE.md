@@ -2883,18 +2883,25 @@ prompt and the input line, which is what is being typed into.
   a surface whose whole job is to be dragged is easy to trigger by accident, and
   the cost is keystrokes into a live agent. The button is also the only version
   VoiceOver and Switch Control can reach.
-- **`PaneKeyBar` becomes the keyboard's accessory** (`KeyBarAccessoryView`), and
-  `PaneSurface` drops its safe-area copy while it is up, or SwiftUI's keyboard
-  avoidance stacks two identical bars. Varying that *is* safe here, and only
-  because the grid is frozen for exactly that window — outside it, nothing about
-  the bar's presence may change. The same SwiftUI view is used in both places
-  rather than a UIKit re-implementation, because two bars would drift and the
-  keys are the part that must not.
-- **`inputAccessoryView` is assigned, not overridden.**
-  `TerminalView.inputAccessoryView` is a settable `public override var` backed by
-  SwiftTerm's own storage, so a subclass override is refused outright. Writing to
-  it is also what displaces SwiftTerm's built-in `TerminalAccessory`, which it
-  installs itself and which would otherwise appear instead.
+- **`PaneKeyBar` stays in the safe area, and that is also the bar that rides the
+  keyboard.** SwiftUI's keyboard avoidance lifts a `safeAreaBar` clear by
+  itself, so one bar covers both cases: nothing appears, disappears or has to be
+  kept in step, and the bar cannot vary with anything (which is the rule the
+  spinner bug wrote).
+  - **It was a `UIKit inputAccessoryView` for a day, and the device said no.**
+    Riding the keyboard put the keys hard against the bottom edge, a reach away
+    from the arrows they belong beside. `KeyBarAccessoryView` is deleted.
+  - **The keyboard toggle lives in the bar too**, for the same reason: in the
+    toolbar it sat at the opposite corner from the keys it governs.
+  - **SwiftTerm's own accessory has to be taken off**, or its Esc/Tab/Ctrl bar
+    rides the keyboard under ours. It installs a `TerminalAccessory` from its
+    `setup()`, so `PaneTerminalView.dropBuiltInAccessory()` nils it once.
+    **Assigned, not overridden**: `TerminalView.inputAccessoryView` is a settable
+    `public override var` backed by SwiftTerm's own storage, so a subclass
+    override is refused outright.
+  - **The keys are disabled between stream opens; the toggle is not.** A
+    keyboard that cannot be dismissed because the stream is reopening is half a
+    screen gone with no way back.
 - **The keyboard comes down with the pane.** `releaseControl()` and `close()`
   both clear it: one left up over a pane this screen no longer holds would drop
   every keystroke in silence.

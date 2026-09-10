@@ -2913,6 +2913,63 @@ obvious way: a renamed type left a dangling reference that built clean twice.
 Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
 or the simulator test run, which is what actually compiles it.
 
+### An agent started from the phone cannot reach the login keychain (10 Sept 2026)
+
+Found on device, and it is a limit of the whole start-a-session-from-the-phone
+flow rather than a bug in anything. A `claude` agent started in a session the
+phone created came up and then refused to work:
+
+```
+⎿  Not logged in · Please run /login
+   · Run in another terminal: security unlock-keychain
+```
+
+**Why:** `session attach` runs over an SSH exec channel, and the herdr server it
+daemonises inherits that context. An SSH session does not get the login keychain
+unlocked the way the GUI session does, so every pane that server spawns is in a
+security session where Claude Code's stored credentials are unreadable. Agents in
+a session started *at the Mac* — `work` — are unaffected.
+
+So the phone can create a session, add a tab and start an agent, and the agent
+will still need someone at the Mac to unlock the keychain before it can log in.
+Worth knowing before treating "start an agent from the phone" as a finished
+story; nothing in the app can fix it.
+
+### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
+
+**Unresolved. Recorded so it is not investigated from scratch twice.** Reported
+on device: with a pane held, typing landed and Enter worked, but the screen did
+not visibly change until the pane was reopened or control released. It later
+stopped reproducing without a code change, so the cause was never found.
+
+What was *measured* and can be trusted:
+
+- **herdr delivers.** A `terminal session control --takeover` stream sent 9
+  frames while input was typed at it. Not a host-side problem.
+- **The frames reach the renderer.** Device logging showed every frame arriving
+  with a live sink and being fed — including the small 77B per-keystroke deltas
+  and the larger redraws.
+- **Feeding those exact frames repaints**, including while the keyboard has the
+  grid frozen and the terminal translated to a negative origin, and the drawn
+  viewport stays on the live screen. `PaneRepaintTests` pins this against
+  `Fixtures/terminal-control-typing.ndjson` — real captured frames, because a
+  synthesised one would lack the `ESC[?2026h`/`l` markers that make the case
+  interesting.
+- **Synchronized output is handled by SwiftTerm.** `queuePendingDisplay` and
+  `updateDisplay` both early-return while `synchronizedOutputActive`, and herdr
+  wraps *every* frame in those markers — but `endSynchronizedOutput` calls
+  `refresh` and the delegate re-queues the display, so the pause is closed
+  properly. This looked like the answer and is not.
+
+Two things that cost time and are worth knowing next time:
+
+- **`notifyUpdateChanges` is `false` by default**, so `rangeChanged` never
+  fires and an attempt to use it as a repaint probe silently proves nothing. It
+  is turned on now, which is what makes `PaneRepaintTests` possible.
+- **`TerminalView.draw(_:)` cannot be overridden** (not `open`), so the paint
+  itself is not directly observable from this side; the delegate callback is
+  the only hook.
+
 ## Concurrency settings (verified 4 Sept 2026)
 
 The package and the Xcode targets must state the same thing, or a file changes

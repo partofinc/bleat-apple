@@ -71,6 +71,20 @@ final class PaneTerminalController: UIViewController {
     /// it may size itself to the view again.
     private var frozen: CGSize?
 
+    /// How many repaint passes SwiftTerm has run, for `PaneRepaintTests`.
+    private(set) var repaints = 0
+
+    /// Where the drawn viewport sits relative to the live screen. Equal means
+    /// the terminal is showing the bottom — what herdr is actually painting.
+    var scrollStateForTesting: (position: Double, canScroll: Bool) {
+        (terminalView.scrollPosition, terminalView.canScroll)
+    }
+
+    /// Feeds bytes as if they had come off the stream. Tests only.
+    func feedForTesting(_ data: Data) {
+        terminalView.feed(byteArray: ArraySlice(data))
+    }
+
     /// Takes the keyboard only when `wantsKeyboard` says so; renders always.
     private lazy var terminalView = PaneTerminalView(frame: .zero, font: nil)
     private var reported: TerminalGrid?
@@ -121,6 +135,9 @@ final class PaneTerminalController: UIViewController {
         // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
         // gets the drag and can turn it into the program's own page keys.
         terminalView.isScrollEnabled = false
+        // Turns on `rangeChanged`, which is off by default. It is the only
+        // hook that proves a repaint pass ran; one delegate call per repaint.
+        terminalView.notifyUpdateChanges = true
 
         // **The keys live in the safe area, not on the keyboard.** SwiftUI's
         // keyboard avoidance already lifts a `safeAreaBar` clear of the
@@ -263,6 +280,10 @@ extension PaneTerminalController: TerminalViewDelegate {
 
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
-    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
+        // Fires from inside SwiftTerm's `updateDisplay`, so it is the only
+        // observable proof from out here that a repaint pass actually ran.
+        repaints += 1
+    }
 }
 #endif

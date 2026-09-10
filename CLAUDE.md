@@ -1822,7 +1822,7 @@ the first screen on a fresh install.
   all `idle` would leave the screen this app is organised around with nothing to
   show.
 - Five files have no preview and say why in place: `QRScannerView` and
-  `TerminalHost`/`ReadOnlyTerminalView` need a camera or a live stream, and
+  `TerminalHost`/`PaneTerminalView` need a camera or a live stream, and
   `PairingFlow`/`UnpairFlow`/`PeerSettingsFlow` present rather than draw —
   `RootView` exercises them, and each previews what it presents.
 
@@ -2846,6 +2846,65 @@ detection` gives the region as **text**. Nothing hands out
   row, and only then send Enter — falling back to the raw region when it did not
   land. That is this codebase's existing "the result is checked, not assumed"
   shape.
+
+### Typing into a pane (Phase 3, built 10 Sept 2026)
+
+The keyboard, which is the rest of the Phase 3 gate line. `PaneTerminalView`
+(was `ReadOnlyTerminalView` — the refusal is a switch now, still off by default)
+takes first responder while the pane is held, and
+`TerminalViewDelegate.send(source:data:)` forwards what SwiftTerm produces
+straight to `PaneModel.send(bytes:)`. **The bytes are never inspected**: they
+are what a terminal would have sent, and filtering them would break the very
+sequences an agent's UI is driven by. `.bytes` not `.text`, for the reason
+`TerminalKey` travels that way — a raw ESC is not legal in a JSON string.
+
+**The keyboard would have resized the user's pane, and that is the whole
+design.** This terminal derives its grid from its own bounds and the pty is
+`stty`'d to match, so a keyboard covering half the screen takes a pane from ~46
+rows to ~24 on the way up and back on the way down. That is a live Claude Code
+reflowing on someone's Mac because a phone user tapped a key. Measured by
+disabling the fix: **one show/hide round trip reports three grids** — three
+stream reopens and three writes to the host.
+
+So the grid is **frozen** and the terminal is **translated, not resized**: it
+keeps its full frozen height with its bottom pinned above the keyboard and its
+top clipped by the view (`clipsToBounds`). The grid never changes, nothing is
+written to the host, and what stays on screen is the bottom of the pane — the
+prompt and the input line, which is what is being typed into.
+
+- **Frozen before the keyboard animates in, thawed on `keyboardDidHide`.**
+  Not `willHide`: unfreezing on the way down reports a grid per frame of the
+  dismissal animation. On the way back up the restored grid equals the one it
+  left, so `report`'s own de-duplication swallows it and nothing reopens.
+- **`PaneGeometryTests` pins both halves**, and both were checked against the
+  bug rather than only the fix — with the freeze removed they fail at 2 and 3
+  reports respectively.
+- **Raised by an explicit toolbar button, never by tapping the pane.** A tap on
+  a surface whose whole job is to be dragged is easy to trigger by accident, and
+  the cost is keystrokes into a live agent. The button is also the only version
+  VoiceOver and Switch Control can reach.
+- **`PaneKeyBar` becomes the keyboard's accessory** (`KeyBarAccessoryView`), and
+  `PaneSurface` drops its safe-area copy while it is up, or SwiftUI's keyboard
+  avoidance stacks two identical bars. Varying that *is* safe here, and only
+  because the grid is frozen for exactly that window — outside it, nothing about
+  the bar's presence may change. The same SwiftUI view is used in both places
+  rather than a UIKit re-implementation, because two bars would drift and the
+  keys are the part that must not.
+- **`inputAccessoryView` is assigned, not overridden.**
+  `TerminalView.inputAccessoryView` is a settable `public override var` backed by
+  SwiftTerm's own storage, so a subclass override is refused outright. Writing to
+  it is also what displaces SwiftTerm's built-in `TerminalAccessory`, which it
+  installs itself and which would otherwise appear instead.
+- **The keyboard comes down with the pane.** `releaseControl()` and `close()`
+  both clear it: one left up over a pane this screen no longer holds would drop
+  every keystroke in silence.
+
+**`swift build` does not compile any of this.** Every file under `Pane/` is
+`#if canImport(UIKit)`, and `swift build` targets macOS — so the whole screen is
+compiled out and a green `swift build` says nothing about it. This was found the
+obvious way: a renamed type left a dangling reference that built clean twice.
+Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
+or the simulator test run, which is what actually compiles it.
 
 ## Concurrency settings (verified 4 Sept 2026)
 

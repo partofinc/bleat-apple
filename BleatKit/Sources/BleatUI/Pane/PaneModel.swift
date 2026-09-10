@@ -48,6 +48,18 @@ final class PaneModel {
     }
 
     private(set) var control: Control = .observing
+
+    /// Whether the user has asked for the system keyboard.
+    ///
+    /// **Raised by an explicit button, never by tapping the pane.** A tap that
+    /// happened to land on the terminal would otherwise start sending
+    /// keystrokes to a live agent, and a drag misread as a tap is not exotic on
+    /// a surface whose whole job is to be dragged. The button is also the only
+    /// version of this that VoiceOver and Switch Control can reach.
+    ///
+    /// Only ever true while `.controlling`: there is nowhere for a keystroke to
+    /// go otherwise, and `releaseControl()` puts it back down.
+    private(set) var wantsKeyboard = false
     private(set) var phase: Phase = .opening
     /// The grid everything agrees on: what the terminal shows, what the pane's
     /// pty was set to, and what the stream was opened at.
@@ -237,6 +249,10 @@ final class PaneModel {
     /// be inferred from a dropped channel.
     func releaseControl() async {
         guard control == .controlling else { return }
+        // Down first: a keyboard left up over a pane this screen no longer
+        // holds is an invitation to type into nothing, and `send` would drop
+        // every keystroke silently.
+        wantsKeyboard = false
         try? await stream?.send(.release)
         control = .observing
         start()
@@ -247,8 +263,37 @@ final class PaneModel {
     /// Silently does nothing while observing, which is the safe direction: a
     /// stray call must never be the thing that seizes a pane.
     func send(_ key: TerminalKey) async {
-        guard control == .controlling, let stream else { return }
-        try? await stream.send(.bytes(key.bytes))
+        await send(bytes: key.bytes)
+    }
+
+    /// Sends what the keyboard produced, byte for byte.
+    ///
+    /// **`.bytes`, never `.text`.** SwiftTerm hands over the encoded bytes a
+    /// terminal would send, which for anything but a plain character includes a
+    /// raw ESC — and a raw ESC inside a JSON string is not legal JSON, so herdr
+    /// would answer `input ignored` on stderr and the screen simply would not
+    /// move. The same reason `TerminalKey` travels this way.
+    ///
+    /// Nothing here inspects or filters the bytes. They are what the user
+    /// typed; deciding which of them a program is allowed to receive is not
+    /// this layer's business, and a filter would break exactly the control
+    /// sequences an agent's UI is driven by.
+    func send(bytes: Data) async {
+        guard control == .controlling, let stream, !bytes.isEmpty else { return }
+        try? await stream.send(.bytes(bytes))
+    }
+
+    /// Asks for or dismisses the system keyboard.
+    ///
+    /// Refused while observing, for the reason `send` is: a keyboard over a
+    /// pane this screen does not hold has nowhere to put a keystroke, and
+    /// raising one would say otherwise.
+    func setWantsKeyboard(_ wanted: Bool) {
+        guard control == .controlling || !wanted else {
+            wantsKeyboard = false
+            return
+        }
+        wantsKeyboard = wanted
     }
 
     /// Closes the stream, releasing input first if this screen took it.
@@ -266,6 +311,7 @@ final class PaneModel {
         // one level up, reached from the other end. Nothing may reopen once a
         // close has begun.
         isClosing = true
+        wantsKeyboard = false
         // **Before the reader is cancelled**, or there is no live stream left
         // to send it on and the pane stays owned by a phone that has walked
         // away — herdr would hold it until the channel drops.

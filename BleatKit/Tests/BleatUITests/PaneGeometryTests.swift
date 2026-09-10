@@ -95,6 +95,67 @@ struct PaneGeometryTests {
         #expect(viewport(inPhase: .failed("lost it")) == live)
     }
 
+    /// **The keyboard must not resize somebody's agent.**
+    ///
+    /// This terminal derives its grid from its own bounds and the pane's pty is
+    /// `stty`'d to match, so a keyboard covering half the screen would take the
+    /// pane from ~46 rows to ~24 on the way up and put it back on the way down
+    /// — reflowing a live Claude Code on the user's Mac every time a phone user
+    /// tapped a key. So the grid is frozen and the terminal is *translated*
+    /// instead, bottom-anchored above the keyboard with its top clipped.
+    @Test("raising the keyboard does not change the grid")
+    func keyboardFreezesTheGrid() {
+        let controller = PaneTerminalController()
+        var reports: [TerminalGrid] = []
+        controller.onSize = { reports.append($0) }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+
+        let before = reports.last
+        #expect(before?.isUsable == true, "the terminal never laid out")
+        #expect(reports.count == 1)
+
+        controller.wantsKeyboard = true
+        // What is left of the screen with a keyboard over it.
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+
+        #expect(
+            reports.count == 1,
+            "the keyboard reported \(reports.count - 1) new grid(s): \(reports.dropFirst())"
+        )
+    }
+
+    /// And the way back down reports nothing either — which is the half that is
+    /// easy to get wrong. Unfreezing on `willHide` rather than `didHide` would
+    /// report a grid per frame of the dismissal animation, and every one of
+    /// those is a stream reopen and a write to the user's Mac.
+    @Test("dismissing the keyboard does not reopen the stream")
+    func dismissingRestoresTheGridQuietly() {
+        let controller = PaneTerminalController()
+        var reports: [TerminalGrid] = []
+        controller.onSize = { reports.append($0) }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        let before = reports.last
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+
+        controller.wantsKeyboard = false
+        NotificationCenter.default.post(
+            name: UIResponder.keyboardDidHideNotification, object: nil
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+
+        // The grid it comes back to is the one it left, so `report`'s own
+        // de-duplication swallows it and nothing downstream ever hears.
+        #expect(reports.count == 1, "the round trip reported \(reports.count) grids")
+        #expect(reports.last == before)
+    }
+
     /// Rotation must produce a *different* grid, or nothing downstream reopens
     /// the stream and the screen keeps frames drawn for the old shape.
     @Test("rotating changes the reported grid")

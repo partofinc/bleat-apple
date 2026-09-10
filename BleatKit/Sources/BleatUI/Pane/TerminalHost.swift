@@ -21,6 +21,12 @@ struct TerminalHost: UIViewControllerRepresentable {
             }
         }
         controller.isActive = isActive
+        // Built once and kept: an accessory rebuilt on every update would tear
+        // the bar out from under the keyboard mid-edit.
+        controller.accessory = KeyBarAccessoryView(model: model)
+        controller.onInput = { [model] data in
+            Task { await model.send(bytes: data) }
+        }
         controller.onSize = { [model] grid in
             // The terminal has sized itself to the screen. That is what the
             // host is asked to make the pane, and what the stream is opened at.
@@ -31,6 +37,10 @@ struct TerminalHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PaneTerminalController, context: Context) {
         controller.isActive = isActive
+        // Read from the model rather than passed in, unlike `isActive`: nothing
+        // above this needs to know, and the model is what `releaseControl()`
+        // and `close()` clear it from.
+        controller.wantsKeyboard = model.wantsKeyboard
     }
 }
 #endif

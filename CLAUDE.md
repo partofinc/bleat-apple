@@ -2565,13 +2565,18 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   - **So the phone can have it, at a price: it takes input ownership.** Built
     — see **Scrolling a pane** below. `observe` is read-only and sends nothing,
     which is exactly why the pane looks frozen at the current screen.
-  - **There is no half measure, and this was measured.** Against a pane another
-    client held, a `terminal session control` client **without** `--takeover`
-    received **no frames and landed no input** — no error, no stderr, the
-    screen simply did not move. The same client with `--takeover` moved the
-    program from rows 1–29 to 30–58. A `control` attach that is not a takeover
-    is silently inert, so any design that hoped to send a key without seizing
-    the pane is not available.
+  - **There is no half measure *on this stream*, and this was measured.**
+    Against a pane another client held, a `terminal session control` client
+    **without** `--takeover` received **no frames and landed no input** — no
+    error, no stderr, the screen simply did not move. The same client with
+    `--takeover` moved the program from rows 1–29 to 30–58. A `control` attach
+    that is not a takeover is silently inert.
+    - **The last clause of this bullet used to read "so any design that hoped
+      to send a key without seizing the pane is not available", and that is
+      false.** It generalised a measurement of the *terminal stream* into a
+      claim about herdr, and there is a second surface: `herdr agent send-keys`
+      — see **Answering an agent's dialog**. The stream half stands; the
+      generalisation never should have been written.
   - **Settled inside SwiftTerm, 8 Sept 2026, because "surely there is a
     setting" is the question that keeps coming back.** There is one, it is on,
     and it works. The same `TerminalView` the app mounts, in one test:
@@ -2717,6 +2722,101 @@ Each gets its own cropped or padded viewport onto one unchanged grid.
   `clipboardCopy` would let a remote pane write to the phone's pasteboard, and
   `requestOpenLink` would let anything a pane prints send the phone to a URL of
   its choosing.
+
+### Answering an agent's dialog (Phase 3, built 10 Sept 2026)
+
+**A blocked agent is one sitting at a question, and until now the phone could
+not answer it.** Found the ordinary way: a session started from the phone, a tab
+added, `agent start` run — and Claude Code came up on its workspace-trust
+prompt, `blocked` with `launch_pending: true`, exactly the row shape this file
+already documents.
+
+**`herdr agent prompt` cannot answer one.** herdr's own `--skill` doc states it:
+it *"rejects an agent already waiting at an approval or question dialog with
+`agent_blocked` before sending any input"*, and adds the instruction this design
+follows — *"Inspect the blocked UI and ask the user before answering it."* So the
+prompt composer, which Phase 3's gate line names, is structurally unable to move
+a dialog. Keys are.
+
+`PaneKeyBar` is those keys: left, up, down, right, `esc`, Enter, in a glass
+capsule in the terminal's bottom safe area, shown only while this screen holds
+the pane. Glyphs throughout except `esc`, which is a word on every keyboard that
+has one.
+
+- **The arrows are the normal-mode forms (`ESC [ A`…), not the application-cursor
+  ones (`ESC O A`), and that was measured rather than read.** A program with
+  DECCKM on is sent the `O` form by a real terminal, and picking wrong gives a
+  dialog that ignores every tap — a failure indistinguishable from the key not
+  being handled. Sent over a real `terminal session control --takeover` against
+  the live trust dialog, `ESC [ B` moved its selection from `No, exit` to `Yes,
+  I trust this folder`. `TerminalKeyTests` pins the byte *and* its base64
+  (`G1tC`), so the test and the thing that was verified cannot drift.
+- **Enter is CR (`0x0D`), not LF.** Return sends carriage return on a pty; the
+  line discipline is what turns it into a newline. An Ink-based TUI — which
+  Claude Code is — reads a bare LF as a newline *inside its composer*, so `\n`
+  would type into a dialog rather than answer it.
+- **The trust dialog's default selection is `No, exit`.** So "just send Enter"
+  ends the agent. Any future one-tap affordance has to move the cursor first and
+  confirm where it landed; this is why the bar is six honest keys and not a
+  Yes/No pair.
+- **It is a bar, not an overlay.** A floating pill over the bottom of a terminal
+  covers the pane's last row — which is the input line, and on a dialog is
+  literally `Enter to confirm · Esc to cancel`. `.safeAreaBar(edge: .bottom)`
+  insets instead. That costs nothing normally, since the terminal is sized to the
+  *pane's* grid and panned; only the cropped fallback, sized to the phone,
+  reopens its stream a little shorter.
+- **No text entry, deliberately.** Typing is `agent prompt`'s job — it handles
+  bracketed paste and ordered submission — and what the phone lacked was only the
+  *navigation* of a dialog already on screen.
+
+**`herdr agent send-keys <agent> <key>...` exists, and it does not need a
+takeover.** This is the surface this file previously denied existed (see the
+correction under **Scrolling a pane**). Measured against the live blocked agent
+by sending `down` and then `up` to put it back:
+
+| | |
+|---|---|
+| needs `--takeover` | **no** |
+| needs a terminal stream | no |
+| changed `focused` | no |
+| an unsupported key | `invalid_key`, rejected **before any byte is written** |
+
+`PaneKeyBar` does **not** use it, and that is a deliberate deferral rather than
+an oversight: the bar lives in the terminal view, whose whole model is the
+stream the screen already holds, and mixing a second input path into it would
+mean two ways of sending a key with different ownership semantics. The case
+`send-keys` genuinely unlocks is **answering a blocked agent from the agents
+list without opening or seizing the pane at all** — no confirmation, because it
+takes nothing from anybody. That is worth building, and it is a different
+screen.
+
+The wider family was found at the same time and none of it is wrapped yet:
+`agent get`, `agent read`, `agent wait --until blocked`, `agent explain`,
+`agent rename`, `pane run`, `pane wait-output`.
+
+**There is no structured dialog anywhere in the API.** Checked all three places
+it could be: `agent get` carries only `blocked` + `launch_pending`; `agent
+explain` names the matched rule (`live_blocked_form`, `region=
+after_last_horizontal_rule`) and a truncated text excerpt; `agent read --source
+detection` gives the region as **text**. Nothing hands out
+`{question, options[], selected}`.
+
+- **`--source detection` crops to the dialog only because of which rule
+  matched.** On the blocked agent it was **21 lines — the dialog and nothing
+  else**; on an idle agent the same source returned all **47**. Useful, but it
+  is a consequence of the rule's region, not a promise about dialogs.
+- **So a native `Picker` means parsing that text**, which would be a second copy
+  of herdr's own versioned detection manifests (`claude.toml 2026.09.04.1`, one
+  per kind, 23 of them) — the drift argument this file makes about
+  `EndpointDiscovery`. Worse, **the submit is relative**: there is no "select
+  option 2", only N arrows from wherever the cursor is, so correctness would
+  depend on the parse being right about both the options *and* the current
+  selection, and Enter on the wrong row is unrecoverable.
+- If a Picker is ever built, the safety must come from **confirming, not
+  parsing**: move the cursor, re-read the region, verify `❯` is on the intended
+  row, and only then send Enter — falling back to the raw region when it did not
+  land. That is this codebase's existing "the result is checked, not assumed"
+  shape.
 
 ## Concurrency settings (verified 4 Sept 2026)
 

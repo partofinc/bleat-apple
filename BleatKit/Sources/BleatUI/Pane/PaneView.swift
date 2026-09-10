@@ -10,9 +10,12 @@ import SwiftUI
 /// contrast. So a mode is a mode: the chat has the system's own background and
 /// the terminal is on screen only when it is chosen.
 ///
-/// Read-only either way: the chat is a transcript file and the terminal is
-/// `terminal session observe`, neither of which can disturb whoever holds input
-/// on the pane. The keyboard, the accessory row and takeover are Phase 3.
+/// Read-only until asked otherwise: the chat is a transcript file and the
+/// terminal opens as `terminal session observe`, neither of which can disturb
+/// whoever holds input on the pane. Taking control is a deliberate gesture
+/// behind a confirmation, and it is what puts `PaneKeyBar` under the terminal —
+/// the arrows, Esc and Enter that answer an agent's dialog. Text entry is still
+/// Phase 3: that belongs to `agent prompt`, not to a row of keys.
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
@@ -138,11 +141,17 @@ struct PaneView: View {
             }
         }
         // **Asked, not done.** Herdr allows one input owner per pane, and there
-        // is no way to send a key without becoming it: measured, a `control`
-        // client without `--takeover` gets no frames and lands no input while
-        // anyone else holds the pane, silently. So the person at the Mac loses
-        // input the moment this is tapped, and the dialog is where that is
-        // said rather than discovered.
+        // is no way to send a key **on this stream** without becoming it:
+        // measured, a `control` client without `--takeover` gets no frames and
+        // lands no input while anyone else holds the pane, silently. So the
+        // person at the Mac loses input the moment this is tapped, and the
+        // dialog is where that is said rather than discovered.
+        //
+        // `herdr agent send-keys` *can* reach an agent without a takeover, and
+        // is the right answer for answering a blocked agent from the list
+        // without opening the pane — but it is a different path with different
+        // ownership semantics, and this screen is the stream. See CLAUDE.md,
+        // **Answering an agent's dialog**.
         .confirmationDialog(
             "Take control of this pane?",
             isPresented: $askingForControl,
@@ -151,7 +160,7 @@ struct PaneView: View {
             Button("Take control") { model.takeControl() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Scrolling asks the program to redraw, so Bleat has to hold the pane's input. Whoever is using it at the Mac loses control until you release it.")
+            Text("Scrolling and answering a dialog both send the program keys, so Bleat has to hold the pane's input. Whoever is using it at the Mac loses control until you release it.")
         }
         // Keyed on the mode: the transcript is a whole exec channel and most
         // of a visit to this screen is spent in one mode, so neither is loaded

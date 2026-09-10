@@ -64,6 +64,28 @@ struct PaneSurface: View {
                     }
                 }
             }
+            // **A bar rather than an overlay, so it cannot cover the pane's
+            // last row.** That row is the input line — the whole reason this
+            // surface respects the safe area instead of extending under it —
+            // and a floating pill over the bottom of a terminal would hide
+            // exactly the line a dialog's `Enter to confirm` sits on.
+            //
+            // Insetting costs nothing in the ordinary case: the terminal is
+            // sized to the *pane's* grid and panned inside a scroll view, so a
+            // shorter viewport shows fewer rows of it rather than asking the
+            // host for a smaller pane. The one exception is the cropped
+            // fallback, where the grid really is the phone's — there the bar
+            // reopens the stream a couple of rows shorter, which is correct and
+            // self-correcting.
+            .safeAreaBar(edge: .bottom) {
+                // Only while this screen owns input, for the reason the scroll
+                // control is: `PaneModel.send` is a no-op while observing, and
+                // a row of keys that silently does nothing is worse than no row
+                // at all.
+                if case .live = model.phase, model.control == .controlling {
+                    PaneKeyBar(model: model)
+                }
+            }
         #else
         ContentUnavailableView(
             "No terminal here",

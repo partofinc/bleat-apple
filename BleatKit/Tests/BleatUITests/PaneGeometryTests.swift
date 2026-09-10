@@ -1,5 +1,6 @@
 #if canImport(UIKit)
 import BleatKit
+import SwiftUI
 import Testing
 import UIKit
 @testable import BleatUI
@@ -52,6 +53,46 @@ struct PaneGeometryTests {
         #expect(result.font == 12)
         #expect((110...125).contains(grid?.cols ?? 0), "expected ~118 columns, got \(grid?.cols ?? -1)")
         #expect((20...24).contains(grid?.rows ?? 0), "expected ~22 rows, got \(grid?.rows ?? -1)")
+    }
+
+    /// **The regression test for an endless spinner.**
+    ///
+    /// `PaneKeyBar` lives in the bottom safe area, and this terminal derives its
+    /// grid from its own bounds — so anything that shows or hides the bar
+    /// resizes the terminal, which reports a new grid, which reopens the stream.
+    /// Gating the bar on `phase == .live` therefore closed a loop: bar shows →
+    /// terminal shrinks → reopen → `.opening` → bar hides → terminal grows →
+    /// reopen → `.live`, forever, `stty`-ing the user's Mac each time round. It
+    /// reached a device.
+    ///
+    /// The invariant that stops it: **with control held, the layout must be the
+    /// same in every phase.** Anything drawn per-phase has to be an overlay or
+    /// `.disabled`, neither of which is layout.
+    @Test("the chrome does not resize the terminal between phases")
+    func chromeIsStableAcrossPhases() {
+        // In a **key window**, for the reason `PreviewSmokeTests.render` uses
+        // one: a hosting controller merely given a frame evaluates the body but
+        // never appears, so the representable's child controller never lays out
+        // and reports no grid at all.
+        func viewport(inPhase phase: PaneModel.Phase) -> TerminalGrid? {
+            let model = PaneModel(previewing: phase, control: .controlling)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
+            window.rootViewController = UIHostingController(
+                rootView: PaneSurface(model: model, isActive: true)
+            )
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            return model.viewportForTesting
+        }
+
+        let live = viewport(inPhase: .live)
+        #expect(live?.isUsable == true, "the terminal never laid out")
+        // The two phases the loop alternated between.
+        #expect(viewport(inPhase: .opening) == live)
+        // And the ones a failure can settle in, since each draws its own
+        // `ContentUnavailableView` over the terminal.
+        #expect(viewport(inPhase: .ended) == live)
+        #expect(viewport(inPhase: .failed("lost it")) == live)
     }
 
     /// Rotation must produce a *different* grid, or nothing downstream reopens

@@ -113,6 +113,12 @@ final class PaneModel {
     /// for, rather than a fallback.
     private var viewport: TerminalGrid?
 
+    /// Read by `PaneGeometryTests` to check that the chrome around the terminal
+    /// does not change its size between phases — the shape of bug that put an
+    /// endless spinner on a device. `terminalFrameForTesting` exists for the
+    /// same reason one level down.
+    var viewportForTesting: TerminalGrid? { viewport }
+
     #if DEBUG
     /// Preview-only: `start()` returns early, so no `observe` stream is opened.
     private var isPreview = false

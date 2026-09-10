@@ -77,12 +77,24 @@ struct PaneSurface: View {
             // fallback, where the grid really is the phone's — there the bar
             // reopens the stream a couple of rows shorter, which is correct and
             // self-correcting.
+            // **Gated on `control` alone — never on `phase`, and that is not a
+            // simplification.** This bar takes space, and `PaneTerminalController`
+            // derives the grid from its own bounds, so showing it makes the
+            // terminal shorter, which reports a new grid, which reopens the
+            // stream and `stty`s the pane. Adding `phase == .live` to this
+            // condition therefore built a loop: bar shows → terminal shrinks →
+            // reopen → `.opening` → bar hides → terminal grows → reopen →
+            // `.live` → bar shows, forever, with a write to the user's Mac on
+            // every pass. It reached a device as a spinner that never stopped.
+            //
+            // `PaneScrollControl` carries the same `phase` test safely because
+            // it is an `.overlay`, which draws without changing layout. Anything
+            // in a safe area is layout, and layout here is the stream's size.
             .safeAreaBar(edge: .bottom) {
-                // Only while this screen owns input, for the reason the scroll
-                // control is: `PaneModel.send` is a no-op while observing, and
-                // a row of keys that silently does nothing is worse than no row
-                // at all.
-                if case .live = model.phase, model.control == .controlling {
+                // Only while this screen owns input: `PaneModel.send` is a no-op
+                // while observing, and a row of keys that silently does nothing
+                // is worse than no row at all.
+                if model.control == .controlling {
                     PaneKeyBar(model: model)
                 }
             }

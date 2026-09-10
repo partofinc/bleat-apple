@@ -2768,6 +2768,29 @@ has one.
 - **No text entry, deliberately.** Typing is `agent prompt`'s job — it handles
   bracketed paste and ordered submission — and what the phone lacked was only the
   *navigation* of a dialog already on screen.
+- **Its visibility is gated on `control` and must never be gated on `phase`.**
+  This is the sharpest edge on the screen and it reached a device. The terminal
+  derives its grid from its own bounds (`terminalView.frame = view.bounds`), so
+  anything occupying the safe area makes it shorter, which reports a new grid,
+  which reopens the stream and `stty`s the pane. Adding `phase == .live` to the
+  condition therefore closed a loop: bar shows → terminal shrinks → reopen →
+  `.opening` → bar hides → terminal grows → reopen → `.live` → bar shows, with a
+  write to the user's Mac every time round. It surfaced as **"taking control
+  spins the loader forever"**.
+  - Measured by the regression test: **46 rows without the bar, 43 with it**, so
+    the grid alternated 43 ↔ 46 and never settled.
+  - `PaneScrollControl` carries the same `phase` test *safely*, which is what
+    makes this easy to copy wrongly: it is an `.overlay`, and an overlay draws
+    without changing layout. **Anything in a safe area is layout, and layout
+    here is the stream's size.**
+  - So per-phase chrome on this screen has to be an `.overlay` or `.disabled` —
+    the bar greys out between opens rather than disappearing.
+  - `PaneGeometryTests.chromeIsStableAcrossPhases` pins it, and was checked
+    against the bug rather than only against the fix: with the gate restored it
+    fails on all three of `.opening`, `.ended` and `.failed`. It hosts the view
+    in a **key window**, for the reason `PreviewSmokeTests.render` does — a
+    hosting controller merely given a frame never lays the representable out and
+    reports no grid at all, which is a green test that measures nothing.
 
 **`herdr agent send-keys <agent> <key>...` exists, and it does not need a
 takeover.** This is the surface this file previously denied existed (see the

@@ -42,6 +42,18 @@ struct PaneKeyBar: View {
         }
         .padding(6)
         .glassEffect(in: .capsule)
+        // **Disabled, not hidden**, while the stream is between opens — taking
+        // control reopens it, and so does the shrink this bar itself causes.
+        // Hiding it would change the layout again, which is the loop described
+        // in `PaneSurface`; `disabled` is drawn, not laid out, so it is safe.
+        // A key pressed now would be dropped by `PaneModel.send` anyway, and a
+        // dead tap that looks live is worse than a greyed one.
+        .disabled(!isLive)
+    }
+
+    private var isLive: Bool {
+        if case .live = model.phase { return true }
+        return false
     }
 
     /// Separates the arrows from the two keys that *commit* something. Enter on

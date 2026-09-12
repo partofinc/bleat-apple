@@ -71,17 +71,6 @@ final class NewAgentModel {
     /// CLAUDE.md sets for creating panes.
     private(set) var workspaceDirectory: String?
 
-    /// Whether an agent started here will be able to read the login keychain.
-    ///
-    /// Asked the way the agent asks — `security show-keychain-info`, exit 36 —
-    /// and worth saying *before* the tap: the failure otherwise costs a
-    /// 30-second `agent start` and the agent that comes up looks healthy while
-    /// being unable to sign in. See `LoginKeychain`.
-    ///
-    /// `.unknown` until the host has answered, and the form shows nothing for
-    /// it — a diagnosis nobody asked for must not be guessed at.
-    private(set) var keychain: LoginKeychain.State = .unknown
-
     private let connections: ConnectionStore?
     private let session: String?
     /// nil means every pane in the session, which is what the agents screen
@@ -126,8 +115,7 @@ final class NewAgentModel {
         warning: String? = nil,
         blocked: String? = nil,
         isStarting: Bool = false,
-        isAddingPane: Bool = false,
-        keychain: LoginKeychain.State = .unknown
+        isAddingPane: Bool = false
     ) {
         self.connections = nil
         self.session = nil
@@ -145,7 +133,6 @@ final class NewAgentModel {
         self.blocked = blocked
         self.isStarting = isStarting
         self.isAddingPane = isAddingPane
-        self.keychain = keychain
     }
     #endif
 
@@ -294,32 +281,6 @@ final class NewAgentModel {
             // discovery.
             await connections.handle(error)
             failure = ErrorMessage.failure(of: error).message
-        }
-    }
-
-    /// Asks whether the host's keychain can be read, the way an agent asks.
-    ///
-    /// **It needs no pane and no pid**, which is what makes it cheap: one plain
-    /// shell command on a connection that already exists. Nothing is installed
-    /// on the host and nothing is left running.
-    ///
-    /// **Failures are swallowed, which is the opposite of the rule elsewhere in
-    /// this model, and deliberately.** `loadPanes` runs alongside and reports a
-    /// dead connection itself, so there is nothing here the user has not
-    /// already been told; and releasing the connection over a *diagnosis* would
-    /// spend the handshake the user's actual next action needs. An unanswered
-    /// probe stays `.unknown`, which shows nothing.
-    func checkKeychain(for peer: PairedPeer) async {
-        guard let connections else { return }
-        do {
-            // Plain shell, not a herdr command: this asks the Mac about itself,
-            // which has nothing to do with sessions. `shell` leaves `useSession`
-            // alone for exactly that reason.
-            let shell = try await connections.shell(for: peer)
-            let answer = try await shell.run(shell: LoginKeychain.stateCommand)
-            keychain = LoginKeychain(inOutput: answer).state
-        } catch {
-            keychain = .unknown
         }
     }
 

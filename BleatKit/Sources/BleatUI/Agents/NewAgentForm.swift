@@ -31,7 +31,6 @@ struct NewAgentForm: View {
         NavigationStack {
             Form {
                 if let note { outcome(note) }
-                keychainSection
                 paneSection
                 kindSection
                 nameSection
@@ -45,12 +44,7 @@ struct NewAgentForm: View {
                 ToolbarItem(placement: .confirmationAction) { confirm }
             }
         }
-        // Sequential on purpose: the pane list is what the user came for, and
-        // the keychain check is a diagnosis that must not hold it up.
-        .task {
-            await model.loadPanes(for: peer)
-            await model.checkKeychain(for: peer)
-        }
+        .task { await model.loadPanes(for: peer) }
         .interactiveDismissDisabled(model.isStarting)
         .onChange(of: model.name) { _, _ in model.clearFailure() }
     }
@@ -179,41 +173,6 @@ struct NewAgentForm: View {
         }
     }
 
-    /// Said before the tap, because afterwards it costs half a minute and looks
-    /// like success: herdr starts the agent, detects it, reports it — and the
-    /// agent cannot sign in.
-    ///
-    /// **The wording matters and the first version got it wrong.** Exit 36 is
-    /// `errSecInteractionNotAllowed`, and calling that "the keychain is locked"
-    /// sent the user hunting for a passphrase. Measured 12 Sept 2026: the login
-    /// keychain was **unlocked** in the desktop session (`security
-    /// show-keychain-info` exit 0) at the very moment Bleat's own check over SSH
-    /// answered 36. Same host, same keychain, same minute. So 36 is not a fact
-    /// about the keychain — it is a fact about *this connection*, which cannot
-    /// use it and cannot ask.
-    ///
-    /// There is nothing to unlock and no passphrase that helps. What helps is
-    /// starting the agent in a session whose server the Mac started, where the
-    /// keychain is already usable. See `LoginKeychain`.
-    @ViewBuilder
-    private var keychainSection: some View {
-        if model.keychain == .lockedAndCannotPrompt {
-            Section {
-                Label("Agents here may not sign in", systemImage: "key.slash")
-                    .font(.callout.weight(.medium))
-                Text("This connection cannot use the Mac's keychain, so an agent that needs an "
-                     + "account will come up reporting it is not logged in. The keychain itself "
-                     + "is probably fine.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Text("Start the agent in a session that was started at the Mac instead — agents "
-                     + "there can sign in.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     @ViewBuilder
     private func outcome(_ note: (text: String, isProblem: Bool)) -> some View {
         Section {
@@ -305,30 +264,6 @@ struct NewAgentForm: View {
 #Preview("Naming", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples
-    ))
-}
-
-/// **This connection cannot use the Mac's keychain.** `security
-/// show-keychain-info` exits 36 over SSH while the desktop session reads the very
-/// same keychain fine — so the remedy is a session the Mac started, not a
-/// passphrase. Not reachable by pointing the app at a healthy session, which is
-/// the whole reason it wants a canvas.
-#Preview("Cannot use the keychain", traits: .sampleData) {
-    NewAgentPreview(model: NewAgentModel(
-        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
-        keychain: .lockedAndCannotPrompt
-    ))
-}
-
-/// **Started, and stopped at a dialog — the common case for a workspace the
-/// phone just made.** herdr answers `agent_not_ready` in about four seconds and
-/// the agent is there, named, waiting on Claude Code's workspace-trust prompt.
-/// This used to be reported in red as a failure with the Start button armed,
-/// over an agent that existed; both retries are dead ends.
-#Preview("Waiting at a dialog", traits: .sampleData) {
-    NewAgentPreview(model: NewAgentModel(
-        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
-        blocked: "agent reviewer is blocked during startup and is not ready for prompts"
     ))
 }
 

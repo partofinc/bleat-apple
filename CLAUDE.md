@@ -3023,120 +3023,52 @@ obvious way: a renamed type left a dangling reference that built clean twice.
 Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
 or the simulator test run, which is what actually compiles it.
 
-### An agent that reports "Not logged in" — the keychain is locked (corrected 12 Sept 2026)
+### An agent over SSH cannot read the login keychain — out of scope (settled 12 Sept 2026)
 
-Found on device: a `claude` agent started in a session the phone created came up
-and refused to work.
+**Do not build anything for this.** It was investigated at length, three features
+were written and all three were removed. The conclusion is a macOS constraint, not
+something a client can work around.
+
+An agent started in a session the phone created reports:
 
 ```
 ⎿  Not logged in · Please run /login
    · Run in another terminal: security unlock-keychain
 ```
 
-**This section previously gave an audit-session explanation. It was wrong, and
-the wrong version is kept here in one paragraph so it is not rebuilt.** The claim
-was that `session attach` over an SSH exec channel leaves herdr's server in
-sshd's own audit session, away from the desktop login's, and that keychain access
-follows the audit session. Two things were then built on it: a `SecuritySession`
-probe comparing asids, and a `bleat login-session` LaunchAgent to start the
-server in `gui/$UID`. **Both are reverted.** The theory was never measured against
-a real phone-started session — the one probe that would have settled it needed an
-SSH channel this environment could not open — and it was shipped on the strength
-of an inference.
+The chain, measured:
 
-**What the measurement said**, against `retro`, which its own logs prove was
-restarted **headless from the phone** at 11:20 (a client attached moments later at
-**53 columns**, which is the phone's grid):
+- Claude Code's whole test is `security show-keychain-info` exiting **36**
+  (`errSecInteractionNotAllowed`, `-25308 & 0xFF`) — read out of the binary.
+- That is a fact about **the asking session**, not the keychain. The same
+  keychain answered **0, unlocked** in the desktop session at the same minute
+  Bleat's SSH channel answered 36.
+- Keychain unlock state is per security session, so a remote session starts
+  locked whatever the desktop session holds open.
+- **On this Mac it cannot be unlocked by hand either**: the login keychain's
+  password has diverged from the account password, and `no-timeout` has kept it
+  open at the desk ever since, so nothing has asked for it in years. Over SSH the
+  passphrase is refused (`errSecAuthFailed`, **51**).
+- **No SSH client can do it.** Confirmed on device: a Claude agent run directly
+  from a Termius interactive session — a full pty — reports the same thing. So a
+  pty is not the missing ingredient and there is no client trick to copy.
 
-| | asid |
+What works, and needs no code: **a server started from the desktop session gives
+panes that can use the keychain** — measured, `security show-keychain-info`
+answered `no-timeout` inside such a pane. So agents started in `work`, or in a
+tab added to it, sign in. A session the phone created is the degraded case.
+
+Three dead ends, each removed, so they are not rebuilt:
+
+| tried | why it went |
 |---|---|
-| `retro`'s server — phone-started, over SSH | **100016** |
-| `work`'s server — started at the Mac | 100016 |
-| `launchctl print gui/501` — the desktop login | 100016 |
+| `SecuritySession` — compared audit sessions via `launchctl print pid/<pid>` | the theory was wrong; a phone-started server reported the *same* asid as the login session, and that reading may itself be an artifact for a process reparented to pid 1 |
+| `bleat login-session` — a LaunchAgent starting the server in `gui/$UID` | the *effect* was probably right, but it is Mac-side infrastructure and the same result comes free from attaching to a session the Mac already runs |
+| `LoginKeychain` + an "Unlock the keychain" button | asked for a passphrase that cannot help; and an unlock against an already-unlocked keychain returns 0 **whatever** passphrase it is given, so its own success check was worthless |
 
-The phone-started session is in the **same** audit session. `/etc/pam.d/sshd`
-runs `pam_launchd.so`, which joins an SSH login to the user's existing Aqua
-session when there is one — which is also why `launchctl print user/501` reports
-`gui asid = 100016`. There was nothing to arrange, so the LaunchAgent arranged
-nothing.
-
-**The real condition, read out of Claude Code 2.1.269:**
-
-```js
-Rp("security", ["show-keychain-info"], …).then(e => e.exitCode === 36)
-```
-
-That is the entire test behind the message. Exit **36** is
-`errSecInteractionNotAllowed` (`-25308 & 0xFF == 36`), and it means **the keychain
-is locked and this process cannot put up a prompt for the passphrase**. A state,
-not a place. Measured contrast: the same locked keychain reached from a session
-that *can* prompt answers **152**, and a still-locked one after a refused unlock
-answered **24** — neither is what an agent reports as not logged in.
-
-So an SSH session can reach the keychain perfectly well once it is unlocked, which
-is why other SSH clients need nothing special here. **The phone has no session
-problem to solve.**
-
-#### What Bleat does (`LoginKeychain`)
-
-One plain-shell command over the connection it already has. Nothing installed on
-the host, nothing left running, no `bleat` call at the Mac.
-
-```
-security show-keychain-info >/dev/null 2>&1; printf 'bleat-keychain:%s\n' "$?"
-```
-
-- **No keychain argument, deliberately.** Claude Code passes none, so it asks
-  about the *default* keychain; asking about `login.keychain-db` explicitly is a
-  different question that could disagree with the thing being reported on. On
-  this Mac `security default-keychain` is the login keychain, but that is the
-  host's business.
-- **Only 36 is reported**, as `.lockedAndCannotPrompt`. Every other code is
-  `.unknown` and the form shows nothing — `security` has a large error space and
-  guessing at the rest would put words in the host's mouth. A host with no
-  `security` at all answers with nothing recognisable, so Linux is `.unknown`
-  rather than broken.
-- It needs **no pane and no pid**, which is what makes it cheap enough to run
-  from the new-agent sheet on every open. Said before the tap because afterwards
-  it costs a 30-second `agent start` and *looks like success* — herdr starts the
-  agent, detects it, reports it, and the agent cannot sign in.
-- Exits 0 whatever the answer (`ShellRunner.run` throws on a non-zero status) and
-  the answer is a prefixed line within stdout, never the whole of it.
-
-#### There is nothing to unlock — the remedy is where the server started
-
-**An "Unlock the keychain" button shipped here for one build and was removed.**
-It read exit 36 as "the keychain is locked" and asked for a passphrase. On device
-it was refused, repeatedly, by a user who does not have another password — and it
-could never have worked. What the measurement actually says:
-
-- the login keychain answered **exit 0, unlocked** in the desktop session at the
-  same moment Bleat's own check over SSH answered **36**. Same host, same
-  keychain, same minute. **36 is a fact about the asking connection**, not about
-  the keychain.
-- so the passphrase it wanted was refused (`errSecAuthFailed`, **51**) because
-  there is nothing there to authenticate against from that side.
-- and the success check could not have caught its own uselessness: an unlock run
-  against an *already*-unlocked keychain returns **0 whatever passphrase it is
-  given** — measured with a deliberately wrong one. "Unlock then re-read the
-  state in the same command" only ever confirms that one ephemeral shell was
-  fine.
-
-**What does work is the session the agent's server was started from.** A herdr
-server started from the desktop session gives panes that can use the keychain —
-measured: `security show-keychain-info` answered `no-timeout` inside such a pane.
-One started over SSH does not, which is what the device reported. So the remedy
-needs no passphrase, no unlock and nothing installed:
-
-> **Start agents in a session that was started at the Mac.** `work` already is
-> one. A session the phone created is the degraded case.
-
-The warning says exactly that now, and nothing about locks. **`bleat
-login-session` was reverted on a wrong rationale and its effect may have been
-right** — it started the server from `gui/$UID`, which is precisely the condition
-above. It is not restored, because the zero-infrastructure version of the same
-thing is to attach to a session the Mac already started; the commit is in history
-if a Mac with nothing running ever needs it.
+If it ever needs solving, the route that does not involve the keychain at all is
+`claude setup-token` (a long-lived token, exposed to panes through the server's
+environment) — a host auth decision, not a Bleat feature.
 
 ### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
 

@@ -241,11 +241,6 @@ struct PreviewSmokeTests {
                 previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
                 blocked: "agent reviewer is blocked during startup and is not ready for prompts"
             ),
-            // The keychain warning, which no healthy host can produce.
-            NewAgentModel(
-                previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
-                keychain: .lockedAndCannotPrompt
-            ),
         ] {
             render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}, onAnswer: { _ in }))
         }

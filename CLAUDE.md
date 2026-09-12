@@ -3023,119 +3023,124 @@ obvious way: a renamed type left a dangling reference that built clean twice.
 Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
 or the simulator test run, which is what actually compiles it.
 
-### An agent started from the phone cannot reach the login keychain (10 Sept 2026)
+### An agent that reports "Not logged in" — the keychain is locked (corrected 12 Sept 2026)
 
-Found on device, and it is a limit of the whole start-a-session-from-the-phone
-flow rather than a bug in anything. A `claude` agent started in a session the
-phone created came up and then refused to work:
+Found on device: a `claude` agent started in a session the phone created came up
+and refused to work.
 
 ```
 ⎿  Not logged in · Please run /login
    · Run in another terminal: security unlock-keychain
 ```
 
-**Why:** `session attach` runs over an SSH exec channel, and the herdr server it
-daemonises inherits that context. An SSH session does not get the login keychain
-unlocked the way the GUI session does, so every pane that server spawns is in a
-security session where Claude Code's stored credentials are unreadable. Agents in
-a session started *at the Mac* — `work` — are unaffected.
+**This section previously gave an audit-session explanation. It was wrong, and
+the wrong version is kept here in one paragraph so it is not rebuilt.** The claim
+was that `session attach` over an SSH exec channel leaves herdr's server in
+sshd's own audit session, away from the desktop login's, and that keychain access
+follows the audit session. Two things were then built on it: a `SecuritySession`
+probe comparing asids, and a `bleat login-session` LaunchAgent to start the
+server in `gui/$UID`. **Both are reverted.** The theory was never measured against
+a real phone-started session — the one probe that would have settled it needed an
+SSH channel this environment could not open — and it was shipped on the strength
+of an inference.
 
-So the phone can create a session, add a tab and start an agent, and the agent
-will still need someone at the Mac to unlock the keychain before it can log in.
-Worth knowing before treating "start an agent from the phone" as a finished
-story.
+**What the measurement said**, against `retro`, which its own logs prove was
+restarted **headless from the phone** at 11:20 (a client attached moments later at
+**53 columns**, which is the phone's grid):
 
-**The last clause of this section used to read "nothing in the app can fix it",
-and that was two claims wearing one coat.** The app cannot *repair* such a
-session — true, and more strongly than the old text knew. It can *diagnose* one,
-which is built; see below.
+| | asid |
+|---|---|
+| `retro`'s server — phone-started, over SSH | **100016** |
+| `work`'s server — started at the Mac | 100016 |
+| `launchctl print gui/501` — the desktop login | 100016 |
 
-#### The mechanism, measured 12 Sept 2026
+The phone-started session is in the **same** audit session. `/etc/pam.d/sshd`
+runs `pam_launchd.so`, which joins an SSH login to the user's existing Aqua
+session when there is one — which is also why `launchctl print user/501` reports
+`gui asid = 100016`. There was nothing to arrange, so the LaunchAgent arranged
+nothing.
 
-It is the **audit session** (`asid`), not a lock. macOS scopes keychain access to
-it, a process inherits its asid from its parent at spawn, and nothing moves a
-running process into another one. On the dev Mac:
+**The real condition, read out of Claude Code 2.1.269:**
 
-| | asid | |
-|---|---|---|
-| `launchctl print gui/501` | **100016** | `session = Aqua` — the desktop login |
-| `launchctl print user/501` | 100041 | `session = Background`, and it names the other: `gui asid = 100016` |
-| `work`'s server (pid 42463), its pane's shell (42603), the `claude` in that pane (46175) | **100016** | started at the Mac, so its agents sign in fine |
+```js
+Rp("security", ["show-keychain-info"], …).then(e => e.exitCode === 36)
+```
 
-**Continuing the session from the Mac does not help, and that is the part that
-surprises.** Reported from a device: *"even if I continue such session from the
-mac it stays locked."* Attaching a TUI adds a **client** process in the login
-session; the panes are still children of the server in the other one. There is
-nothing to unlock — `security unlock-keychain` acts on the session it is run in,
-so at the Mac it unlocks for a shell nobody is using. The one place it *would*
-work is a pane of that same session, which is what Claude Code's own "run in
-another terminal" means and is not how anyone reads it.
+That is the entire test behind the message. Exit **36** is
+`errSecInteractionNotAllowed` (`-25308 & 0xFF == 36`), and it means **the keychain
+is locked and this process cannot put up a prompt for the passphrase**. A state,
+not a place. Measured contrast: the same locked keychain reached from a session
+that *can* prompt answers **152**, and a still-locked one after a refused unlock
+answered **24** — neither is what an agent reports as not logged in.
 
-Three ways out, and only the first needs no credentials anywhere:
+So an SSH session can reach the keychain perfectly well once it is unlocked, which
+is why other SSH clients need nothing special here. **The phone has no session
+problem to solve.**
 
-- **Start the server in the GUI session.** A job bootstrapped into `gui/$UID`
-  runs in the Aqua session — measured: `launchctl bootstrap gui/501 <plist>`
-  exited 0 and the job reported **asid 100016** — so every pane it spawns has
-  the keychain. **Whether an SSH-descended process may target that domain is
-  unverified**, and it is not safe to assume from the other direction:
-  `launchctl bootstrap user/501 <plist>` *from* the Aqua session was refused
-  outright (`5: Input/output error`), while `launchctl print user/501` and
-  `launchctl kickstart user/501/<missing label>` both resolved that same domain.
-  Reading a domain and creating a job in it are different permissions.
-- **Credentials that are not in the keychain.** Claude Code 2.1.269 carries
-  `setup-token`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and
-  `apiKeyHelper`. Prefer `apiKeyHelper`: herdr passes its environment to every
-  pane it spawns, so a token in the server's environment leaks into unrelated
-  shells.
-- **`security unlock-keychain` in a pane of that session**, which the phone can
-  now type. Weakest of the three — it puts the login password across the channel
-  and dies with the server.
+#### What Bleat does (`LoginKeychain`)
 
-#### Bleat says so before the tap (`SecuritySession`)
+One plain-shell command over the connection it already has. Nothing installed on
+the host, nothing left running, no `bleat` call at the Mac.
 
-`SecuritySession` asks the host which audit session a session's panes are in and
-compares it against the GUI login's. `NewAgentModel` runs it after the pane list
-loads and `NewAgentForm` shows a section for `.detached` only. Before the tap,
-because afterwards it costs a 30-second `agent start` and then *looks like
-success* — herdr starts the agent, detects it, reports it, and the agent cannot
-sign in.
+```
+security show-keychain-info >/dev/null 2>&1; printf 'bleat-keychain:%s\n' "$?"
+```
 
-- **The pid comes from `pane process-info` → `shell_pid`**, which is always
-  present and is a direct child of the server, so its asid is the one every
-  future pane and agent inherits. Any pane of the session answers; the probe
-  deliberately takes one from *all* panes rather than the free ones, since a
-  session whose every pane is occupied is exactly when a tab is about to be
-  added.
-- **`launchctl print pid/<dead pid>` answers with the caller's own security
-  context**, and this trap is why the probe is not a one-line grep. Measured:
-  `pid/999999` exits cleanly printing `asid = 100016`, distinguished from a live
-  process only by `uniqueid = 0`. Unguarded, a pane whose shell had gone would
-  be reported as sharing whatever session *the probe* ran in — over SSH that is
-  the SSH session, so two detached sessions compare equal and the pane is called
-  fine. The guard is `uniqueid > 0`, taken in the same `awk` pass.
-- **The login asid has two sources, anchored apart.** `gui/<uid>` reports it
-  directly; the Background domain carries it as `gui asid` **beside its own
-  `asid`**, so `/^[[:space:]]*asid = /` must not match `gui asid = ` or the
-  fallback would name the Background session as the login one and every detached
-  session would look healthy. Which source answered is kept as
-  `readLoginDomainDirectly` — the first evidence about whether the first remedy
-  above is even reachable from a session like this.
-- **Both numbers or nothing.** A missing answer is `.unknown` and the form shows
-  *nothing*, the discipline `EndpointDiscovery.Report` sets: telling someone
-  their agents cannot sign in because a command did not run is worse than
-  staying quiet. A host with no `launchctl` — every Linux one — comes back all
-  empty and exits 0, measured.
-- **The command was run verbatim on the host** under both `sh` and `zsh` (sshd
-  runs zsh on a modern macOS), against a live pane shell, a dead pid and a
-  missing `launchctl`, and `SecuritySessionTests` pins the exact string — the
-  rule `SessionLaunch` set. The `launchctl print` output for all four cases is
-  captured in `Fixtures/launchctl-print-*.txt`, and tests pin the field
-  spellings the `awk` depends on: nothing else can, because the `awk` runs on
-  the host and no test executes it.
-- **Failures are swallowed here**, against the rule everywhere else in that
-  model: `loadPanes` runs first and reports a dead connection itself, and
-  releasing the connection over a *diagnosis* would spend the handshake the
-  user's actual next action needs.
+- **No keychain argument, deliberately.** Claude Code passes none, so it asks
+  about the *default* keychain; asking about `login.keychain-db` explicitly is a
+  different question that could disagree with the thing being reported on. On
+  this Mac `security default-keychain` is the login keychain, but that is the
+  host's business.
+- **Only 36 is reported**, as `.lockedAndCannotPrompt`. Every other code is
+  `.unknown` and the form shows nothing — `security` has a large error space and
+  guessing at the rest would put words in the host's mouth. A host with no
+  `security` at all answers with nothing recognisable, so Linux is `.unknown`
+  rather than broken.
+- It needs **no pane and no pid**, which is what makes it cheap enough to run
+  from the new-agent sheet on every open. Said before the tap because afterwards
+  it costs a 30-second `agent start` and *looks like success* — herdr starts the
+  agent, detects it, reports it, and the agent cannot sign in.
+- Exits 0 whatever the answer (`ShellRunner.run` throws on a non-zero status) and
+  the answer is a prefixed line within stdout, never the whole of it.
+
+#### Unlocking it from the phone
+
+The warning carries an **Unlock the keychain** button. It asks for the Mac's login
+passphrase in a `SecureField` and sends:
+
+```
+printf '%s' '<passphrase>' | security unlock-keychain >/dev/null 2>&1; u=$?; \
+security show-keychain-info >/dev/null 2>&1; s=$?; \
+printf 'bleat-unlock:%s\n' "$u"; printf 'bleat-keychain:%s\n' "$s"
+```
+
+- **The passphrase goes on stdin, never in `-p`**, which keeps it out of
+  `security`'s own `argv`. Measured: piping it unlocks, exit 0.
+- **It is still inside the command string, and that is not hidden.** sshd runs an
+  exec command as `zsh -c '<command>'`, so the text is in *that* process's `argv`
+  while the command runs, visible to other processes of the same user. Not an
+  escalation — anything that could read it could read the keychain it unlocks,
+  and could have read `authorized_keys` first — but it means **the command must
+  never reach a log or an error message**. `NewAgentModel.unlock` returns an
+  outcome instead of throwing, and replaces any failure with its own words.
+- **The result is checked, not assumed.** The state *afterwards* decides, so an
+  unlock that exits 0 over a keychain that is still unreadable is a failure — the
+  same reason `session delete` answering `{"deleted":true}` over a session that
+  never existed is not evidence. The unlock's own status is read too, because
+  **51** (`errSecAuthFailed`, `-25293 & 0xFF`) is the only thing that separates a
+  wrong passphrase from a failure with no explanation, and those need different
+  words. Both codes measured against a throwaway keychain.
+- **Nothing is remembered.** The passphrase is used for one command and dropped,
+  and it is cleared from view state before the round trip rather than after.
+  Keeping a Mac login passphrase on a phone is a decision of its own; it is not
+  made as a side effect of a dialog.
+- An `alert`, not a sheet: it is one field, and a sheet over a sheet is exactly
+  the presentation SwiftUI drops.
+
+Both commands were **run verbatim** under `sh` and `zsh` — the state one against
+the real default keychain, the unlock against a throwaway with both the right
+passphrase and a wrong one — and `LoginKeychainTests` pins the strings and every
+code, the rule `SessionLaunch` set.
 
 ### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
 

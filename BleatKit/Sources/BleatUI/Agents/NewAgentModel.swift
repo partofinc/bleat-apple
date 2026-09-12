@@ -73,20 +73,14 @@ final class NewAgentModel {
 
     /// Whether an agent started here will be able to read the login keychain.
     ///
-    /// A session whose server was started over SSH — which is every session
-    /// this phone has started — puts its panes in a different macOS audit
-    /// session, and an agent there cannot reach the credentials it signs in
-    /// with. Worth saying *before* the tap: the failure otherwise costs a
-    /// 30-second `agent start`, and the agent that comes up looks healthy while
-    /// being unable to do anything. See `SecuritySession`.
+    /// Asked the way the agent asks — `security show-keychain-info`, exit 36 —
+    /// and worth saying *before* the tap: the failure otherwise costs a
+    /// 30-second `agent start` and the agent that comes up looks healthy while
+    /// being unable to sign in. See `LoginKeychain`.
     ///
     /// `.unknown` until the host has answered, and the form shows nothing for
     /// it — a diagnosis nobody asked for must not be guessed at.
-    private(set) var keychainReach: SecuritySession.Reach = .unknown
-
-    /// A pane of this session, used only to ask which audit session its panes
-    /// are in. Any of them answers; see `loadPanes`.
-    private var probePane: String?
+    private(set) var keychain: LoginKeychain.State = .unknown
 
     private let connections: ConnectionStore?
     private let session: String?
@@ -133,7 +127,7 @@ final class NewAgentModel {
         blocked: String? = nil,
         isStarting: Bool = false,
         isAddingPane: Bool = false,
-        keychainReach: SecuritySession.Reach = .unknown
+        keychain: LoginKeychain.State = .unknown
     ) {
         self.connections = nil
         self.session = nil
@@ -151,7 +145,7 @@ final class NewAgentModel {
         self.blocked = blocked
         self.isStarting = isStarting
         self.isAddingPane = isAddingPane
-        self.keychainReach = keychainReach
+        self.keychain = keychain
     }
     #endif
 
@@ -289,12 +283,6 @@ final class NewAgentModel {
             // What a new tab would inherit — the workspace's own directory,
             // which its panes are the only record of here.
             workspaceDirectory = mine.compactMap(\.cwd).first
-            // Any pane of this session will do: they are all children of the
-            // one server, so they share its audit session. Deliberately taken
-            // from `mine` rather than `available`, because a session whose
-            // every pane is occupied is exactly when the user is about to add
-            // a tab and start an agent in it.
-            probePane = mine.first?.paneID
             // Picking the only candidate is not a decision the user has to be
             // asked to make; leaving it unselected is a tap for nothing.
             if pane == nil, available.count == 1 { pane = available.first?.paneID }
@@ -309,32 +297,53 @@ final class NewAgentModel {
         }
     }
 
-    /// Asks whether this session's panes share the Mac's login session.
+    /// Asks whether the host's keychain can be read, the way an agent asks.
     ///
-    /// Run after `loadPanes` rather than inside it, so the pane list — which is
-    /// what the user came here for — is not held up behind a diagnostic.
+    /// **It needs no pane and no pid**, which is what makes it cheap: one plain
+    /// shell command on a connection that already exists. Nothing is installed
+    /// on the host and nothing is left running.
     ///
     /// **Failures are swallowed, which is the opposite of the rule elsewhere in
-    /// this model, and deliberately.** `loadPanes` runs first and reports a
+    /// this model, and deliberately.** `loadPanes` runs alongside and reports a
     /// dead connection itself, so there is nothing here the user has not
     /// already been told; and releasing the connection over a *diagnosis* would
     /// spend the handshake the user's actual next action needs. An unanswered
     /// probe stays `.unknown`, which shows nothing.
-    func checkKeychainReach(for peer: PairedPeer) async {
-        guard let connections, let target = probePane else { return }
+    func checkKeychain(for peer: PairedPeer) async {
+        guard let connections else { return }
         do {
-            let client = try await connections.client(for: peer, session: session)
-            guard let pid = try await client.paneProcessInfo(target: target).shellPID,
-                  let command = SecuritySession.command(paneShellPid: pid)
-            else { return }
-            // Plain shell, not a herdr command: this asks launchd about a
-            // process, which has nothing to do with sessions. `shell` leaves
-            // `useSession` alone for exactly that reason.
+            // Plain shell, not a herdr command: this asks the Mac about itself,
+            // which has nothing to do with sessions. `shell` leaves `useSession`
+            // alone for exactly that reason.
             let shell = try await connections.shell(for: peer)
-            let answer = try await shell.run(shell: command)
-            keychainReach = SecuritySession(inOutput: answer).reach
+            let answer = try await shell.run(shell: LoginKeychain.stateCommand)
+            keychain = LoginKeychain(inOutput: answer).state
         } catch {
-            keychainReach = .unknown
+            keychain = .unknown
+        }
+    }
+
+    /// Unlocks the host's keychain with a passphrase the user has just typed.
+    ///
+    /// **Nothing about the command reaches an error message.** The passphrase is
+    /// inside the command string — see `LoginKeychain.unlockCommand` for why that
+    /// is acceptable and what it costs — so a failure is replaced with our own
+    /// words rather than anything that might quote what was run. That is also
+    /// why this returns an outcome instead of throwing.
+    func unlock(passphrase: String, for peer: PairedPeer) async -> LoginKeychain.UnlockOutcome {
+        guard let connections, !passphrase.isEmpty else { return .failed }
+        do {
+            let shell = try await connections.shell(for: peer)
+            let answer = try await shell.run(
+                shell: LoginKeychain.unlockCommand(passphrase: passphrase)
+            )
+            let outcome = LoginKeychain.unlockOutcome(inOutput: answer)
+            // The state the host reported *after* the attempt, so the screen
+            // stops warning the moment it is actually fixed.
+            keychain = LoginKeychain(inOutput: answer).state
+            return outcome
+        } catch {
+            return .failed
         }
     }
 

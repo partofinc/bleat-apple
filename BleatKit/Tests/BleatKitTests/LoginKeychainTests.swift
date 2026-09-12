@@ -60,72 +60,18 @@ struct LoginKeychainTests {
             """).state == .lockedAndCannotPrompt)
     }
 
-    // MARK: - Unlocking
-
-    /// **The passphrase goes on stdin, never in `-p`**, which keeps it out of
-    /// `security`'s own `argv`. Measured: piping it unlocks, exit 0.
-    @Test("the passphrase is piped, not passed as a flag")
-    func unlockUsesStdin() {
-        let command = LoginKeychain.unlockCommand(passphrase: "sw0rdfish")
-        #expect(command.hasPrefix("printf '%s' 'sw0rdfish' | security unlock-keychain"))
-        #expect(!command.contains("-p "))
-        // No keychain argument, for the same reason the state command has none.
-        #expect(!command.contains("login.keychain"))
-    }
-
-    /// A passphrase is arbitrary text, and a `'` in it would otherwise close the
-    /// quoting and hand the rest of it to the shell — the same rule
-    /// `DirectoryCheck.quote` follows for a path.
-    @Test("a quote in the passphrase cannot escape the quoting")
-    func quotesArePhrase() {
-        let command = LoginKeychain.unlockCommand(passphrase: "it's a 'test'")
-        #expect(command.contains(#"'it'\''s a '\''test'\'''"#))
-    }
-
-    /// **The state afterwards decides, not the unlock's own status.** An unlock
-    /// that exits 0 over a keychain that still cannot be read is a failure
-    /// however cheerful its status was — the same reason `session delete`
-    /// answering `{"deleted":true}` over a session that never existed is not
-    /// evidence.
-    @Test("the unlock is judged by the state it left behind")
-    func unlockIsChecked() {
-        #expect(LoginKeychain.unlockOutcome(inOutput: """
-            bleat-unlock:0
-            bleat-keychain:0
-            """) == .unlocked)
-        // Exited 0 and the keychain is still unreadable: not success.
-        #expect(LoginKeychain.unlockOutcome(inOutput: """
-            bleat-unlock:0
-            bleat-keychain:36
-            """) == .failed)
-    }
-
-    /// 51 is `errSecAuthFailed`, the low byte of `-25293`. Measured against a
-    /// throwaway keychain: the wrong passphrase on stdin exits **51** while the
-    /// right one exits 0. It is the only outcome worth offering a retry for.
-    @Test("a wrong passphrase is told apart from everything else")
-    func wrongPassphrase() {
-        #expect(LoginKeychain.unlockOutcome(inOutput: """
-            bleat-unlock:51
-            bleat-keychain:24
-            """) == .wrongPassphrase)
-        // Some other failure. One case on purpose: both mean "it did not work
-        // and I cannot say why", and splitting them would be a guess.
-        #expect(LoginKeychain.unlockOutcome(inOutput: """
-            bleat-unlock:1
-            bleat-keychain:36
-            """) == .failed)
-        #expect(LoginKeychain.unlockOutcome(inOutput: "") == .failed)
-    }
-
-    /// The exact bytes the two measurements produced, so the parser and the thing
-    /// that was measured cannot drift.
-    @Test("the measured replies parse the way they were observed")
-    func measuredReplies() {
-        #expect(LoginKeychain.unlockOutcome(inOutput: "bleat-unlock:51\nbleat-keychain:24\n")
-            == .wrongPassphrase)
-        #expect(LoginKeychain.unlockOutcome(inOutput: "bleat-unlock:0\nbleat-keychain:0\n")
-            == .unlocked)
-        #expect(LoginKeychain(inOutput: "bleat-keychain:0\n").state == .unlocked)
+    /// **Exit 36 is not "the keychain is locked", and the first version of this
+    /// read it that way.** Measured: the login keychain answered exit 0 in the
+    /// desktop session at the same moment the check over SSH answered 36 — same
+    /// host, same keychain. So the state says something about the asking
+    /// connection, and the remedy is a session the Mac started rather than a
+    /// passphrase. An unlock button shipped for one build on the wrong reading
+    /// and was removed; there is deliberately no unlock surface here now.
+    @Test("there is no unlock surface, on purpose")
+    func noUnlockSurface() {
+        // A passphrase cannot help, so none is asked for. If this ever needs
+        // reinstating, read the type's doc comment first.
+        #expect(LoginKeychain.stateCommand.contains("show-keychain-info"))
+        #expect(!LoginKeychain.stateCommand.contains("unlock"))
     }
 }

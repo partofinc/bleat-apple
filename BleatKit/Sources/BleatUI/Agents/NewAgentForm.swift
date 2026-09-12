@@ -26,10 +26,6 @@ struct NewAgentForm: View {
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var naming: Bool
-    @State private var unlocking = false
-    /// Held only between the field and the one command that uses it.
-    @State private var passphrase = ""
-    @State private var unlockFailure: String?
 
     var body: some View {
         NavigationStack {
@@ -55,23 +51,6 @@ struct NewAgentForm: View {
             await model.loadPanes(for: peer)
             await model.checkKeychain(for: peer)
         }
-        .alert("Unlock the Mac's keychain", isPresented: $unlocking) {
-            unlockPrompt
-        } message: {
-            Text("Sent over the connection this host is already paired on, used once, and "
-                 + "not saved.")
-        }
-        .alert(
-            "Could not unlock it",
-            isPresented: .init(get: { unlockFailure != nil }, set: { if !$0 { unlockFailure = nil } })
-        ) {
-            Button("OK") { unlockFailure = nil }
-        } message: {
-            Text(unlockFailure ?? "")
-        }
-        // **Not dismissible while the start is in flight**, for the reason the
-        // pairing sheet is not: herdr may take half a minute, and this is the
-        // only place the outcome is reported.
         .interactiveDismissDisabled(model.isStarting)
         .onChange(of: model.name) { _, _ in model.clearFailure() }
     }
@@ -204,59 +183,33 @@ struct NewAgentForm: View {
     /// like success: herdr starts the agent, detects it, reports it — and the
     /// agent cannot sign in.
     ///
-    /// **Shown only for `.lockedAndCannotPrompt`.** That is the one state an
-    /// agent reports as "not logged in" — `security show-keychain-info` exiting
-    /// 36, which is the test Claude Code itself makes. `.unknown` is a host that
-    /// could not be asked and `.unlocked` needs no remark; announcing either
-    /// would be noise on every healthy host. See `LoginKeychain`.
+    /// **The wording matters and the first version got it wrong.** Exit 36 is
+    /// `errSecInteractionNotAllowed`, and calling that "the keychain is locked"
+    /// sent the user hunting for a passphrase. Measured 12 Sept 2026: the login
+    /// keychain was **unlocked** in the desktop session (`security
+    /// show-keychain-info` exit 0) at the very moment Bleat's own check over SSH
+    /// answered 36. Same host, same keychain, same minute. So 36 is not a fact
+    /// about the keychain — it is a fact about *this connection*, which cannot
+    /// use it and cannot ask.
+    ///
+    /// There is nothing to unlock and no passphrase that helps. What helps is
+    /// starting the agent in a session whose server the Mac started, where the
+    /// keychain is already usable. See `LoginKeychain`.
     @ViewBuilder
     private var keychainSection: some View {
         if model.keychain == .lockedAndCannotPrompt {
             Section {
-                Label("Agents here cannot sign in yet", systemImage: "key.slash")
+                Label("Agents here may not sign in", systemImage: "key.slash")
                     .font(.callout.weight(.medium))
-                Text("The Mac's keychain is locked, and nothing over this connection can ask "
-                     + "for the passphrase — so an agent that needs an account will come up "
-                     + "reporting it is not logged in.")
+                Text("This connection cannot use the Mac's keychain, so an agent that needs an "
+                     + "account will come up reporting it is not logged in. The keychain itself "
+                     + "is probably fine.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Button("Unlock the keychain") { unlocking = true }
-            }
-        }
-    }
-
-    /// Asks for the Mac's login passphrase and sends it over the connection.
-    ///
-    /// **Nothing is remembered.** It is used for one command and dropped —
-    /// keeping a Mac login passphrase on a phone is a decision of its own and
-    /// not one to make as a side effect of a dialog. The field is a
-    /// `SecureField`, so it is not in the keyboard's cache or on screen.
-    ///
-    /// An alert rather than a sheet: it is one field, and a sheet over a sheet is
-    /// exactly the presentation SwiftUI drops.
-    private var unlockPrompt: some View {
-        Group {
-            SecureField("Mac login passphrase", text: $passphrase)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Unlock") { unlock() }
-            Button("Cancel", role: .cancel) { passphrase = "" }
-        }
-    }
-
-    private func unlock() {
-        let typed = passphrase
-        // Cleared before the round trip rather than after, so it is not sitting
-        // in view state while the network is in flight.
-        passphrase = ""
-        Task {
-            switch await model.unlock(passphrase: typed, for: peer) {
-            case .unlocked:
-                unlockFailure = nil
-            case .wrongPassphrase:
-                unlockFailure = "That passphrase was refused."
-            case .failed:
-                unlockFailure = "The keychain is still locked, and the Mac did not say why."
+                Text("Start the agent in a session that was started at the Mac instead — agents "
+                     + "there can sign in.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -355,11 +308,12 @@ struct NewAgentForm: View {
     ))
 }
 
-/// **The Mac's keychain is locked and nothing here can ask for the passphrase.**
-/// `security show-keychain-info` exits 36, which is the test Claude Code makes
-/// before reporting `Not logged in`. Not reachable by pointing the app at a
-/// healthy Mac, which is the whole reason it wants a canvas.
-#Preview("Keychain locked", traits: .sampleData) {
+/// **This connection cannot use the Mac's keychain.** `security
+/// show-keychain-info` exits 36 over SSH while the desktop session reads the very
+/// same keychain fine — so the remedy is a session the Mac started, not a
+/// passphrase. Not reachable by pointing the app at a healthy session, which is
+/// the whole reason it wants a canvas.
+#Preview("Cannot use the keychain", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
         keychain: .lockedAndCannotPrompt

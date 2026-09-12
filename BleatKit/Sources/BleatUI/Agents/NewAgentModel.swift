@@ -323,30 +323,6 @@ final class NewAgentModel {
         }
     }
 
-    /// Unlocks the host's keychain with a passphrase the user has just typed.
-    ///
-    /// **Nothing about the command reaches an error message.** The passphrase is
-    /// inside the command string — see `LoginKeychain.unlockCommand` for why that
-    /// is acceptable and what it costs — so a failure is replaced with our own
-    /// words rather than anything that might quote what was run. That is also
-    /// why this returns an outcome instead of throwing.
-    func unlock(passphrase: String, for peer: PairedPeer) async -> LoginKeychain.UnlockOutcome {
-        guard let connections, !passphrase.isEmpty else { return .failed }
-        do {
-            let shell = try await connections.shell(for: peer)
-            let answer = try await shell.run(
-                shell: LoginKeychain.unlockCommand(passphrase: passphrase)
-            )
-            let outcome = LoginKeychain.unlockOutcome(inOutput: answer)
-            // The state the host reported *after* the attempt, so the screen
-            // stops warning the moment it is actually fixed.
-            keychain = LoginKeychain(inOutput: answer).state
-            return outcome
-        } catch {
-            return .failed
-        }
-    }
-
     /// Starts the agent, and works out what a failure meant.
     func start(on peer: PairedPeer) async -> Outcome {
         guard let connections, let agentName = AgentName(name), let target = pane, !isStarting

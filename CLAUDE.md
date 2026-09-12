@@ -3103,44 +3103,40 @@ security show-keychain-info >/dev/null 2>&1; printf 'bleat-keychain:%s\n' "$?"
 - Exits 0 whatever the answer (`ShellRunner.run` throws on a non-zero status) and
   the answer is a prefixed line within stdout, never the whole of it.
 
-#### Unlocking it from the phone
+#### There is nothing to unlock — the remedy is where the server started
 
-The warning carries an **Unlock the keychain** button. It asks for the Mac's login
-passphrase in a `SecureField` and sends:
+**An "Unlock the keychain" button shipped here for one build and was removed.**
+It read exit 36 as "the keychain is locked" and asked for a passphrase. On device
+it was refused, repeatedly, by a user who does not have another password — and it
+could never have worked. What the measurement actually says:
 
-```
-printf '%s' '<passphrase>' | security unlock-keychain >/dev/null 2>&1; u=$?; \
-security show-keychain-info >/dev/null 2>&1; s=$?; \
-printf 'bleat-unlock:%s\n' "$u"; printf 'bleat-keychain:%s\n' "$s"
-```
+- the login keychain answered **exit 0, unlocked** in the desktop session at the
+  same moment Bleat's own check over SSH answered **36**. Same host, same
+  keychain, same minute. **36 is a fact about the asking connection**, not about
+  the keychain.
+- so the passphrase it wanted was refused (`errSecAuthFailed`, **51**) because
+  there is nothing there to authenticate against from that side.
+- and the success check could not have caught its own uselessness: an unlock run
+  against an *already*-unlocked keychain returns **0 whatever passphrase it is
+  given** — measured with a deliberately wrong one. "Unlock then re-read the
+  state in the same command" only ever confirms that one ephemeral shell was
+  fine.
 
-- **The passphrase goes on stdin, never in `-p`**, which keeps it out of
-  `security`'s own `argv`. Measured: piping it unlocks, exit 0.
-- **It is still inside the command string, and that is not hidden.** sshd runs an
-  exec command as `zsh -c '<command>'`, so the text is in *that* process's `argv`
-  while the command runs, visible to other processes of the same user. Not an
-  escalation — anything that could read it could read the keychain it unlocks,
-  and could have read `authorized_keys` first — but it means **the command must
-  never reach a log or an error message**. `NewAgentModel.unlock` returns an
-  outcome instead of throwing, and replaces any failure with its own words.
-- **The result is checked, not assumed.** The state *afterwards* decides, so an
-  unlock that exits 0 over a keychain that is still unreadable is a failure — the
-  same reason `session delete` answering `{"deleted":true}` over a session that
-  never existed is not evidence. The unlock's own status is read too, because
-  **51** (`errSecAuthFailed`, `-25293 & 0xFF`) is the only thing that separates a
-  wrong passphrase from a failure with no explanation, and those need different
-  words. Both codes measured against a throwaway keychain.
-- **Nothing is remembered.** The passphrase is used for one command and dropped,
-  and it is cleared from view state before the round trip rather than after.
-  Keeping a Mac login passphrase on a phone is a decision of its own; it is not
-  made as a side effect of a dialog.
-- An `alert`, not a sheet: it is one field, and a sheet over a sheet is exactly
-  the presentation SwiftUI drops.
+**What does work is the session the agent's server was started from.** A herdr
+server started from the desktop session gives panes that can use the keychain —
+measured: `security show-keychain-info` answered `no-timeout` inside such a pane.
+One started over SSH does not, which is what the device reported. So the remedy
+needs no passphrase, no unlock and nothing installed:
 
-Both commands were **run verbatim** under `sh` and `zsh` — the state one against
-the real default keychain, the unlock against a throwaway with both the right
-passphrase and a wrong one — and `LoginKeychainTests` pins the strings and every
-code, the rule `SessionLaunch` set.
+> **Start agents in a session that was started at the Mac.** `work` already is
+> one. A session the phone created is the degraded case.
+
+The warning says exactly that now, and nothing about locks. **`bleat
+login-session` was reverted on a wrong rationale and its effect may have been
+right** — it started the server from `gui/$UID`, which is precisely the condition
+above. It is not restored, because the zero-infrastructure version of the same
+thing is to attach to a session the Mac already started; the commit is in history
+if a Mac with nothing running ever needs it.
 
 ### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
 

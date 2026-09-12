@@ -31,12 +31,6 @@ Keys this machine accepts (local only — it edits ~/.ssh/authorized_keys):
   bleat keys list
   bleat keys revoke <marker>...
 
-Sessions kept in the desktop login session, so their agents can sign in
-(local only — it installs a launchd agent that runs at every login):
-  bleat login-session install <name> [--herdr PATH]
-  bleat login-session remove <name>
-  bleat login-session list
-
 Pairing (the side a phone takes; here for testing the host side):
   bleat redeem <bleat://pair?d=...>
   bleat unpair <name>                       # revoke this device's key, then forget
@@ -174,15 +168,6 @@ do {
     // the connection that would fix it.
     if command == "keys" {
         try Keys.run(options: options)
-        exit(0)
-    }
-
-    // Local for a related reason: it installs a job that runs at every login,
-    // in the one launchd domain whose audit session has the keychain. The phone
-    // cannot do it — see `LoginSessionAgent` — and should not: a standing change
-    // to what starts at login belongs at the machine.
-    if command == "login-session" {
-        try await LoginSession.run(options: options)
         exit(0)
     }
 

@@ -2146,6 +2146,8 @@ bleat attach     [host] w1:p1 [--takeover] [--cols N] [--rows M]
 bleat schema     [host] > BleatKit/Fixtures/schema.json
 bleat keys list                           # what this machine still lets in
 bleat keys revoke <marker>                # take a paired phone's access back
+bleat login-session install <name>        # keep a session where its agents can sign in
+bleat login-session remove <name> / list
 ```
 
 Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.
@@ -2279,6 +2281,77 @@ Related, from the same review:
 explicitly. Without that, `bleat pair > file` shows the link only once the tool
 exits — by which point the key it carries has been removed, which makes the
 entire non-TTY path useless exactly where it is needed.
+
+### `bleat login-session` (Phase 3, built and proved 12 Sept 2026)
+
+```
+bleat login-session install <name> [--herdr PATH]
+bleat login-session remove <name>
+bleat login-session list
+```
+
+The fix for what `SecuritySession` diagnoses. It installs
+`~/Library/LaunchAgents/team.partof.bleat.herdr.<name>.plist` and bootstraps it
+into `gui/$UID`, so herdr's server for that session starts **in the Aqua login
+session** and every pane and agent it spawns inherits the keychain. The phone
+then *attaches* rather than starting anything.
+
+**Proved end to end, not inferred.** `install bleat-login-test` on a disposable
+name: launchd loaded the job, herdr came up (`herdr server` pid 66588,
+reparented to 1), the session's pane shell reported **asid 100016** — the login
+session — and then, inside that pane, `security show-keychain-info` answered
+`"…/login.keychain-db" no-timeout`. The keychain is genuinely readable there,
+which is the thing the asid was only ever a proxy for. Removed and the session
+stopped and deleted afterwards; `work` was never touched.
+
+- **Local only, like `bleat keys`**, and for a related reason: it installs
+  something that runs at every login. The phone is also not *able* to — whether
+  an SSH-descended process may create a job in `gui/$UID` is unverified, and the
+  other direction says not to assume it: from the Aqua session, `launchctl print
+  user/501` and `launchctl kickstart user/501/<missing label>` both resolved the
+  Background domain while `launchctl bootstrap user/501 <plist>` was refused
+  outright with `5: Input/output error`. Reading a domain and creating a job in
+  it are different permissions.
+- **No `KeepAlive`, and that is the most important absence in the plist.**
+  `herdr session attach` with no pty **exits 1 on success** — the TUI cannot draw,
+  so it complains *after* the server is up and daemonised — and launchd reads
+  that as a crash. `KeepAlive`, or `KeepAlive { SuccessfulExit: false }`, would
+  relaunch it several times a second against a session that is running
+  perfectly. `RunAtLoad` alone is what is wanted, and it also closes the gap
+  this file names elsewhere: a Mac that rebooted with nothing up.
+- **`env -u` rather than the bare binary.** `HERDR_SESSION` and
+  `HERDR_SOCKET_PATH` so a `launchctl setenv` cannot decide which session comes
+  up — launchd sources no profile, so that is the realistic source, and it is
+  invisible from here. `CLAUDE_CODE_CHILD_SESSION` because a herdr server passes
+  its environment to every pane it spawns and an agent started with it set
+  writes **no transcript**, which is already recorded as something to strip *at
+  the server* — this is the server.
+- **The look before the write is load-bearing, and it is the same one
+  `SessionStarter` makes.** `session attach` is idempotent, so installing this
+  over an **already-running** session loads a job that starts nothing and leaves
+  its panes in whatever audit session they are already in. Reported as exactly
+  that, with the two commands that fix it and a warning that `herdr session
+  stop` ends every process in the session. Without the look, the install would
+  report success over a session it had not moved.
+- **The install checks its own work**, through `SecuritySession` — the same type
+  and the same probe the app uses, so the tool and the phone cannot disagree
+  about what "can reach the keychain" means. `launchctl bootstrap` exiting 0 is
+  not the service existing, the service existing is not the session running, and
+  the session running is not its panes being in the right place; all three are
+  read back.
+- **`remove` does not stop the session**, and says so. Unloading a launchd job
+  is not a request to end somebody's agents.
+- **The phone cannot stop it either, and that falls out of a rule that already
+  exists.** Stop is offered only for sessions in `startedSessions`, and a session
+  launchd brought up is not one — so the swipe is simply absent. That is the
+  right answer rather than a lucky one: a session the phone stopped would return
+  to Aqua at the next login, but a phone that *restarted* it in between would
+  have put it back in the SSH session and silently undone all of this.
+- The session name is a `SessionName`, validated never sanitised, because it
+  reaches a launchd label, a filename and a `launchctl` domain target. The
+  listing matches on the label prefix so it can never see another agent's plist,
+  and a file hand-edited into a name `SessionName` refuses is listed as nothing
+  rather than handed to `launchctl bootout`.
 
 ## The pane view (Phase 2, verified 5 Sept 2026)
 
@@ -3006,15 +3079,9 @@ another terminal" means and is not how anyone reads it.
 
 Three ways out, and only the first needs no credentials anywhere:
 
-- **Start the server in the GUI session.** A job bootstrapped into `gui/$UID`
-  runs in the Aqua session — measured: `launchctl bootstrap gui/501 <plist>`
-  exited 0 and the job reported **asid 100016** — so every pane it spawns has
-  the keychain. **Whether an SSH-descended process may target that domain is
-  unverified**, and it is not safe to assume from the other direction:
-  `launchctl bootstrap user/501 <plist>` *from* the Aqua session was refused
-  outright (`5: Input/output error`), while `launchctl print user/501` and
-  `launchctl kickstart user/501/<missing label>` both resolved that same domain.
-  Reading a domain and creating a job in it are different permissions.
+- **Start the server in the GUI session — built, and the one to use.** See
+  **`bleat login-session`** below. A job bootstrapped into `gui/$UID` runs in
+  the Aqua session, so every pane it spawns has the keychain.
 - **Credentials that are not in the keychain.** Claude Code 2.1.269 carries
   `setup-token`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and
   `apiKeyHelper`. Prefer `apiKeyHelper`: herdr passes its environment to every

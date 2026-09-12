@@ -53,9 +53,49 @@ public enum AgentStart {
     /// So: a non-`timeout` `HerdrError` is safe to retry, and **everything
     /// else has to be checked** — a dropped connection and a reply this build
     /// could not read both leave an agent that probably started.
+    ///
+    /// **`agent_not_ready` is the second exception, and it reached a device.**
+    /// It is what herdr answers when the agent came up and stopped at a dialog
+    /// — the Claude Code workspace-trust prompt, which is what a *new*
+    /// directory always produces, so it is the common case for an agent started
+    /// in a workspace the phone just made. Measured 12 Sept 2026 in an isolated
+    /// session, against a directory Claude Code had never seen:
+    ///
+    /// ```
+    /// {"error":{"code":"agent_not_ready",
+    ///           "message":"agent probe is blocked during startup and is not ready for prompts"}}
+    /// ```
+    ///
+    /// exit 1, in **3.9s** — and `agent list` then held `name: "probe"`,
+    /// `launch_pending: true`. So the agent exists *and is named*: herdr
+    /// created it, typed the executable, watched it block, and reported an
+    /// error over something that had entirely succeeded.
+    ///
+    /// Read as a refusal — which it was, because the code is not `timeout` —
+    /// the phone told the user nothing had happened and left the button armed
+    /// over an agent that was sitting there waiting to be answered. Both
+    /// retries are dead ends, measured: the same name gives
+    /// `agent_name_taken`, any other name gives `agent_pane_busy`.
     public static func isRefusalBeforeTyping(_ error: any Error) -> Bool {
         guard let herdr = error as? HerdrError else { return false }
-        return herdr.code != "timeout"
+        return herdr.code != "timeout" && herdr.code != blockedDuringStartupCode
+    }
+
+    /// herdr's code for "it started, and it is waiting at a dialog".
+    public static let blockedDuringStartupCode = "agent_not_ready"
+
+    /// Whether the agent started and stopped at a dialog.
+    ///
+    /// Kept apart from `timeout` although both mean "the pane is not untouched",
+    /// because what the user should do differs and that is the whole point. A
+    /// timeout is genuinely *ambiguous* — herdr stopped waiting and may or may
+    /// not have left an agent — so it is followed by reading the host back. This
+    /// is not ambiguous at all: herdr says the agent is blocked during startup,
+    /// and it named it. The remedy is to answer the dialog, which `PaneKeyBar`
+    /// can now do, so the screen's job is to offer the way there rather than to
+    /// investigate.
+    public static func isBlockedDuringStartup(_ error: any Error) -> Bool {
+        (error as? HerdrError)?.code == blockedDuringStartupCode
     }
 
     /// Reads the real cause of a timeout out of the pane.

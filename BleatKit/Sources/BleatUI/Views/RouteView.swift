@@ -33,11 +33,11 @@ struct RouteView: View {
             } else {
                 unpaired
             }
-        case .pane(let hostKey, let session, let target, let title):
+        case .pane(let hostKey, let session, let target, let title, let mode):
             if let peer = peer(hostKey) {
                 PaneView(
                     peer: peer, session: session, target: target, title: title,
-                    connections: context.connections
+                    mode: mode, connections: context.connections
                 )
             } else {
                 unpaired

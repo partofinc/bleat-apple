@@ -15,6 +15,14 @@ struct NewAgentForm: View {
     @Bindable var model: NewAgentModel
     let peer: PairedPeer
     let onStarted: () -> Void
+    /// Asked to open a pane once this sheet is out of the way.
+    ///
+    /// **A callback rather than a push from here, and that is not indirection
+    /// for its own sake.** SwiftUI will not act on a navigation raised from
+    /// inside a sheet that is dismissing — the same hazard `PeerSettingsFlow`
+    /// documents for a confirmation dialog presented under one — so the
+    /// presenting screen holds the request and runs it from `onDismiss`.
+    let onAnswer: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var naming: Bool
@@ -180,6 +188,22 @@ struct NewAgentForm: View {
     private var confirm: some View {
         if model.isStarting {
             ProgressView()
+        } else if let blocked = model.blocked {
+            // **The agent is up and waiting at a dialog, so the useful action is
+            // going there — not trying again.** Answering needs the terminal's
+            // key bar, which means the pane screen; the user found that route by
+            // hand, and this is it made into a button.
+            //
+            // **The pane comes from `blocked`, never from `model.pane`.** The
+            // picker is still live in this state, so reading the selection at tap
+            // time sent the user to whichever row they last touched — and there
+            // was no branch left for `pane == nil`, which left Start disabled
+            // forever with Cancel the only way out.
+            //
+            // Labelled for what it does rather than what the user wants: it
+            // opens the pane in terminal mode, and answering still needs control
+            // of it, which the note explains.
+            Button("Open the pane") { answer(blocked.pane) }
         } else if model.warning != nil {
             // Something may be running in that pane. Starting again would land
             // on `agent_pane_busy`, over the agent the user was told had not
@@ -195,6 +219,16 @@ struct NewAgentForm: View {
     /// At most one message, most urgent first.
     private var note: (text: String, isProblem: Bool)? {
         if let failure = model.failure { return (failure, true) }
+        // Not red, and first among the two that are not: the agent is *there*.
+        // Red would read as "nothing happened", which is what this screen used
+        // to say about it.
+        if let blocked = model.blocked {
+            return (
+                blocked.message
+                    + "\n\nOpening the pane shows the dialog. Take control to answer it.",
+                false
+            )
+        }
         // Not red: something may well be running whether or not the user likes
         // it. Red would read as "nothing happened".
         if let warning = model.warning { return (warning, false) }
@@ -207,6 +241,19 @@ struct NewAgentForm: View {
         pane.foregroundCwd ?? pane.cwd ?? pane.paneID
     }
 
+    /// Asks for the pane and gets out of the way.
+    ///
+    /// **No reload here, and the comment that used to claim one was wrong twice
+    /// over.** `start()` already called `onStarted()` on the `.blocked` path, so
+    /// this was a second `agent list` round trip; and it claimed to sequence the
+    /// reload ahead of the push, which it never could — `onStarted` hands the
+    /// load to an unawaited `Task`. The list is reloaded once, when the outcome
+    /// arrives, and it settles while the user is reading the note.
+    private func answer(_ pane: String) {
+        onAnswer(pane)
+        dismiss()
+    }
+
     private func start() {
         guard model.canStart else { return }
         naming = false
@@ -215,6 +262,12 @@ struct NewAgentForm: View {
             case .started:
                 onStarted()
                 dismiss()
+            case .blocked:
+                // The list still has to reload — the agent is real and blocked,
+                // and blocked sorts first — but the sheet stays up, because it
+                // is the only thing that says what happened and offers the way
+                // to answer it.
+                onStarted()
             case .warned:
                 // The list still has to be refreshed — something may be running
                 // — but the sheet stays up, because it is the only place that
@@ -232,6 +285,21 @@ struct NewAgentForm: View {
 #Preview("Naming", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples
+    ))
+}
+
+/// **Started, and stopped at a dialog — the common case for a workspace the
+/// phone just made.** herdr answers `agent_not_ready` in about four seconds and
+/// the agent is there, named, waiting on Claude Code's workspace-trust prompt.
+/// This used to be reported in red as a failure with Start armed over an agent
+/// that existed; both retries are dead ends.
+#Preview("Waiting at a dialog", traits: .sampleData) {
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+        blocked: .init(
+            message: "agent reviewer is blocked during startup and is not ready for prompts",
+            pane: "w2:p1"
+        )
     ))
 }
 
@@ -305,7 +373,7 @@ private struct NewAgentPreview: View {
             )
         }
         .sheet(isPresented: $showing) {
-            NewAgentForm(model: model, peer: .preview, onStarted: {})
+            NewAgentForm(model: model, peer: .preview, onStarted: {}, onAnswer: { _ in })
         }
     }
 }

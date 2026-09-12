@@ -39,10 +39,16 @@ struct PaneView: View {
         session: String?,
         target: String,
         title: String,
+        mode: PaneMode = .chat,
         connections: ConnectionStore
     ) {
         self.title = title
         self.peer = peer
+        _mode = State(wrappedValue: mode)
+        // Opening straight into the terminal is also asking for it to be
+        // mounted; `terminalWasAskedFor` gates that, and the `.task` would
+        // otherwise not set it until the mode changed *to* terminal.
+        _terminalWasAskedFor = State(wrappedValue: mode == .terminal)
         _model = State(wrappedValue: PaneModel(
             connections: connections, peer: peer, session: session, target: target
         ))

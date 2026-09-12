@@ -15,7 +15,9 @@
 /// lossy in the way that mattered most — a pane is a grid of absolutely
 /// positioned cells, so anything wide came back re-wrapped into nonsense — and
 /// the chat answers the question it was really being opened for.
-enum PaneMode: CaseIterable, Identifiable {
+// Public because `NavigationRouter.Route.pane` carries one: the route decides
+// which reading a pane opens in, since its two entrances want different ones.
+public enum PaneMode: CaseIterable, Identifiable {
     /// The default, and it is the chat rather than the terminal.
     ///
     /// An agent screen is opened to read what the agent said, and that is the
@@ -25,7 +27,7 @@ enum PaneMode: CaseIterable, Identifiable {
     case chat
     case terminal
 
-    var id: Self { self }
+    public var id: Self { self }
 
     var label: String {
         switch self {

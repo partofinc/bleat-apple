@@ -24,6 +24,8 @@ struct AgentsView: View {
     /// what says whether something is now running on someone's Mac.
     @State private var newAgent: NewAgentModel
     @State private var isStarting = false
+    /// The pane a blocked agent is waiting in, held until the sheet has gone.
+    @State private var paneToAnswer: String?
 
     init(
         peer: PairedPeer,
@@ -87,11 +89,30 @@ struct AgentsView: View {
                 .buttonStyle(.glassProminent)
             }
         }
-        .sheet(isPresented: $isStarting) {
+        // **The pane is opened from `onDismiss`, not from inside the sheet.**
+        // SwiftUI will not act on a navigation raised by a view that is on its
+        // way out — the same hazard `PeerSettingsFlow` records for a
+        // confirmation dialog presented underneath a sheet, where the dialog was
+        // simply never seen. So the sheet asks, this holds the request, and the
+        // push happens once the dismissal has finished. Cleared as it is taken,
+        // or a later dismissal would open a pane nobody asked about.
+        .sheet(isPresented: $isStarting, onDismiss: {
+            guard let target = paneToAnswer else { return }
+            paneToAnswer = nil
+            // **Terminal, not chat.** The button that asked for this said it
+            // opens the pane so the dialog can be answered, and a transcript —
+            // most likely an empty one, for an agent that has not got past its
+            // trust prompt — is the opposite of that.
+            context.navigation.push(.pane(
+                peer: peer.hostKey, session: session, target: target, title: target,
+                mode: .terminal
+            ))
+        }) {
             NewAgentForm(
                 model: newAgent,
                 peer: peer,
-                onStarted: { Task { await agents.load(for: peer) } }
+                onStarted: { Task { await agents.load(for: peer) } },
+                onAnswer: { paneToAnswer = $0 }
             )
         }
         // Stands aside for a `bleat://` link — but not mid-start, or a

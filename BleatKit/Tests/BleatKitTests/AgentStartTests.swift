@@ -127,6 +127,50 @@ struct AgentStartTests {
         ))
     }
 
+    /// **`agent_not_ready` is not a refusal either, and this one reached a
+    /// device.** It is what herdr answers when the agent came up and stopped at
+    /// a dialog — the Claude Code workspace-trust prompt, which a directory it
+    /// has never seen always produces, so it is the *common* case for an agent
+    /// started in a workspace the phone just made.
+    ///
+    /// Measured 12 Sept 2026 in an isolated session against a fresh directory:
+    /// exit 1 in **3.9s** with
+    /// `{"code":"agent_not_ready","message":"agent probe is blocked during
+    /// startup and is not ready for prompts"}` — and `agent list` then held
+    /// `name: "probe"`, `launch_pending: true`. The agent exists *and is named*.
+    ///
+    /// Because the code is not `timeout`, the old rule called it a refusal and
+    /// the phone reported "nothing happened" with the button still armed, over
+    /// an agent sitting in that pane. Both retries are dead ends, also measured:
+    /// the same name answers `agent_name_taken`, any other name answers
+    /// `agent_pane_busy`.
+    @Test("an agent blocked at a dialog is not a refusal")
+    func blockedDuringStartupIsNotARefusal() {
+        let error = herdr(
+            "agent_not_ready",
+            "agent probe is blocked during startup and is not ready for prompts"
+        )
+        #expect(!AgentStart.isRefusalBeforeTyping(error))
+        #expect(AgentStart.isBlockedDuringStartup(error))
+    }
+
+    /// Told apart from a timeout on purpose: a timeout is ambiguous and gets
+    /// read back, while this is herdr positively saying the agent is there. The
+    /// remedy differs, so the classification has to.
+    @Test("only agent_not_ready is the blocked outcome", arguments: [
+        "timeout", "agent_pane_busy", "agent_name_taken", "invalid_agent_name",
+        "agent_pane_not_found", "invalid_agent_timeout",
+    ])
+    func nothingElseIsBlocked(_ code: String) {
+        #expect(!AgentStart.isBlockedDuringStartup(herdr(code, "something")))
+    }
+
+    /// Not a `HerdrError` at all, so not a positive statement about anything.
+    @Test("a transport failure is not the blocked outcome")
+    func transportIsNotBlocked() {
+        #expect(!AgentStart.isBlockedDuringStartup(TransportError.connectionFailed("closed")))
+    }
+
     /// Everything else herdr says, it says **before typing anything** — each
     /// measured under 30ms — so the pane is untouched and a retry is safe.
     @Test("every other refusal happened before anything was typed", arguments: [

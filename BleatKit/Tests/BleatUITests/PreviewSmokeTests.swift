@@ -235,13 +235,19 @@ struct PreviewSmokeTests {
                 previewing: "reviewer", pane: "w2:p1",
                 available: Pane.samples, isStarting: true
             ),
+            // Started and waiting at a dialog: the "Answer it" button, which
+            // replaces an armed Start that could only have failed.
+            NewAgentModel(
+                previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+                blocked: "agent reviewer is blocked during startup and is not ready for prompts"
+            ),
             // The keychain warning, which no healthy host can produce.
             NewAgentModel(
                 previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
                 keychainReach: .detached
             ),
         ] {
-            render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}))
+            render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}, onAnswer: { _ in }))
         }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         render(context, PeerSettingsView(hostKey: PairedPeer.previewSparse.hostKey))

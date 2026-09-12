@@ -15,6 +15,14 @@ struct NewAgentForm: View {
     @Bindable var model: NewAgentModel
     let peer: PairedPeer
     let onStarted: () -> Void
+    /// Asked to open a pane once this sheet is out of the way.
+    ///
+    /// **A callback rather than a push from here, and that is not indirection
+    /// for its own sake.** SwiftUI will not act on a navigation raised from
+    /// inside a sheet that is dismissing — the same hazard `PeerSettingsFlow`
+    /// documents for a confirmation dialog presented under one — so the
+    /// presenting screen holds the request and runs it from `onDismiss`.
+    let onAnswer: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var naming: Bool
@@ -217,6 +225,12 @@ struct NewAgentForm: View {
     private var confirm: some View {
         if model.isStarting {
             ProgressView()
+        } else if model.blocked != nil, let pane = model.pane {
+            // **The agent is up and waiting at a dialog, so the useful action is
+            // going there — not trying again.** Answering needs the terminal's
+            // key bar, which means the pane screen; the user found that route by
+            // hand, and this is it made into a button.
+            Button("Answer it") { answer(pane) }
         } else if model.warning != nil {
             // Something may be running in that pane. Starting again would land
             // on `agent_pane_busy`, over the agent the user was told had not
@@ -232,6 +246,12 @@ struct NewAgentForm: View {
     /// At most one message, most urgent first.
     private var note: (text: String, isProblem: Bool)? {
         if let failure = model.failure { return (failure, true) }
+        // Not red, and first among the two that are not: the agent is *there*.
+        // Red would read as "nothing happened", which is what this screen used
+        // to say about it.
+        if let blocked = model.blocked {
+            return (blocked + "\n\nOpen the pane and switch to terminal mode to answer it.", false)
+        }
         // Not red: something may well be running whether or not the user likes
         // it. Red would read as "nothing happened".
         if let warning = model.warning { return (warning, false) }
@@ -244,6 +264,15 @@ struct NewAgentForm: View {
         pane.foregroundCwd ?? pane.cwd ?? pane.paneID
     }
 
+    /// Refreshes the list, asks for the pane, and gets out of the way. In that
+    /// order: the blocked agent has to be in the list before the pane screen
+    /// pushes over it, or backing out lands on a list that does not show it.
+    private func answer(_ pane: String) {
+        onStarted()
+        onAnswer(pane)
+        dismiss()
+    }
+
     private func start() {
         guard model.canStart else { return }
         naming = false
@@ -252,6 +281,12 @@ struct NewAgentForm: View {
             case .started:
                 onStarted()
                 dismiss()
+            case .blocked:
+                // The list still has to reload — the agent is real and blocked,
+                // and blocked sorts first — but the sheet stays up, because it
+                // is the only thing that says what happened and offers the way
+                // to answer it.
+                onStarted()
             case .warned:
                 // The list still has to be refreshed — something may be running
                 // — but the sheet stays up, because it is the only place that
@@ -280,6 +315,18 @@ struct NewAgentForm: View {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
         keychainReach: .detached
+    ))
+}
+
+/// **Started, and stopped at a dialog — the common case for a workspace the
+/// phone just made.** herdr answers `agent_not_ready` in about four seconds and
+/// the agent is there, named, waiting on Claude Code's workspace-trust prompt.
+/// This used to be reported in red as a failure with the Start button armed,
+/// over an agent that existed; both retries are dead ends.
+#Preview("Waiting at a dialog", traits: .sampleData) {
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+        blocked: "agent reviewer is blocked during startup and is not ready for prompts"
     ))
 }
 
@@ -353,7 +400,7 @@ private struct NewAgentPreview: View {
             )
         }
         .sheet(isPresented: $showing) {
-            NewAgentForm(model: model, peer: .preview, onStarted: {})
+            NewAgentForm(model: model, peer: .preview, onStarted: {}, onAnswer: { _ in })
         }
     }
 }

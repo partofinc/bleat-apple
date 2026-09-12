@@ -590,6 +590,11 @@ The slow one is `timeout`: herdr types the executable into the pane and waits
 for its own detection, so a kind whose binary is missing costs the **full 30
 seconds** and then answers `timed out waiting for agent startup`.
 
+**This table was missing a code, and the omission shipped.** `agent_not_ready`
+is what herdr answers when the agent came up and **stopped at a dialog**, and it
+is not a refusal at all — see **An agent that starts blocked** below. It reached
+a device.
+
 **A timeout is not a refusal, and that is the load-bearing measurement.** Given
 a 3.5s budget against a 4.9s cold `claude` start, herdr timed out — and the pane
 then held a running, detected claude with **`name: null`**, because herdr never
@@ -601,6 +606,68 @@ stopped waiting", and the model reads the host back — the same shape as
 answers: an agent in that pane means it came up late and nameless, an empty pane
 means nothing started and a retry is safe, and a host that cannot be asked is
 genuinely unknown and must **disarm**.
+
+#### An agent that starts blocked (`agent_not_ready`, found on device 12 Sept 2026)
+
+**The common case, not an edge one.** Claude Code shows its workspace-trust
+prompt for any directory it has not seen before — which is every workspace the
+phone has just made — so an agent started there comes up *blocked* nearly every
+time. Reported from a device: *"when you start agent session it might be blocked
+right away by trust folder dialog. UI is blocked in this case but it should not
+be as opening the session screen and switching to terminal mode solves the
+problem."*
+
+Measured in an isolated session against a fresh directory:
+
+| | |
+|---|---|
+| reply | `{"code":"agent_not_ready","message":"agent probe is blocked during startup and is not ready for prompts"}` |
+| exit / elapsed | 1, in **3.9s** — not the 30s timeout |
+| `agent list` afterwards | `name: "probe"`, `launch_pending: true` |
+| retry, same name | `agent_name_taken` |
+| retry, another name | `agent_pane_busy` |
+| the pane | the trust dialog, cursor on **`No, exit`** |
+
+**So herdr returned an error over something that had entirely succeeded**: it
+typed the executable, the agent came up, herdr recorded the name, and then it
+reported a failure because the agent was not ready for *prompts*.
+
+`AgentStart.isRefusalBeforeTyping` asked only "is the code something other than
+`timeout`", so this was classified as a refusal-before-typing — the phone showed
+herdr's sentence in red, which reads as *nothing happened*, and left the Start
+button armed. Both ways forward from there are dead ends, per the table above.
+That is the same bug the `timeout` rule was written to prevent, one code along,
+and the lesson is the one this file already records about that rule: **ask what
+herdr said, not whether it said one particular thing.**
+
+- **It is told apart from `timeout` rather than lumped with it**, because the
+  remedies differ and that is the whole point. A timeout is genuinely
+  *ambiguous* — herdr stopped waiting and may or may not have left an agent — so
+  it is followed by reading the host back. This is not ambiguous: herdr says the
+  agent is blocked during startup and names it, so it is taken at its word and
+  the screen's job is to offer the way to answer it.
+- **`AgentStart.isBlockedDuringStartup` is the test**, and `NewAgentModel.blocked`
+  carries the message. The sheet shows it unstyled — not red, because the agent
+  *is* there — and the confirmation button becomes **"Answer it"** instead of an
+  armed Start that could only fail.
+- **"Answer it" opens the pane, and the push happens from the sheet's
+  `onDismiss`.** SwiftUI will not act on a navigation raised by a view on its way
+  out — the hazard `PeerSettingsFlow` records for a confirmation dialog presented
+  underneath a sheet, where the dialog was simply never seen. So the form asks
+  through a callback, `AgentsView` holds the request, and the route is pushed
+  once the dismissal has finished; the request is cleared as it is taken, or a
+  later dismissal would open a pane nobody asked about.
+- **The list is reloaded before the push**, so backing out of the pane lands on a
+  list that shows the new agent. It sorts to the top by itself — `blocked` is
+  first in the attention order.
+- **This is what `PaneKeyBar` was built for**, and the two features only meet
+  here: answering the dialog needs arrows and Enter in terminal mode, and until
+  the key bar landed there was nothing for this button to open *to*. The trust
+  dialog defaults to `No, exit`, so it still takes a deliberate Down before
+  Enter — which is why the bar is six honest keys and not a Yes/No pair.
+- `AgentStartTests` pins the classification and was **checked against the bug**:
+  with the old one-liner restored, "an agent blocked at a dialog is not a
+  refusal" fails.
 
 **The cause of a timeout is written only in the pane.** herdr's own answer names
 nothing; the pane holds `zsh: command not found: devin`. `AgentStart.diagnosis`

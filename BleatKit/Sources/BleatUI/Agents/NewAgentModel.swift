@@ -43,6 +43,14 @@ final class NewAgentModel {
     /// `failure` because a retry would land on `agent_pane_busy` — over the
     /// agent the user was just told had not started.
     private(set) var warning: String?
+    /// **The agent started and is waiting at a dialog.** Not a failure and not
+    /// an ambiguity: herdr said so in as many words and named the agent, so the
+    /// only thing left is to answer it — which the terminal's key bar can do.
+    ///
+    /// Its own property rather than a `warning`, because the two want different
+    /// buttons: a warning has nothing to offer but "Done", and this has
+    /// somewhere to go.
+    private(set) var blocked: String?
 
     /// Panes with no agent in them, which are the only ones herdr will accept.
     private(set) var available: [Pane] = []
@@ -122,6 +130,7 @@ final class NewAgentModel {
         hasLoadedPanes: Bool = true,
         failure: String? = nil,
         warning: String? = nil,
+        blocked: String? = nil,
         isStarting: Bool = false,
         isAddingPane: Bool = false,
         keychainReach: SecuritySession.Reach = .unknown
@@ -139,6 +148,7 @@ final class NewAgentModel {
         self.hasLoadedPanes = hasLoadedPanes
         self.failure = failure
         self.warning = warning
+        self.blocked = blocked
         self.isStarting = isStarting
         self.isAddingPane = isAddingPane
         self.keychainReach = keychainReach
@@ -150,6 +160,11 @@ final class NewAgentModel {
         /// herdr stopped waiting. Something may be running in the pane; the
         /// screen stays up, because it is the only thing that will say so.
         case warned
+        /// **Started, and waiting at a dialog.** herdr answered
+        /// `agent_not_ready` — the workspace-trust prompt, which a directory
+        /// the agent has never seen always produces. The agent is there and
+        /// named; what is left is answering it, in the pane.
+        case blocked
         /// Nothing was started. Safe to try again.
         case failed
     }
@@ -170,7 +185,8 @@ final class NewAgentModel {
 
     var canStart: Bool {
         AgentName(name) != nil && !takenNames.contains(name)
-            && pane != nil && !isStarting && !isAddingPane && warning == nil
+            && pane != nil && !isStarting && !isAddingPane
+            && warning == nil && blocked == nil
     }
 
     /// Whether another pane can be asked for.
@@ -200,6 +216,7 @@ final class NewAgentModel {
         pane = nil
         failure = nil
         warning = nil
+        blocked = nil
     }
 
     /// Adds a tab to this workspace, and selects the pane it brings.
@@ -335,6 +352,22 @@ final class NewAgentModel {
             return .started
         } catch {
             await connections.handle(error)
+            // **Started, and stopped at a dialog.** Tested before the refusal
+            // rule because it *is* a `HerdrError` and so looked like one — which
+            // is how this shipped: the phone reported herdr's complaint in red,
+            // left the button armed, and the agent was sitting in that pane the
+            // whole time. Both retries are dead ends (`agent_name_taken` for the
+            // same name, `agent_pane_busy` for any other), so the one thing not
+            // to offer is another go.
+            //
+            // Taken at herdr's word rather than read back, unlike a timeout: the
+            // reply names the agent and says it is blocked during startup, and
+            // the list behind this sheet reloads anyway — blocked agents sort
+            // first, so it appears at the top.
+            if AgentStart.isBlockedDuringStartup(error) {
+                blocked = ErrorMessage.failure(of: error).message
+                return .blocked
+            }
             guard AgentStart.isRefusalBeforeTyping(error) else {
                 // **Anything that is not herdr refusing has to be checked.**
                 // This call blocks on the host for up to thirty seconds while

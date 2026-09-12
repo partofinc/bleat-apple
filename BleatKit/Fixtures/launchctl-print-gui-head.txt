@@ -1,0 +1,20 @@
+gui/501 = {
+	type = login
+	handle = 100016
+	active count = 479
+	service count = 478
+	active service count = 265
+	creator = loginwindow[627]
+	creator euid = 0
+	session = Aqua
+	endpoint destination = com.apple.xpc.launchd.domain.user.501
+	auxiliary bootstrapper = com.apple.xpc.otherbsd (complete)
+	security context = {
+		uid = 501
+		asid = 100016
+	}
+
+	bringup time = 74 ms
+	death port = 0x11d03
+
+	environment = {

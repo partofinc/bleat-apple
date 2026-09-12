@@ -1,0 +1,50 @@
+pid/42603 = {
+	type = pid
+	handle = 42603
+	active count = 1
+	on-demand count = 1
+	creator = launchctl[51802]
+	creator euid = 501
+	uniqueid = 42603
+	security context = {
+		uid = 501
+		asid = 100016
+	}
+
+	death port = 0x161c83
+
+	services = {
+	}
+
+	unmanaged processes = {
+	}
+
+	endpoints = {
+	}
+
+	task-special ports = {
+			 0x23903 4       bootstrap  (unknown)
+			  0x2c13 9          access  (unknown)
+	}
+
+	resource coalition = {
+		ID = 2794
+		type = resource
+		state = active
+		active count = 1
+		name = application.com.mitchellh.ghostty.263574274.263574279
+		bundle ID = com.mitchellh.ghostty
+	}
+
+	jetsam coalition = {
+		ID = 2795
+		type = jetsam
+		state = active
+		active count = 1
+		name = application.com.mitchellh.ghostty.263574274.263574279
+		bundle ID = com.mitchellh.ghostty
+	}
+
+
+	properties = 
+}

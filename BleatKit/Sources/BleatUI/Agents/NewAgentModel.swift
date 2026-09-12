@@ -63,6 +63,23 @@ final class NewAgentModel {
     /// CLAUDE.md sets for creating panes.
     private(set) var workspaceDirectory: String?
 
+    /// Whether an agent started here will be able to read the login keychain.
+    ///
+    /// A session whose server was started over SSH — which is every session
+    /// this phone has started — puts its panes in a different macOS audit
+    /// session, and an agent there cannot reach the credentials it signs in
+    /// with. Worth saying *before* the tap: the failure otherwise costs a
+    /// 30-second `agent start`, and the agent that comes up looks healthy while
+    /// being unable to do anything. See `SecuritySession`.
+    ///
+    /// `.unknown` until the host has answered, and the form shows nothing for
+    /// it — a diagnosis nobody asked for must not be guessed at.
+    private(set) var keychainReach: SecuritySession.Reach = .unknown
+
+    /// A pane of this session, used only to ask which audit session its panes
+    /// are in. Any of them answers; see `loadPanes`.
+    private var probePane: String?
+
     private let connections: ConnectionStore?
     private let session: String?
     /// nil means every pane in the session, which is what the agents screen
@@ -106,7 +123,8 @@ final class NewAgentModel {
         failure: String? = nil,
         warning: String? = nil,
         isStarting: Bool = false,
-        isAddingPane: Bool = false
+        isAddingPane: Bool = false,
+        keychainReach: SecuritySession.Reach = .unknown
     ) {
         self.connections = nil
         self.session = nil
@@ -123,6 +141,7 @@ final class NewAgentModel {
         self.warning = warning
         self.isStarting = isStarting
         self.isAddingPane = isAddingPane
+        self.keychainReach = keychainReach
     }
     #endif
 
@@ -253,6 +272,12 @@ final class NewAgentModel {
             // What a new tab would inherit — the workspace's own directory,
             // which its panes are the only record of here.
             workspaceDirectory = mine.compactMap(\.cwd).first
+            // Any pane of this session will do: they are all children of the
+            // one server, so they share its audit session. Deliberately taken
+            // from `mine` rather than `available`, because a session whose
+            // every pane is occupied is exactly when the user is about to add
+            // a tab and start an agent in it.
+            probePane = mine.first?.paneID
             // Picking the only candidate is not a decision the user has to be
             // asked to make; leaving it unselected is a tap for nothing.
             if pane == nil, available.count == 1 { pane = available.first?.paneID }
@@ -264,6 +289,35 @@ final class NewAgentModel {
             // discovery.
             await connections.handle(error)
             failure = ErrorMessage.failure(of: error).message
+        }
+    }
+
+    /// Asks whether this session's panes share the Mac's login session.
+    ///
+    /// Run after `loadPanes` rather than inside it, so the pane list — which is
+    /// what the user came here for — is not held up behind a diagnostic.
+    ///
+    /// **Failures are swallowed, which is the opposite of the rule elsewhere in
+    /// this model, and deliberately.** `loadPanes` runs first and reports a
+    /// dead connection itself, so there is nothing here the user has not
+    /// already been told; and releasing the connection over a *diagnosis* would
+    /// spend the handshake the user's actual next action needs. An unanswered
+    /// probe stays `.unknown`, which shows nothing.
+    func checkKeychainReach(for peer: PairedPeer) async {
+        guard let connections, let target = probePane else { return }
+        do {
+            let client = try await connections.client(for: peer, session: session)
+            guard let pid = try await client.paneProcessInfo(target: target).shellPID,
+                  let command = SecuritySession.command(paneShellPid: pid)
+            else { return }
+            // Plain shell, not a herdr command: this asks launchd about a
+            // process, which has nothing to do with sessions. `shell` leaves
+            // `useSession` alone for exactly that reason.
+            let shell = try await connections.shell(for: peer)
+            let answer = try await shell.run(shell: command)
+            keychainReach = SecuritySession(inOutput: answer).reach
+        } catch {
+            keychainReach = .unknown
         }
     }
 

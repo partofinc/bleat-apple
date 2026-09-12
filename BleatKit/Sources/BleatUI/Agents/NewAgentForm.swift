@@ -23,6 +23,7 @@ struct NewAgentForm: View {
         NavigationStack {
             Form {
                 if let note { outcome(note) }
+                keychainSection
                 paneSection
                 kindSection
                 nameSection
@@ -36,7 +37,12 @@ struct NewAgentForm: View {
                 ToolbarItem(placement: .confirmationAction) { confirm }
             }
         }
-        .task { await model.loadPanes(for: peer) }
+        // Sequential on purpose: the pane list is what the user came for, and
+        // the keychain check is a diagnosis that must not hold it up.
+        .task {
+            await model.loadPanes(for: peer)
+            await model.checkKeychainReach(for: peer)
+        }
         // **Not dismissible while the start is in flight**, for the reason the
         // pairing sheet is not: herdr may take half a minute, and this is the
         // only place the outcome is reported.
@@ -168,6 +174,37 @@ struct NewAgentForm: View {
         }
     }
 
+    /// Said before the tap, because afterwards it costs half a minute and looks
+    /// like success: herdr starts the agent, detects it, reports it — and the
+    /// agent cannot sign in.
+    ///
+    /// **Shown only for `.detached`.** `.unknown` is a host that could not be
+    /// asked, and `.sharedWithLogin` needs no remark; a screen that announced
+    /// either would be noise on every healthy session. The remedy named is the
+    /// one that actually works — a pane *of this session* — because the message
+    /// the agent itself prints ("run in another terminal") sends people to the
+    /// Mac, where it does nothing. See `SecuritySession`.
+    @ViewBuilder
+    private var keychainSection: some View {
+        if model.keychainReach == .detached {
+            Section {
+                Label("Agents here may not be able to sign in", systemImage: "key.slash")
+                    .font(.callout.weight(.medium))
+                Text("This session's panes are in a different macOS security session from the "
+                     + "desktop login — which is what happens when the session is started "
+                     + "remotely — so they cannot read the login keychain. An agent that needs "
+                     + "an account will come up asking you to unlock it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("Unlocking at the Mac will not reach this session. Run "
+                     + "`security unlock-keychain` in one of its own panes, or start the "
+                     + "session at the Mac instead.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     @ViewBuilder
     private func outcome(_ note: (text: String, isProblem: Bool)) -> some View {
         Section {
@@ -232,6 +269,17 @@ struct NewAgentForm: View {
 #Preview("Naming", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples
+    ))
+}
+
+/// **A session the phone started, so its panes cannot reach the keychain.** Not
+/// reachable by pointing the app at a healthy Mac, which is the whole reason it
+/// wants a canvas — and it is the state the user actually hit on a device: the
+/// agent started, looked fine, and reported `Not logged in`.
+#Preview("Cannot sign in", traits: .sampleData) {
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+        keychainReach: .detached
     ))
 }
 

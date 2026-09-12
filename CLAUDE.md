@@ -2976,7 +2976,99 @@ a session started *at the Mac* — `work` — are unaffected.
 So the phone can create a session, add a tab and start an agent, and the agent
 will still need someone at the Mac to unlock the keychain before it can log in.
 Worth knowing before treating "start an agent from the phone" as a finished
-story; nothing in the app can fix it.
+story.
+
+**The last clause of this section used to read "nothing in the app can fix it",
+and that was two claims wearing one coat.** The app cannot *repair* such a
+session — true, and more strongly than the old text knew. It can *diagnose* one,
+which is built; see below.
+
+#### The mechanism, measured 12 Sept 2026
+
+It is the **audit session** (`asid`), not a lock. macOS scopes keychain access to
+it, a process inherits its asid from its parent at spawn, and nothing moves a
+running process into another one. On the dev Mac:
+
+| | asid | |
+|---|---|---|
+| `launchctl print gui/501` | **100016** | `session = Aqua` — the desktop login |
+| `launchctl print user/501` | 100041 | `session = Background`, and it names the other: `gui asid = 100016` |
+| `work`'s server (pid 42463), its pane's shell (42603), the `claude` in that pane (46175) | **100016** | started at the Mac, so its agents sign in fine |
+
+**Continuing the session from the Mac does not help, and that is the part that
+surprises.** Reported from a device: *"even if I continue such session from the
+mac it stays locked."* Attaching a TUI adds a **client** process in the login
+session; the panes are still children of the server in the other one. There is
+nothing to unlock — `security unlock-keychain` acts on the session it is run in,
+so at the Mac it unlocks for a shell nobody is using. The one place it *would*
+work is a pane of that same session, which is what Claude Code's own "run in
+another terminal" means and is not how anyone reads it.
+
+Three ways out, and only the first needs no credentials anywhere:
+
+- **Start the server in the GUI session.** A job bootstrapped into `gui/$UID`
+  runs in the Aqua session — measured: `launchctl bootstrap gui/501 <plist>`
+  exited 0 and the job reported **asid 100016** — so every pane it spawns has
+  the keychain. **Whether an SSH-descended process may target that domain is
+  unverified**, and it is not safe to assume from the other direction:
+  `launchctl bootstrap user/501 <plist>` *from* the Aqua session was refused
+  outright (`5: Input/output error`), while `launchctl print user/501` and
+  `launchctl kickstart user/501/<missing label>` both resolved that same domain.
+  Reading a domain and creating a job in it are different permissions.
+- **Credentials that are not in the keychain.** Claude Code 2.1.269 carries
+  `setup-token`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and
+  `apiKeyHelper`. Prefer `apiKeyHelper`: herdr passes its environment to every
+  pane it spawns, so a token in the server's environment leaks into unrelated
+  shells.
+- **`security unlock-keychain` in a pane of that session**, which the phone can
+  now type. Weakest of the three — it puts the login password across the channel
+  and dies with the server.
+
+#### Bleat says so before the tap (`SecuritySession`)
+
+`SecuritySession` asks the host which audit session a session's panes are in and
+compares it against the GUI login's. `NewAgentModel` runs it after the pane list
+loads and `NewAgentForm` shows a section for `.detached` only. Before the tap,
+because afterwards it costs a 30-second `agent start` and then *looks like
+success* — herdr starts the agent, detects it, reports it, and the agent cannot
+sign in.
+
+- **The pid comes from `pane process-info` → `shell_pid`**, which is always
+  present and is a direct child of the server, so its asid is the one every
+  future pane and agent inherits. Any pane of the session answers; the probe
+  deliberately takes one from *all* panes rather than the free ones, since a
+  session whose every pane is occupied is exactly when a tab is about to be
+  added.
+- **`launchctl print pid/<dead pid>` answers with the caller's own security
+  context**, and this trap is why the probe is not a one-line grep. Measured:
+  `pid/999999` exits cleanly printing `asid = 100016`, distinguished from a live
+  process only by `uniqueid = 0`. Unguarded, a pane whose shell had gone would
+  be reported as sharing whatever session *the probe* ran in — over SSH that is
+  the SSH session, so two detached sessions compare equal and the pane is called
+  fine. The guard is `uniqueid > 0`, taken in the same `awk` pass.
+- **The login asid has two sources, anchored apart.** `gui/<uid>` reports it
+  directly; the Background domain carries it as `gui asid` **beside its own
+  `asid`**, so `/^[[:space:]]*asid = /` must not match `gui asid = ` or the
+  fallback would name the Background session as the login one and every detached
+  session would look healthy. Which source answered is kept as
+  `readLoginDomainDirectly` — the first evidence about whether the first remedy
+  above is even reachable from a session like this.
+- **Both numbers or nothing.** A missing answer is `.unknown` and the form shows
+  *nothing*, the discipline `EndpointDiscovery.Report` sets: telling someone
+  their agents cannot sign in because a command did not run is worse than
+  staying quiet. A host with no `launchctl` — every Linux one — comes back all
+  empty and exits 0, measured.
+- **The command was run verbatim on the host** under both `sh` and `zsh` (sshd
+  runs zsh on a modern macOS), against a live pane shell, a dead pid and a
+  missing `launchctl`, and `SecuritySessionTests` pins the exact string — the
+  rule `SessionLaunch` set. The `launchctl print` output for all four cases is
+  captured in `Fixtures/launchctl-print-*.txt`, and tests pin the field
+  spellings the `awk` depends on: nothing else can, because the `awk` runs on
+  the host and no test executes it.
+- **Failures are swallowed here**, against the rule everywhere else in that
+  model: `loadPanes` runs first and reports a dead connection itself, and
+  releasing the connection over a *diagnosis* would spend the handshake the
+  user's actual next action needs.
 
 ### A pane that stopped repainting, and what was ruled out (10 Sept 2026)
 

@@ -235,6 +235,11 @@ struct PreviewSmokeTests {
                 previewing: "reviewer", pane: "w2:p1",
                 available: Pane.samples, isStarting: true
             ),
+            // The keychain warning, which no healthy host can produce.
+            NewAgentModel(
+                previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+                keychainReach: .detached
+            ),
         ] {
             render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}))
         }

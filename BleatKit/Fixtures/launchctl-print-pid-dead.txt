@@ -1,0 +1,32 @@
+pid/999999 = {
+	type = pid
+	handle = 999999
+	active count = 1
+	on-demand count = 1
+	creator = launchctl[52996]
+	creator euid = 501
+	uniqueid = 0
+	security context = {
+		uid = 501
+		asid = 100016
+	}
+
+	death port = 0x0
+
+	services = {
+	}
+
+	unmanaged processes = {
+	}
+
+	endpoints = {
+	}
+
+	task-special ports = {
+			 0x23903 4       bootstrap  (unknown)
+			  0x2c13 9          access  (unknown)
+	}
+
+
+	properties = slain
+}

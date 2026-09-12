@@ -665,6 +665,24 @@ herdr said, not whether it said one particular thing.**
   the key bar landed there was nothing for this button to open *to*. The trust
   dialog defaults to `No, exit`, so it still takes a deliberate Down before
   Enter — which is why the bar is six honest keys and not a Yes/No pair.
+- **The pane travels with the message, and the type is what enforces it.**
+  `NewAgentModel.Blocked` carries the target, because the pane picker stays
+  interactive in this state — a version that read the *current* selection at tap
+  time sent the user to whichever row they last touched, an unrelated shell,
+  while the note went on claiming an agent was waiting. It also had no branch for
+  a nil selection, which left Start permanently disabled with Cancel the only way
+  out.
+- **`blocked` disarms "Add a pane" as well as Start.** Adding a pane creates a
+  real tab on the user's Mac and then selects it, so while an agent sits at a
+  dialog that would leave a stray tab behind *and* repoint the form at an empty
+  pane, over an agent that still needs answering.
+- **The route carries the mode, so the button lands in the terminal.**
+  `PaneView` defaults to `.chat`, which for an agent that has not got past its
+  trust prompt is an empty transcript — the opposite of what was asked for. So
+  `NavigationRouter.Route.pane` takes a `PaneMode` (defaulted to `.chat`, which
+  keeps every agent row as it was) and `PaneMode` is public for it. The button is
+  labelled **"Open the pane"** rather than "Answer it": it shows the dialog, and
+  answering still needs control, which the note says.
 - `AgentStartTests` pins the classification and was **checked against the bug**:
   with the old one-liner restored, "an agent blocked at a dialog is not a
   refusal" fails.

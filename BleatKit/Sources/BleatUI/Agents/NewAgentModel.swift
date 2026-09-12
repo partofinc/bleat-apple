@@ -50,7 +50,20 @@ final class NewAgentModel {
     /// Its own property rather than a `warning`, because the two want different
     /// buttons: a warning has nothing to offer but "Done", and this has
     /// somewhere to go.
-    private(set) var blocked: String?
+    ///
+    /// **It carries the pane, and that is the point of the type.** An earlier
+    /// version kept only the message and let the button re-read `pane` at tap
+    /// time — but the picker stays interactive in this state, so one tap on
+    /// another row sent the user to an unrelated shell while the note went on
+    /// claiming an agent was waiting. The pane a dialog is in is a fact about
+    /// the attempt that happened, not about what the form currently shows.
+    private(set) var blocked: Blocked?
+
+    struct Blocked: Equatable {
+        let message: String
+        /// The pane the agent came up in, captured when herdr said so.
+        let pane: String
+    }
 
     /// Panes with no agent in them, which are the only ones herdr will accept.
     private(set) var available: [Pane] = []
@@ -113,7 +126,7 @@ final class NewAgentModel {
         hasLoadedPanes: Bool = true,
         failure: String? = nil,
         warning: String? = nil,
-        blocked: String? = nil,
+        blocked: Blocked? = nil,
         isStarting: Bool = false,
         isAddingPane: Bool = false
     ) {
@@ -176,7 +189,14 @@ final class NewAgentModel {
     /// workspace, and the session-wide agents list is not in one — there would
     /// be no honest answer to which workspace the pane should join, and
     /// guessing puts a pane in somebody's project.
-    var canAddPane: Bool { addTo != nil && !isAddingPane && !isStarting && warning == nil }
+    /// **`blocked` disarms this as well as `warning`.** Adding a pane creates a
+    /// real tab in the user's workspace and then selects it, so while an agent
+    /// is sitting at a dialog this would leave a stray tab on their Mac and
+    /// repoint the form at an empty pane — over an agent that still needs
+    /// answering.
+    var canAddPane: Bool {
+        addTo != nil && !isAddingPane && !isStarting && warning == nil && blocked == nil
+    }
 
     /// A failure is about the attempt that produced it; left standing while the
     /// user edits the name it reads as a verdict on the new one.
@@ -311,7 +331,7 @@ final class NewAgentModel {
             // the list behind this sheet reloads anyway — blocked agents sort
             // first, so it appears at the top.
             if AgentStart.isBlockedDuringStartup(error) {
-                blocked = ErrorMessage.failure(of: error).message
+                blocked = Blocked(message: ErrorMessage.failure(of: error).message, pane: target)
                 return .blocked
             }
             guard AgentStart.isRefusalBeforeTyping(error) else {

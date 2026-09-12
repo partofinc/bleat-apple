@@ -177,4 +177,48 @@ struct NewAgentTests {
         #expect(model.available.isEmpty)
         #expect(model.failure == nil)
     }
+
+    /// **A blocked agent disarms Start and "Add a pane" both.** The agent exists
+    /// and needs answering; a retry is `agent_name_taken` or `agent_pane_busy`,
+    /// and adding a pane would leave a stray tab on the user's Mac and repoint
+    /// the form at an empty pane over an agent that still needs an answer.
+    @Test("an agent waiting at a dialog disarms both actions")
+    func blockedDisarmsEverything() {
+        let model = NewAgentModel(
+            previewing: "reviewer", pane: "w2:p1", workspace: "w2",
+            available: Pane.samples,
+            blocked: .init(message: "agent reviewer is blocked during startup", pane: "w2:p1")
+        )
+        #expect(!model.canStart)
+        #expect(!model.canAddPane)
+    }
+
+    /// **The pane travels with the message.** The picker stays interactive in
+    /// this state, so anything reading the *current* selection at tap time sends
+    /// the user to whichever row they last touched — an unrelated shell — while
+    /// the note still says an agent is waiting. Pinned because the type is the
+    /// only thing preventing it.
+    @Test("the blocked pane is the one the agent came up in, not the selection")
+    func blockedCarriesItsOwnPane() {
+        let model = NewAgentModel(
+            previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+            blocked: .init(message: "blocked during startup", pane: "w2:p1")
+        )
+        // The user taps another row in the picker, which is still live.
+        model.pane = "w4:p1"
+        #expect(model.blocked?.pane == "w2:p1")
+    }
+
+    /// Reopening the sheet clears it, like every other settled outcome: the
+    /// model is `@State` on the screen and outlives the sheet.
+    @Test("reopening the sheet clears a blocked agent")
+    func resetClearsBlocked() {
+        let model = NewAgentModel(
+            previewing: "reviewer", pane: "w2:p1",
+            blocked: .init(message: "blocked during startup", pane: "w2:p1")
+        )
+        model.reset()
+        #expect(model.blocked == nil)
+        #expect(model.canAddPane == false || model.addTo != nil)
+    }
 }

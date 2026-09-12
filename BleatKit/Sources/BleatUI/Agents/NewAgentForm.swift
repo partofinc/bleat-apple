@@ -45,6 +45,9 @@ struct NewAgentForm: View {
             }
         }
         .task { await model.loadPanes(for: peer) }
+        // **Not dismissible while the start is in flight**, for the reason the
+        // pairing sheet is not: herdr may take half a minute, and this is the
+        // only place the outcome is reported.
         .interactiveDismissDisabled(model.isStarting)
         .onChange(of: model.name) { _, _ in model.clearFailure() }
     }
@@ -185,12 +188,22 @@ struct NewAgentForm: View {
     private var confirm: some View {
         if model.isStarting {
             ProgressView()
-        } else if model.blocked != nil, let pane = model.pane {
+        } else if let blocked = model.blocked {
             // **The agent is up and waiting at a dialog, so the useful action is
             // going there — not trying again.** Answering needs the terminal's
             // key bar, which means the pane screen; the user found that route by
             // hand, and this is it made into a button.
-            Button("Answer it") { answer(pane) }
+            //
+            // **The pane comes from `blocked`, never from `model.pane`.** The
+            // picker is still live in this state, so reading the selection at tap
+            // time sent the user to whichever row they last touched — and there
+            // was no branch left for `pane == nil`, which left Start disabled
+            // forever with Cancel the only way out.
+            //
+            // Labelled for what it does rather than what the user wants: it
+            // opens the pane in terminal mode, and answering still needs control
+            // of it, which the note explains.
+            Button("Open the pane") { answer(blocked.pane) }
         } else if model.warning != nil {
             // Something may be running in that pane. Starting again would land
             // on `agent_pane_busy`, over the agent the user was told had not
@@ -210,7 +223,11 @@ struct NewAgentForm: View {
         // Red would read as "nothing happened", which is what this screen used
         // to say about it.
         if let blocked = model.blocked {
-            return (blocked + "\n\nOpen the pane and switch to terminal mode to answer it.", false)
+            return (
+                blocked.message
+                    + "\n\nOpening the pane shows the dialog. Take control to answer it.",
+                false
+            )
         }
         // Not red: something may well be running whether or not the user likes
         // it. Red would read as "nothing happened".
@@ -224,11 +241,15 @@ struct NewAgentForm: View {
         pane.foregroundCwd ?? pane.cwd ?? pane.paneID
     }
 
-    /// Refreshes the list, asks for the pane, and gets out of the way. In that
-    /// order: the blocked agent has to be in the list before the pane screen
-    /// pushes over it, or backing out lands on a list that does not show it.
+    /// Asks for the pane and gets out of the way.
+    ///
+    /// **No reload here, and the comment that used to claim one was wrong twice
+    /// over.** `start()` already called `onStarted()` on the `.blocked` path, so
+    /// this was a second `agent list` round trip; and it claimed to sequence the
+    /// reload ahead of the push, which it never could — `onStarted` hands the
+    /// load to an unawaited `Task`. The list is reloaded once, when the outcome
+    /// arrives, and it settles while the user is reading the note.
     private func answer(_ pane: String) {
-        onStarted()
         onAnswer(pane)
         dismiss()
     }
@@ -264,6 +285,21 @@ struct NewAgentForm: View {
 #Preview("Naming", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", pane: "w2:p1", available: Pane.samples
+    ))
+}
+
+/// **Started, and stopped at a dialog — the common case for a workspace the
+/// phone just made.** herdr answers `agent_not_ready` in about four seconds and
+/// the agent is there, named, waiting on Claude Code's workspace-trust prompt.
+/// This used to be reported in red as a failure with Start armed over an agent
+/// that existed; both retries are dead ends.
+#Preview("Waiting at a dialog", traits: .sampleData) {
+    NewAgentPreview(model: NewAgentModel(
+        previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
+        blocked: .init(
+            message: "agent reviewer is blocked during startup and is not ready for prompts",
+            pane: "w2:p1"
+        )
     ))
 }
 

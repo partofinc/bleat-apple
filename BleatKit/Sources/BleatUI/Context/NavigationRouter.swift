@@ -30,7 +30,16 @@ public final class NavigationRouter {
         // explicit that they are not for display — and the label is in hand at
         // the moment the route is made.
         case agents(peer: String, session: String?, workspace: String?, label: String)
-        case pane(peer: String, session: String?, target: String, title: String)
+        /// `mode` is the reading the pane opens in. It is part of the route
+        /// rather than a default inside the screen because the two entrances want
+        /// different ones: an agent row opens the chat, which is the reading that
+        /// reflows to a phone, while "Open the pane" on a blocked agent has to
+        /// show the dialog — and a transcript is exactly what that user does not
+        /// need. It is part of the route's identity, which is correct: the same
+        /// pane opened two ways is two screens.
+        case pane(
+            peer: String, session: String?, target: String, title: String, mode: PaneMode = .chat
+        )
     }
 
     public func push(_ route: Route) { path.append(route) }

@@ -239,7 +239,10 @@ struct PreviewSmokeTests {
             // replaces an armed Start that could only have failed.
             NewAgentModel(
                 previewing: "reviewer", pane: "w2:p1", available: Pane.samples,
-                blocked: "agent reviewer is blocked during startup and is not ready for prompts"
+                blocked: .init(
+                    message: "agent reviewer is blocked during startup and is not ready for prompts",
+                    pane: "w2:p1"
+                )
             ),
         ] {
             render(context, NewAgentForm(model: model, peer: .preview, onStarted: {}, onAnswer: { _ in }))

@@ -99,8 +99,13 @@ struct AgentsView: View {
         .sheet(isPresented: $isStarting, onDismiss: {
             guard let target = paneToAnswer else { return }
             paneToAnswer = nil
+            // **Terminal, not chat.** The button that asked for this said it
+            // opens the pane so the dialog can be answered, and a transcript —
+            // most likely an empty one, for an agent that has not got past its
+            // trust prompt — is the opposite of that.
             context.navigation.push(.pane(
-                peer: peer.hostKey, session: session, target: target, title: target
+                peer: peer.hostKey, session: session, target: target, title: target,
+                mode: .terminal
             ))
         }) {
             NewAgentForm(

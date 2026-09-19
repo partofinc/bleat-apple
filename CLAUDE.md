@@ -869,18 +869,40 @@ What the port needed, each found by the compiler rather than by reading:
   a `canImport(Musl)` arm — `canImport(Glibc)` is false there.
 - **`Date.RelativeFormatStyle`, not `RelativeDateTimeFormatter`**, which Linux
   Foundation does not have.
-- **No QR on Linux yet.** `QRCodeGenerator.matrix` returns nil there and
-  `bleat pair` takes its existing "no generator" branch: it prints the
-  `bleat://pair?d=…` link with the scrollback warning, and the phone's paste
-  field redeems it. A vendored encoder or a dependency is still the open choice;
-  `QRMatrix` and the renderer are already portable.
-- **The mDNS name comes from the hostname, and only while avahi runs** —
-  `/run/avahi-daemon/pid` is the test, since without avahi `<name>.local`
-  resolves to nothing and costs a race slot.
+- **QR on Linux comes from `QREncoder`**, a port of Nayuki's MIT reference
+  encoder in `BleatProcess` — byte mode only, level chosen by the caller and
+  never boosted. macOS keeps `CIQRCodeGenerator`; the encoder compiles there
+  anyway, with no platform branch, so `QREncoderTests` can hold it against
+  CoreImage. It is not in the iOS app, which never links `BleatProcess`.
+  - **Identical to CoreImage module for module**, for all 40 versions at all
+    four levels, once CoreImage's mask is forced — read out of its format bits.
+    Breaking the Reed–Solomon polynomial fails all 160.
+  - **The mask choice differs about a third of the time, and that is fine.**
+    Any of the eight is valid; the penalty rules only rank them, and encoders
+    differ on the finder-like rule. This one's choice is checked by decoding.
+  - **CoreImage segments; this does not.** On a real pairing URL CoreImage's
+    first byte segment declares 80 of 201 bytes and then switches mode inside
+    the base64. Byte mode throughout is valid and, measured on the Pi's payload
+    and the seven-endpoint worst case, costs no version — which is what would
+    cost terminal rows.
+- **The mDNS name is asked of avahi, never assumed from the hostname** —
+  `busctl --system call org.freedesktop.Avahi / org.freedesktop.Avahi.Server
+  GetHostName`, which answers `s "adam"`. Avahi renames on a collision (two
+  Pis on the stock `raspberrypi` become `raspberrypi-2`) and `host-name=` can
+  override it; the hostname would put the *other* machine's name in the QR,
+  which surfaces as a host key mismatch. `busctl` ships with systemd, and the
+  call fails when avahi is not running — exactly when there is no name — but
+  **only with `--auto-start=no`**: otherwise the bus activates a stopped-but-
+  enabled avahi to answer, and pairing restarts a daemon the user stopped.
+- **`tailscale` is looked for in `/usr/bin` too**, where Linux packages put
+  it — in both `HostInspector.tailscalePaths` and the phone's
+  `EndpointDiscovery.tailscaleStatusCommand`, which must stay in step.
 - **Interface addresses need no new parser.** net-tools `ifconfig` lives at
   `/sbin/ifconfig` (off a non-login `PATH`, which is why `command -v` misses it)
   and `InterfaceAddresses` reads its layout — pinned by
-  `Fixtures/ifconfig-linux-docker.txt`. Two gaps remain: net-tools does not mark
+  `Fixtures/ifconfig-linux-docker.txt`. **Interface names may contain `-` and
+  `_`** (`br-8f2a…`, `wg-home`); the parser used to reject them as headers and
+  credit their addresses to the interface before. Two gaps remain: net-tools does not mark
   RFC 4941 `temporary` or `deprecated` addresses, so a host using privacy
   addresses would offer them; and a host without net-tools yields no addresses
   (`ip addr` is not read), leaving the mDNS name and `--endpoint`.
@@ -1254,9 +1276,8 @@ first thing to run when pairing misbehaves.
 
 ### Displaying the QR
 
-`CIQRCodeGenerator` on macOS; Linux is still deliberately undecided, and only
-the generator would change — `QRMatrix` and its renderer are in `BleatKit` and
-are already portable.
+`CIQRCodeGenerator` on macOS and `QREncoder` on Linux (see **The console tool
+builds for Linux**). `QRMatrix` and its renderer are in `BleatKit` and shared.
 
 - **Draw on the alternate screen** (`\e[?1049h`), never the normal one. A QR on
   the normal screen stays in scrollback, which iTerm2 persists to disk and tmux

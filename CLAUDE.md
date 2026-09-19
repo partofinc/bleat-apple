@@ -897,6 +897,22 @@ What the port needed, each found by the compiler rather than by reading:
 - **`tailscale` is looked for in `/usr/bin` too**, where Linux packages put
   it — in both `HostInspector.tailscalePaths` and the phone's
   `EndpointDiscovery.tailscaleStatusCommand`, which must stay in step.
+- **Tailscale on a Linux host works without a re-pair — verified on device,
+  19 Sept 2026**, from an iPhone on cellular with Wi-Fi off. The Pi was paired
+  *before* Tailscale was installed on it, so its QR carried no overlay
+  endpoint; the phone's refresh on reconnect found them. `/sbin/ifconfig`
+  gave `tailscale0`'s `100.112.148.125` and `fd7a:115c:a1e0::d82a:947e`, both
+  classified `overlay`, and `/usr/bin/tailscale` the MagicDNS name
+  `adam.tail2a3bab.ts.net`. This is the first time the refresh was confirmed
+  against a Linux host, and it only worked because both probes use absolute
+  paths that exist there.
+  - **The mDNS probe is the one the refresh cannot run on Linux.** It is
+    `scutil`, which a Linux host lacks, so it prints nothing — and
+    `EndpointDiscovery.report` reads empty output as *no answer*, not as "no
+    name", precisely so an absent tool cannot prune. `adam.local` came from
+    the QR and stays: never pruned, never updated. A renamed avahi host keeps
+    its old name on the phone until a re-pair, which is the case for asking
+    avahi here as `HostInspector` does.
 - **Interface addresses need no new parser.** net-tools `ifconfig` lives at
   `/sbin/ifconfig` (off a non-login `PATH`, which is why `command -v` misses it)
   and `InterfaceAddresses` reads its layout — pinned by

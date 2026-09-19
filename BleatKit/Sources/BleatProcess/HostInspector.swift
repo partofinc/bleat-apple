@@ -148,10 +148,13 @@ public struct HostInspector: Sendable {
     ///
     /// `busctl` ships with systemd, so this needs nothing installed, and the
     /// call fails when avahi is not running — which is exactly when there is no
-    /// `.local` name to offer.
+    /// `.local` name to offer. **`--auto-start=no` is what makes that true.**
+    /// Without it the bus *activates* avahi to answer, since an enabled unit
+    /// installs an activation file: pairing would restart a daemon the user had
+    /// stopped, and put a name in the QR that dies at the next reboot.
     func avahiHostName() -> String? {
         let output = run("/usr/bin/busctl", [
-            "--system", "call", "org.freedesktop.Avahi", "/",
+            "--system", "--auto-start=no", "call", "org.freedesktop.Avahi", "/",
             "org.freedesktop.Avahi.Server", "GetHostName",
         ], timeout: 5)
         return output.flatMap(Self.avahiHostName(busctlOutput:))

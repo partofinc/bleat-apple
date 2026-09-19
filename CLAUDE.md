@@ -891,7 +891,9 @@ What the port needed, each found by the compiler rather than by reading:
   Pis on the stock `raspberrypi` become `raspberrypi-2`) and `host-name=` can
   override it; the hostname would put the *other* machine's name in the QR,
   which surfaces as a host key mismatch. `busctl` ships with systemd, and the
-  call fails when avahi is not running — exactly when there is no name.
+  call fails when avahi is not running — exactly when there is no name — but
+  **only with `--auto-start=no`**: otherwise the bus activates a stopped-but-
+  enabled avahi to answer, and pairing restarts a daemon the user stopped.
 - **`tailscale` is looked for in `/usr/bin` too**, where Linux packages put
   it — in both `HostInspector.tailscalePaths` and the phone's
   `EndpointDiscovery.tailscaleStatusCommand`, which must stay in step.

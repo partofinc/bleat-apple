@@ -1,4 +1,4 @@
-#if os(macOS)   // see main.swift: the console tool is macOS-only
+#if !os(iOS)   // see main.swift: the console tool runs on macOS and Linux
 import BleatKit
 import BleatProcess
 import Foundation

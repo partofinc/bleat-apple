@@ -1,4 +1,4 @@
-#if os(macOS)
+#if !os(iOS)
 import BleatKit
 import Foundation
 
@@ -107,7 +107,8 @@ public struct HostInspector: Sendable {
         // shape `bleat pair` would never have produced.
         var endpoints = EndpointDiscovery.endpoints(
             from: EndpointDiscovery.Outputs(
-                localHostName: trimmedOutput("/usr/sbin/scutil", ["--get", "LocalHostName"]),
+                localHostName: trimmedOutput("/usr/sbin/scutil", ["--get", "LocalHostName"])
+                    ?? avahiHostName(),
                 ifconfig: run("/sbin/ifconfig", []),
                 tailscaleStatusJSON: tailscaleStatusJSON()
             ),
@@ -122,12 +123,31 @@ public struct HostInspector: Sendable {
         }
 
         return Report(
-            name: trimmedOutput("/usr/sbin/scutil", ["--get", "ComputerName"]) ?? NSUserName(),
+            name: trimmedOutput("/usr/sbin/scutil", ["--get", "ComputerName"])
+                ?? shortHostName() ?? NSUserName(),
             username: NSUserName(),
             endpoints: endpoints,
             hostKey: hostKey.openSSHForm,
             herdrPath: herdrPath
         )
+    }
+
+    /// The name avahi publishes as `<name>.local`, on a Linux host running it.
+    ///
+    /// `scutil` is macOS's answer; this is the one a Raspberry Pi gives. Avahi
+    /// advertises the short hostname by default, and it is taken **only while
+    /// avahi is running** — its pid file is the test — because otherwise the
+    /// `.local` name resolves to nothing and every race spends a slot on it.
+    func avahiHostName() -> String? {
+        guard FileManager.default.fileExists(atPath: "/run/avahi-daemon/pid") else { return nil }
+        return shortHostName()
+    }
+
+    /// `adam`, not `adam.lan`: the first label of the host's own name.
+    func shortHostName() -> String? {
+        let name = ProcessInfo.processInfo.hostName
+        let short = name.split(separator: ".").first.map(String.init) ?? name
+        return short.isEmpty || short == "localhost" ? nil : short
     }
 
     /// Finds `herdr` through a **login** shell.
@@ -215,11 +235,5 @@ public struct HostInspector: Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-
-#elseif os(Linux)
-
-// Linux port pending: endpoint enumeration reads `ip addr` rather than
-// `ifconfig`, and the host key path is the same. Deliberately empty rather than
-// stubbed.
 
 #endif

@@ -1,4 +1,8 @@
-import Crypto
+// `@preconcurrency` for Linux. On Apple platforms `Crypto` re-exports CryptoKit,
+// whose `Curve25519.Signing.PrivateKey` is `Sendable`; swift-crypto's own
+// implementation — what Linux gets — does not say so (3.15.1), though the key is
+// an immutable value. Without this the console tool cannot build for Linux.
+@preconcurrency import Crypto
 import Foundation
 
 /// An ed25519 key the app owns.

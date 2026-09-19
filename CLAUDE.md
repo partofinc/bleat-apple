@@ -815,7 +815,7 @@ BleatKit/                   # the local Swift package
       Agents/               # agents in a workspace, blocked first
       Views/                # screens
       Previews/             # #if DEBUG sample data for #Preview only
-    BleatProcess/           # macOS-only: LocalProcessTransport, spawns `herdr`
+    BleatProcess/           # macOS and Linux: LocalProcessTransport, spawns `herdr`
     bleat/                  # executable target, macOS console tool
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
   Tests/BleatUITests/       # lays views out for real; needs a simulator
@@ -835,16 +835,62 @@ target, and the iOS app simply does not link it. Verify with
 `-scheme BleatKit-Package` to compile every target at once, which is the check
 that actually catches a target the app would break on.
 
-**Linux is a planned host platform for the console tool.** The `#if os(macOS)`
-guards on `bleat` and `BleatProcess` exist to keep them off *iOS*, not because
-they need macOS; `#if !os(iOS)` is what opens Linux. Exactly two leaves are
-Apple-only and both carry an empty `#else` guard so the shape is already in
-place: `bleat/Attach.swift` (`import Darwin` for SIGWINCH/termios, needs
-`Glibc`) and `Keys/KeychainKeyStore.swift` (`import Security`, referenced only
-by `BleatUI` and never by the tool). `HostRegistry` and `KnownHostsStore`
-already persist to `~/.bleat/`, so the file-based storage a Linux host needs is
-written. QR generation is the open item: `CIQRCodeGenerator` is free on Apple
-platforms and has no Linux equivalent.
+**The console tool builds for Linux (19 Sept 2026)**, verified on a Raspberry
+Pi CM5 (Debian 13, aarch64): `bleat inspect` found herdr, the host key and the
+addresses, and `bleat keys list` read `authorized_keys`. The guards on `bleat`
+and `BleatProcess` are `#if !os(iOS)` — they exist to keep the targets off iOS,
+not because anything needs macOS.
+
+**Build it on the Mac as one static binary; install nothing on the host.**
+
+```sh
+swiftly use 6.4.0      # the swift.org toolchain — Xcode's cannot use a Swift SDK
+swift sdk install https://download.swift.org/swift-6.4.0-release/static-sdk/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
+    --checksum 47d2fd89eebfdf9eb4d536b6710414297f755c17926cdebc4742c08982b40a9e
+cd BleatKit && ~/.swiftly/bin/swift build -c release --product bleat \
+    --swift-sdk aarch64-swift-linux-musl --scratch-path <scratch> -Xswiftc -gnone -Xlinker -s
+```
+
+The SDK version must match the compiler exactly, and its URL spells the version
+`6.4.0` — the `6.4` form 404s. The result is statically linked, stripped, 59 MB
+(mostly Foundation's ICU data), and runs on any aarch64 Linux. `scp` it to
+`~/.local/bin/bleat`. Apple's `container` CLI is no route here: fetching its VM
+init image from ghcr.io reads the login keychain, which is locked in an SSH
+session.
+
+What the port needed, each found by the compiler rather than by reading:
+
+- **`@preconcurrency import Crypto` in `SSHKeyPair`.** On Apple platforms `Crypto`
+  re-exports CryptoKit, whose `Curve25519.Signing.PrivateKey` is `Sendable`;
+  swift-crypto's own implementation (3.15.1), which Linux gets, does not say so.
+- **`TerminalWindow` holds the one `ioctl`.** It is variadic in C, so each libc
+  imports a different signature; musl wants the request as `UInt`, the branch
+  swift-argument-parser also carries. The static SDK is **musl**, so imports need
+  a `canImport(Musl)` arm — `canImport(Glibc)` is false there.
+- **`Date.RelativeFormatStyle`, not `RelativeDateTimeFormatter`**, which Linux
+  Foundation does not have.
+- **No QR on Linux yet.** `QRCodeGenerator.matrix` returns nil there and
+  `bleat pair` takes its existing "no generator" branch: it prints the
+  `bleat://pair?d=…` link with the scrollback warning, and the phone's paste
+  field redeems it. A vendored encoder or a dependency is still the open choice;
+  `QRMatrix` and the renderer are already portable.
+- **The mDNS name comes from the hostname, and only while avahi runs** —
+  `/run/avahi-daemon/pid` is the test, since without avahi `<name>.local`
+  resolves to nothing and costs a race slot.
+- **Interface addresses need no new parser.** net-tools `ifconfig` lives at
+  `/sbin/ifconfig` (off a non-login `PATH`, which is why `command -v` misses it)
+  and `InterfaceAddresses` reads its layout — pinned by
+  `Fixtures/ifconfig-linux-docker.txt`. Two gaps remain: net-tools does not mark
+  RFC 4941 `temporary` or `deprecated` addresses, so a host using privacy
+  addresses would offer them; and a host without net-tools yields no addresses
+  (`ip addr` is not read), leaving the mDNS name and `--endpoint`.
+- **Container bridges are ignored.** `docker0` holds `172.17.0.1` and is filtered
+  by the flag check only while no container runs; once one does it is `RUNNING`
+  and would be offered. `docker`, `br-`, `veth` and `virbr` joined the ignored
+  prefixes — the same hazard as Parallels' `bridge100`.
+
+`Keys/KeychainKeyStore.swift` stays Apple-only; the tool never references it.
+`HostRegistry` and `KnownHostsStore` persist to `~/.bleat/`, which works as is.
 
 **`BleatKit` stays free of SwiftUI**; shared views live in `BleatUI`. (Phase 1's
 note said "outside this package" — that predates the package having more than

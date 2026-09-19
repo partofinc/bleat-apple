@@ -22,7 +22,17 @@ public enum InterfaceAddresses {
     /// worse — if its own LAN overlaps that range it reaches an unrelated
     /// device and fails host key verification instead of merely failing to
     /// connect, which reads as a security warning rather than a bad address.
-    static let ignoredPrefixes = ["bridge", "vmnet", "vnic", "vboxnet"]
+    ///
+    /// A Linux host has the same hazard from containers: `docker0` holds
+    /// `172.17.0.1`, and it is filtered by the flag check only while no
+    /// container runs — the moment one starts it is `RUNNING` and would be
+    /// offered. `br-` is a Docker user network, `veth` a container's end of a
+    /// pair, `virbr` libvirt's NAT bridge. Measured on a Raspberry Pi, 19 Sept
+    /// 2026; `Fixtures/ifconfig-linux-docker.txt` is its output.
+    static let ignoredPrefixes = [
+        "bridge", "vmnet", "vnic", "vboxnet",
+        "docker", "br-", "veth", "virbr",
+    ]
 
     /// Every address worth offering as an endpoint, in the order `ifconfig`
     /// listed them.

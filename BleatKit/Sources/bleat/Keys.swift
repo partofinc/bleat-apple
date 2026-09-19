@@ -1,4 +1,4 @@
-#if os(macOS)   // see main.swift: the console tool is macOS-only
+#if !os(iOS)   // see main.swift: the console tool runs on macOS and Linux
 import BleatKit
 import Foundation
 
@@ -123,9 +123,9 @@ enum Keys {
 
     static func relative(_ date: Date?) -> String {
         guard let date else { return "at an unreadable time" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: Date())
+        // The format style rather than `RelativeDateTimeFormatter`, which
+        // Foundation on Linux does not have. Same output: "in 4 minutes".
+        return date.formatted(.relative(presentation: .numeric, unitsStyle: .wide))
     }
 
     // MARK: - revoke

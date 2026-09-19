@@ -159,6 +159,31 @@ struct InterfaceAddressesTests {
         #expect(InterfaceAddresses.endpoints(ifconfigOutput: output).map(\.host) == ["192.168.11.54"])
     }
 
+    /// Linux's net-tools `ifconfig` has another layout — two spaces before
+    /// `mtu`, `inet6 <addr>  prefixlen 64` rather than `inet6 <addr>%scope` —
+    /// and the parser reads it. Captured on a Raspberry Pi running Debian.
+    @Test("a Linux host's ifconfig yields its LAN and global addresses")
+    func readsLinuxIfconfig() throws {
+        let text = try #require(String(data: Fixture.data("ifconfig-linux-docker.txt"), encoding: .utf8))
+        #expect(InterfaceAddresses.endpoints(ifconfigOutput: text).map(\.host) == [
+            "192.168.11.67", "2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c",
+        ])
+    }
+
+    /// In the capture `docker0` is not `RUNNING`, because no container was.
+    /// Starting one flips that, and without the prefix rule `172.17.0.1` would
+    /// be offered to the phone. The flags are the capture's own `wlan0` ones.
+    @Test("docker0 contributes nothing even while a container runs")
+    func skipsDockerBridge() throws {
+        let text = try #require(String(data: Fixture.data("ifconfig-linux-docker.txt"), encoding: .utf8))
+        let running = text.replacingOccurrences(
+            of: "docker0: flags=4099<UP,BROADCAST,MULTICAST>",
+            with: "docker0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>"
+        )
+        #expect(running != text)
+        #expect(!InterfaceAddresses.endpoints(ifconfigOutput: running).map(\.host).contains("172.17.0.1"))
+    }
+
     /// A down interface still prints its last address. Without the flag check a
     /// disconnected Ethernet port contributes a stale endpoint that the phone
     /// patiently times out on.

@@ -1,9 +1,9 @@
-// The `bleat` console tool is macOS-only: it drives a real terminal (termios
-// raw mode, SIGWINCH) and spawns `herdr` as a child process. SwiftPM cannot
-// gate a target by platform, and a whole-package iOS build compiles every
-// target, so the guard is how this target states what it already is. The `#if`
+// The `bleat` console tool runs on macOS and Linux, never iOS: it drives a real
+// terminal (termios raw mode, SIGWINCH) and spawns `herdr` as a child process.
+// SwiftPM cannot gate a target by platform, and a whole-package iOS build
+// compiles every target, so the guard is how this target states what it is. The `#if`
 // ban in CLAUDE.md is about BleatKit, which exists to be platform-free.
-#if os(macOS)
+#if !os(iOS)
 import BleatKit
 import BleatProcess
 import Foundation

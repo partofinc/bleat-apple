@@ -1,6 +1,12 @@
-#if os(macOS)   // see main.swift: the console tool is macOS-only
+#if !os(iOS)   // see main.swift: the console tool runs on macOS and Linux
 import BleatKit
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 import Foundation
 
 /// Draws the pairing QR on the terminal's alternate screen.
@@ -25,8 +31,7 @@ enum PairScreen {
     static var isInteractive: Bool { isatty(STDOUT_FILENO) == 1 }
 
     static func size() -> (columns: Int, rows: Int)? {
-        var window = winsize()
-        guard ioctl(STDOUT_FILENO, TIOCGWINSZ, &window) == 0,
+        guard let window = TerminalWindow.size(),
               window.ws_col > 0, window.ws_row > 0
         else { return nil }
         return (Int(window.ws_col), Int(window.ws_row))

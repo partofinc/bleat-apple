@@ -1,4 +1,4 @@
-#if os(macOS)   // see main.swift: the console tool is macOS-only
+#if !os(iOS)   // see main.swift: the console tool runs on macOS and Linux
 /// Something the tool cannot do, phrased for the person who typed the command.
 ///
 /// A message rather than a case per cause: these are printed and never

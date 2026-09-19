@@ -1,6 +1,12 @@
-#if os(macOS)   // see main.swift: the console tool is macOS-only
+#if !os(iOS)   // see main.swift: the console tool runs on macOS and Linux
 import BleatKit
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 import Foundation
 
 /// The Phase 1 renderer: hand the host's ANSI straight to a real terminal.
@@ -103,8 +109,7 @@ enum Attach {
     // MARK: - Terminal
 
     private static func terminalSize() -> (cols: Int, rows: Int)? {
-        var size = winsize()
-        guard ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0, size.ws_col > 0 else { return nil }
+        guard let size = TerminalWindow.size(), size.ws_col > 0 else { return nil }
         return (Int(size.ws_col), Int(size.ws_row))
     }
 
@@ -125,12 +130,5 @@ enum Attach {
         }
     }
 }
-
-#elseif os(Linux)
-
-// Linux port pending. `Attach` needs `Glibc` rather than `Darwin` for termios
-// and SIGWINCH; the rest of the file is portable. Deliberately empty rather
-// than stubbed — a stub that compiles but does nothing would let a Linux build
-// appear to succeed while `attach` silently did nothing.
 
 #endif

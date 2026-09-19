@@ -78,9 +78,18 @@ public enum QRCodeGenerator {
 }
 
 #elseif os(Linux)
+import BleatKit
 
-// Linux port pending, and the approach is deliberately undecided: CoreImage has
-// no equivalent, so this is either a vendored encoder or a dependency. The
-// renderer in BleatKit is already portable and will not need changing.
+/// No generator on Linux yet, and saying so is the whole implementation.
+///
+/// CoreImage has no equivalent there, and the choice between a vendored encoder
+/// and a dependency is still deliberately open (see CLAUDE.md). Returning nil
+/// is not a stub that pretends: `bleat pair` already has a branch for "no
+/// generator" — it prints the `bleat://pair?d=…` link, with the scrollback
+/// warning, and the phone's paste field redeems it exactly as it would a scan.
+/// The renderer in BleatKit is portable and will not need changing.
+public enum QRCodeGenerator {
+    public static func matrix(for text: String, quietZone: Int = 3) -> QRMatrix? { nil }
+}
 
 #endif

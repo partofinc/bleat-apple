@@ -5,9 +5,9 @@ import Foundation
 
 /// Turns text into a `QRMatrix` with CoreImage.
 ///
-/// macOS only: `CIQRCodeGenerator` has no Linux equivalent, and choosing what
-/// to do there is deliberately still open (see CLAUDE.md). Everything past the
-/// matrix — padding, half-block rendering — lives in `BleatKit` and is shared.
+/// macOS only: Linux has no CoreImage and uses `QREncoder` (below). Everything
+/// past the matrix — padding, half-block rendering — lives in `BleatKit` and is
+/// shared.
 public enum QRCodeGenerator {
 
     /// Error correction level.
@@ -80,16 +80,22 @@ public enum QRCodeGenerator {
 #elseif os(Linux)
 import BleatKit
 
-/// No generator on Linux yet, and saying so is the whole implementation.
+/// Turns text into a `QRMatrix` with `QREncoder`, since CoreImage is not here.
 ///
-/// CoreImage has no equivalent there, and the choice between a vendored encoder
-/// and a dependency is still deliberately open (see CLAUDE.md). Returning nil
-/// is not a stub that pretends: `bleat pair` already has a branch for "no
-/// generator" — it prints the `bleat://pair?d=…` link, with the scrollback
-/// warning, and the phone's paste field redeems it exactly as it would a scan.
-/// The renderer in BleatKit is portable and will not need changing.
+/// Same signature and the same meaning of `quietZone` as the CoreImage path —
+/// *extra* modules on top of the one `CIQRCodeGenerator` emits — so `bleat
+/// pair`'s fit arithmetic is identical on both platforms. `QREncoder` draws no
+/// border, hence the `+ 1`.
 public enum QRCodeGenerator {
-    public static func matrix(for text: String, quietZone: Int = 3) -> QRMatrix? { nil }
+    public typealias Correction = QREncoder.Correction
+
+    public static func matrix(
+        for text: String,
+        correction: Correction = .low,
+        quietZone: Int = 3
+    ) -> QRMatrix? {
+        QREncoder.matrix(for: text, correction: correction)?.padded(quietZone: quietZone + 1)
+    }
 }
 
 #endif

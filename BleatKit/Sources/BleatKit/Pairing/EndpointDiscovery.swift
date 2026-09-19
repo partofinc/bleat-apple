@@ -237,7 +237,7 @@ public enum EndpointDiscovery {
     public static let tailscaleStatusCommand = """
         exec 2>/dev/null
         t=$(mktemp) || exit 0
-        for p in /usr/local/bin/tailscale /opt/homebrew/bin/tailscale \
+        for p in /usr/bin/tailscale /usr/local/bin/tailscale /opt/homebrew/bin/tailscale \
         /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
           [ -x "$p" ] || continue
           : > "$t"

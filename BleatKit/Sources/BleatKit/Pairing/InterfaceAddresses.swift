@@ -95,11 +95,19 @@ public enum InterfaceAddresses {
 
     /// `en0: flags=8863<…> mtu 1500` — a line starting at column zero with a
     /// name and a colon.
+    ///
+    /// **Dashes and underscores are name characters**, and leaving them out was
+    /// a bug with teeth: Linux names like `br-8f2a1b3c4d5e` (a Docker network)
+    /// or `wg-home` were not recognised as headers at all, so their addresses
+    /// were read as belonging to whichever interface came before — offered to
+    /// the phone whenever that one was up, whatever the ignore list said.
     static func interfaceName(of line: String) -> String? {
         guard let first = line.first, first != " ", first != "\t" else { return nil }
         guard let colon = line.firstIndex(of: ":") else { return nil }
         let name = String(line[line.startIndex..<colon])
-        guard !name.isEmpty, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }) else { return nil }
+        guard !name.isEmpty,
+              name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_" })
+        else { return nil }
         return name
     }
 

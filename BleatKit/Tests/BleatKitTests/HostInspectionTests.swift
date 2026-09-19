@@ -184,6 +184,26 @@ struct InterfaceAddressesTests {
         #expect(!InterfaceAddresses.endpoints(ifconfigOutput: running).map(\.host).contains("172.17.0.1"))
     }
 
+    /// A dashed name has to be read as a header, or its addresses are credited
+    /// to whatever came before. Both blocks follow `wlan0`, which is up, so a
+    /// parser that missed the header would offer both addresses under
+    /// `wlan0`'s flags: the Docker network's despite the ignore list, and the
+    /// down tunnel's despite being down. Header shapes are the capture's own.
+    @Test("dashed interface names are headers, so their addresses stay theirs")
+    func dashedNames() throws {
+        let text = try #require(String(data: Fixture.data("ifconfig-linux-docker.txt"), encoding: .utf8))
+        let extended = text + """
+        br-8f2a1b3c4d5e: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+                inet 172.18.0.1  netmask 255.255.0.0  broadcast 172.18.255.255
+
+        wg-home: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1420
+                inet 10.8.0.2  netmask 255.255.255.0  broadcast 10.8.0.255
+
+        """
+        let hosts = InterfaceAddresses.endpoints(ifconfigOutput: extended).map(\.host)
+        #expect(hosts == ["192.168.11.67", "2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c"])
+    }
+
     /// A down interface still prints its last address. Without the flag check a
     /// disconnected Ethernet port contributes a stale endpoint that the phone
     /// patiently times out on.

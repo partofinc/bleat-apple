@@ -41,8 +41,11 @@ public struct HostInspector: Sendable {
     /// runs as part of pairing, and resolving a tool through a user's `PATH`
     /// is a way to execute something else entirely. The App Store build ships
     /// the CLI inside the bundle; the standalone and Homebrew builds put a
-    /// link in one of the two `bin` directories.
+    /// link in one of the two `bin` directories. Linux packages install it in
+    /// `/usr/bin`. Keep this in step with
+    /// `EndpointDiscovery.tailscaleStatusCommand`.
     static let tailscalePaths = [
+        "/usr/bin/tailscale",
         "/usr/local/bin/tailscale",
         "/opt/homebrew/bin/tailscale",
         "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
@@ -134,13 +137,37 @@ public struct HostInspector: Sendable {
 
     /// The name avahi publishes as `<name>.local`, on a Linux host running it.
     ///
-    /// `scutil` is macOS's answer; this is the one a Raspberry Pi gives. Avahi
-    /// advertises the short hostname by default, and it is taken **only while
-    /// avahi is running** — its pid file is the test — because otherwise the
-    /// `.local` name resolves to nothing and every race spends a slot on it.
+    /// `scutil --get LocalHostName` is macOS's answer; this is the Linux one,
+    /// and it is **asked of avahi, never assumed from the hostname**. Avahi
+    /// renames on a collision — two Pis on the stock `raspberrypi` become
+    /// `raspberrypi` and `raspberrypi-2` — and `host-name=` in its config can
+    /// override it outright. Guessing the hostname would put the *other*
+    /// machine's name in the QR, and `PeerConnector` reports the resulting host
+    /// key mismatch ahead of every other failure: a security warning over a
+    /// name collision.
+    ///
+    /// `busctl` ships with systemd, so this needs nothing installed, and the
+    /// call fails when avahi is not running — which is exactly when there is no
+    /// `.local` name to offer.
     func avahiHostName() -> String? {
-        guard FileManager.default.fileExists(atPath: "/run/avahi-daemon/pid") else { return nil }
-        return shortHostName()
+        let output = run("/usr/bin/busctl", [
+            "--system", "call", "org.freedesktop.Avahi", "/",
+            "org.freedesktop.Avahi.Server", "GetHostName",
+        ], timeout: 5)
+        return output.flatMap(Self.avahiHostName(busctlOutput:))
+    }
+
+    /// Reads `s "adam"`, busctl's rendering of a D-Bus string reply.
+    ///
+    /// Anything else is refused rather than trimmed into shape: this string
+    /// becomes an endpoint the phone dials, and an avahi name is only ever
+    /// letters, digits and dashes.
+    static func avahiHostName(busctlOutput output: String) -> String? {
+        let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("s \""), text.hasSuffix("\""), text.count > 4 else { return nil }
+        let name = String(text.dropFirst(3).dropLast())
+        guard name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { return nil }
+        return name
     }
 
     /// `adam`, not `adam.lan`: the first label of the host's own name.

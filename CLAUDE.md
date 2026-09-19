@@ -885,13 +885,22 @@ What the port needed, each found by the compiler rather than by reading:
     the base64. Byte mode throughout is valid and, measured on the Pi's payload
     and the seven-endpoint worst case, costs no version — which is what would
     cost terminal rows.
-- **The mDNS name comes from the hostname, and only while avahi runs** —
-  `/run/avahi-daemon/pid` is the test, since without avahi `<name>.local`
-  resolves to nothing and costs a race slot.
+- **The mDNS name is asked of avahi, never assumed from the hostname** —
+  `busctl --system call org.freedesktop.Avahi / org.freedesktop.Avahi.Server
+  GetHostName`, which answers `s "adam"`. Avahi renames on a collision (two
+  Pis on the stock `raspberrypi` become `raspberrypi-2`) and `host-name=` can
+  override it; the hostname would put the *other* machine's name in the QR,
+  which surfaces as a host key mismatch. `busctl` ships with systemd, and the
+  call fails when avahi is not running — exactly when there is no name.
+- **`tailscale` is looked for in `/usr/bin` too**, where Linux packages put
+  it — in both `HostInspector.tailscalePaths` and the phone's
+  `EndpointDiscovery.tailscaleStatusCommand`, which must stay in step.
 - **Interface addresses need no new parser.** net-tools `ifconfig` lives at
   `/sbin/ifconfig` (off a non-login `PATH`, which is why `command -v` misses it)
   and `InterfaceAddresses` reads its layout — pinned by
-  `Fixtures/ifconfig-linux-docker.txt`. Two gaps remain: net-tools does not mark
+  `Fixtures/ifconfig-linux-docker.txt`. **Interface names may contain `-` and
+  `_`** (`br-8f2a…`, `wg-home`); the parser used to reject them as headers and
+  credit their addresses to the interface before. Two gaps remain: net-tools does not mark
   RFC 4941 `temporary` or `deprecated` addresses, so a host using privacy
   addresses would offer them; and a host without net-tools yields no addresses
   (`ip addr` is not read), leaving the mDNS name and `--endpoint`.

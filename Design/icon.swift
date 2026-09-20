@@ -1,13 +1,15 @@
 // Renders the Bleat app icon.
 //
-//   swift Design/icon.swift                      # regenerate the app icon in place
-//   swift Design/icon.swift <icons> <extras>     # or say where things go
+//   swift Design/icon.swift                       # regenerate the layers in place
+//   swift Design/icon.swift <layers> <extras>     # or say where they go
 //
-// The mark is pure geometry, so it is generated rather than drawn: the three
-// appearances share one `headPath()`/`caretPath()` and therefore cannot drift
-// from each other. `extras` also receives the two layers on transparency, for
-// rebuilding this in Icon Composer, and a contact sheet at 230/120/83/60/29pt
-// — which is what small sizes have to be judged at.
+// What ships is the two layers, into `App/AppIcon.icon/Assets`: the head with
+// its eyes punched through, and the caret. `icon.json` composes them and iOS
+// derives dark, tinted and clear itself.
+//
+// `extras` gets what is only for looking at — flat renders of the same
+// geometry in the three appearances, and a contact sheet at 230/120/83/60/29pt,
+// which is the size small marks have to be judged at. Nothing there is built.
 
 import Foundation
 import CoreGraphics
@@ -25,7 +27,7 @@ import AppKit
 let S = 1024.0
 let cs = CGColorSpace(name: CGColorSpace.sRGB)!
 let out = CommandLine.arguments.count > 1
-    ? CommandLine.arguments[1] : "App/Assets.xcassets/AppIcon.appiconset"
+    ? CommandLine.arguments[1] : "App/AppIcon.icon/Assets"
 let extras = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : NSTemporaryDirectory()
 
 let k = 1.06
@@ -114,12 +116,10 @@ func icon(_ p: Palette) -> CGContext {
     return c
 }
 
-save(icon(light), "icon-light")
-save(icon(dark), "icon-dark")
-save(icon(tinted), "icon-tinted")
-
-// Layers, for rebuilding this in Icon Composer later: the wool shape with its
-// eyes punched through, and the caret, both on transparency.
+// The layers, on transparency. The eyes are punched right through the wool
+// rather than filled, so the ground shows through them in every appearance the
+// system derives — including the clear ones, where a filled eye would be a
+// flat blob.
 let m = ctx(opaque: false)
 m.addPath(headPath())
 m.setFillColor(C(light.wool))
@@ -127,16 +127,21 @@ m.fillPath()
 m.setBlendMode(.clear)
 m.addPath(eyesPath())
 m.fillPath()
-save(m, "layer-mark", extras)
+save(m, "mark")
 
 let cr = ctx(opaque: false)
 cr.addPath(caretPath())
 cr.setFillColor(C(light.caret))
 cr.fillPath()
-save(cr, "layer-caret", extras)
+save(cr, "caret")
 
-// Contact sheet, on both a light and a dark shelf.
-let names = ["icon-light", "icon-dark", "icon-tinted"]
+// Flat renders of the same geometry, and a contact sheet. For review, and for
+// anywhere that wants one image rather than a composition.
+save(icon(light), "flat-light", extras)
+save(icon(dark), "flat-dark", extras)
+save(icon(tinted), "flat-tinted", extras)
+
+let names = ["flat-light", "flat-dark", "flat-tinted"]
 let labels = ["light", "dark", "tinted (grayscale)"]
 let sizes = [230.0, 120.0, 83.0, 60.0, 29.0]
 let pad = 34.0, labelW = 290.0, rowH = 268.0
@@ -146,7 +151,7 @@ s.setFillColor(CGColor(srgbRed: 0.90, green: 0.90, blue: 0.92, alpha: 1))
 s.fill(CGRect(x: 0, y: 0, width: W, height: H))
 let font = CTFontCreateWithName("SFMono-Semibold" as CFString, 21, nil)
 for (i, n) in names.enumerated() {
-    let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: "\(out)/\(n).png") as CFURL, nil)!
+    let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: "\(extras)/\(n).png") as CFURL, nil)!
     let img = CGImageSourceCreateImageAtIndex(src, 0, nil)!
     let rowY = H - Double(i + 1) * rowH
     if i == 1 {
@@ -173,4 +178,4 @@ for (i, n) in names.enumerated() {
     }
 }
 save(s, "sheet-final", extras)
-print("icons -> \(out)\nlayers and contact sheet -> \(extras)")
+print("layers -> \(out)\nflat renders and contact sheet -> \(extras)")

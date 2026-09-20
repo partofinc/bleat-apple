@@ -1,0 +1,41 @@
+{
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.12157,0.11765,0.14510,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "caret.png",
+          "name" : "Caret"
+        }
+      ],
+      "name" : "Caret",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.35
+      },
+      "specular" : true
+    },
+    {
+      "layers" : [
+        {
+          "image-name" : "mark.png",
+          "name" : "Head"
+        }
+      ],
+      "name" : "Head",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

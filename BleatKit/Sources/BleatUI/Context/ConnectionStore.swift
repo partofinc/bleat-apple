@@ -197,16 +197,41 @@ public final class ConnectionStore {
     /// Closes whatever is open, including a dial that has not finished.
     /// Idempotent.
     public func release() async {
-        // Awaited, not abandoned: the cancellation checks inside the probe only
-        // help if nothing is mid-command when the transport goes away, and the
-        // wait is bounded by one already-running command.
-        let refreshing = refresh
-        refresh = nil
-        refreshing?.cancel()
-        await refreshing?.value
+        // **Everything this call is responsible for is taken before the first
+        // suspension, and that ordering is the whole of its correctness.**
+        // This awaits the endpoint refresh, which is bounded only by an
+        // already-running SSH command — the `tailscale` probe carries a five
+        // second watchdog — and a release is started from a screen going away
+        // rather than from something anybody waits on. So a *later* caller can
+        // dial and install a connection inside that window. The old order read
+        // `connecting` and `current` after the await and closed whatever it
+        // found there, which by then could be a brand new connection to a
+        // different host: the user backs out of one Mac, picks another within
+        // a few seconds, and its list screens fail against a transport this
+        // call disconnected from under them.
+        //
+        // Reading them first, and clearing them first, makes that impossible —
+        // a dial that starts afterwards begins from a clean slate and is
+        // invisible here. Cancelling `pending` before suspending matters for
+        // the same reason: `connected(for:)` re-checks `task.isCancelled`
+        // before installing, and that check is only worth anything if the
+        // cancellation has already happened.
         let pending = connecting
         connecting = nil
         pending?.task.cancel()
+
+        let live = current
+        current = nil
+        endpoint = nil
+
+        let refreshing = refresh
+        refresh = nil
+        refreshing?.cancel()
+        // Awaited, not abandoned: the cancellation checks inside the probe only
+        // help if nothing is mid-command when the transport goes away, and the
+        // wait is bounded by one already-running command.
+        await refreshing?.value
+
         // Awaited rather than abandoned: cancellation does not stop the
         // handshake, so the only way to be sure nothing is left open is to see
         // what it produced.
@@ -214,9 +239,7 @@ public final class ConnectionStore {
             await connected.transport.disconnect()
         }
 
-        guard let live = current else { return }
-        current = nil
-        endpoint = nil
+        guard let live else { return }
         await live.connected.transport.disconnect()
     }
 }

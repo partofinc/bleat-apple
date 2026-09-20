@@ -138,10 +138,12 @@ public final class UnpairModel {
             // so it still works — which is exactly why it must not be left
             // cached for something else to pick up.
             await connections.release()
-            // Every screen below the root is a screen *of this peer*, and it
-            // has just stopped existing. Popping is not tidying: a pane view
-            // left on top would go on asking a connection that is gone.
-            navigation.popToRoot()
+            // Every screen of this peer has just stopped existing. Leaving
+            // them is not tidying: a pane view left on top would go on asking
+            // a connection that is gone. It is conditional because the host
+            // list is a permanent sidebar now, so this can be a host nobody
+            // was looking at.
+            navigation.leave(peer.hostKey)
             peers.remove(peer)
             phase = .idle
         } catch let error as TransportError {
@@ -169,7 +171,7 @@ public final class UnpairModel {
     /// screen that has already shown the command that finishes the job.
     public func forgetWithoutRevoking() {
         guard let peer = peerBeingUnpaired, !isWorking, !isConfirming else { return }
-        navigation.popToRoot()
+        navigation.leave(peer.hostKey)
         peers.remove(peer)
         phase = .idle
     }

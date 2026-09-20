@@ -3270,6 +3270,56 @@ Two things that cost time and are worth knowing next time:
   itself is not directly observable from this side; the delegate callback is
   the only hook.
 
+### The app icon (20 Sept 2026)
+
+A wool-cream block cursor wearing a sheep's ears, on near-black, with a coral
+bar where a terminal's cursor sits on its line. One mark that reads two ways: a
+face at any size, and a block cursor once you know the name.
+
+- **The palette is Herdr's, deliberately.** herdr.dev is near-black with a coral
+  accent and a monospace, CLI-minimal tone, and — despite the name — carries no
+  animal mark at all. So the character is unclaimed and Bleat can take it, while
+  sharing the ground and the accent is what makes "Bleat for Herdr" read as a
+  companion rather than a clone. Cream `#F4EADF`, coral `#FF6B4A`, ground
+  `#2A2833` → `#121217`.
+- **The caret is *inside* the head, and the alternative was rendered rather than
+  argued about.** A coral bar floating below the chin reads as a mouth at 220pt
+  and as a smudge at 29pt — at that size a detached element is indistinguishable
+  from a shadow. Inside, it is one shape and the coral still resolves. Compared
+  at 230/120/60/29 before choosing, which is the only size that decides
+  anything.
+- **Three appearances ship** — default, `luminosity: dark` and
+  `luminosity: tinted` — each 1024×1024 and **none carrying an alpha channel**.
+  The contexts are `noneSkipLast` for exactly that reason: an app icon with
+  alpha is rejected, and a `premultipliedLast` context writes one even when
+  every pixel is opaque. Verified in the built product rather than assumed —
+  `xcrun assetutil --info Assets.car` lists `UIAppearanceDark` and
+  `ISAppearanceTintable` beside the default entry.
+- **The tinted variant keeps its own value separation.** The system maps
+  luminance to the user's tint, so the caret is a mid grey rather than the
+  wool's near-white; at equal values the mouth vanishes and the face is blank.
+- **The eyes are cut by re-drawing the background through them**, not filled
+  with a flat colour, so they are exactly the ground behind them however the
+  gradient is retuned. Three palettes share one geometry, which is what makes
+  that worth doing.
+- **`Design/icon.swift` is the source; the PNGs are output.** The mark is
+  rounded rects and two rotated capsules, so it is generated — and the three
+  appearances cannot drift because they share one `headPath()` and one
+  `caretPath()`. `swift Design/icon.swift` regenerates the icon in place, and
+  reproduces the checked-in PNGs byte for byte. It sits outside `App/`, so the
+  target's synchronized group does not try to compile it.
+- **It is a flat icon, not a layered `.icon`, and that is a deferral rather than
+  a decision.** Icon Composer would add iOS 26's glass and specular treatment
+  and derive the appearances itself, but it ships no CLI and no schema to author
+  against — `xcrun --find icon-composer` fails and `actool --help` never
+  mentions the format — so it needs a pass through the GUI. The script writes
+  `layer-mark.png` and `layer-caret.png` on transparency so that is an assembly
+  job rather than a redraw.
+- **`AccentColor` is still unset, on purpose.** Coral is close enough to the red
+  that Stop and Delete are tinted with that promoting it to the app-wide accent
+  would blur the one distinction those swipes rely on. Which colour the *app*
+  uses is a separate decision from which colour its icon is.
+
 ## Concurrency settings (verified 4 Sept 2026)
 
 The package and the Xcode targets must state the same thing, or a file changes

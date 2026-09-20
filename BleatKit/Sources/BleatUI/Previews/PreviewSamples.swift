@@ -143,13 +143,21 @@ extension Pane {
     /// wrong in the same way the code is and the test still passes. This is the
     /// shape `pane list` really returns.
     static var samples: [Pane] {
+        // The three shapes a shell takes on screen, which is what `TerminalRow`
+        // is written against: titled with its own directory, as an idle login
+        // shell is in `Fixtures/pane-list.json`; titled with what it is running,
+        // which is when the path below it earns its place; and untitled, which
+        // falls back to the pane id.
         let body = """
         [{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
           "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple"},
+          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
+          "terminal_title":"ravil@rawillkair:~/Developer/rawillk/bleat-apple",
+          "terminal_title_stripped":"ravil@rawillkair:~/Developer/rawillk/bleat-apple"},
          {"pane_id":"w2:p3","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
           "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple/BleatKit"},
+          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple/BleatKit",
+          "terminal_title":"swift test","terminal_title_stripped":"swift test"},
          {"pane_id":"w653998617a6031:p1","workspace_id":"w653998617a6031",
           "tab_id":"w653998617a6031:t1","agent_status":"unknown","focused":false,
           "cwd":"/Users/ravil/Developer/rawillk/herdr"}]

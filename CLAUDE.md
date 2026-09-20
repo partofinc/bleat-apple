@@ -789,6 +789,70 @@ than merged if the name is in use, and the screen it appears on is a list of
 sessions. It is behind the plus on `PeerDetailView`, and the name is checked
 before anything leaves the phone.
 
+### A pane with no agent is a terminal, and the phone can now see one (20 Sept 2026)
+
+**Herdr's default pane is a plain shell, and the phone could make one but never
+find it again.** None of `workspace create`, `tab create` or `pane split` takes
+a `--command`, so what launches is the user's own shell and an agent is an
+explicit step afterwards — "Add a pane" inside the agent sheet has always
+produced exactly that. Both ends were missing: the workspace screen lists
+`agent list`, which does not report a pane herdr has not recognised an agent in,
+so a shell had no row and no route; and the only button on it was Start Agent.
+
+- **The screen asks `pane list` as well, and the two lists are one fetch.**
+  `Pane.withoutAgents(in:)` in `BleatKit` is what tells them apart, and
+  **occupancy is read from the agent list, never from a pane's own fields** —
+  the rule `NewAgentModel` already followed, and the one that covers the pane a
+  timed-out start left holding a detected agent herdr never got to name. Pinned
+  against the captured fixtures, which happen to be the perfect case: ten panes,
+  seven agents, three shells.
+- **One `RemoteList` over a `WorkspaceEntry`, not two lists side by side.** The
+  loading is where the subtle rules are — the generation token, a cancelled
+  screen saying nothing, rows kept through a failed refresh — and two of them
+  would mean two spinners, two failures, and a screen that can be half loaded.
+- **Two sections, each drawn only when it has rows.** A heading over nothing
+  reads as a list whose other half failed to arrive.
+- **A terminal row opens in `.terminal`, never `.chat`.** A shell writes no
+  transcript, so the chat an *agent* row opens would be an empty screen with a
+  button on it. `TranscriptModel` already has `.unavailable` and names the plain
+  shell as its first cause; the route carries the mode so it is not reached.
+- **The row shows the directory only when the title does not already say it.**
+  A login shell titles itself with where it is —
+  `ravil@rawillkair:~/Developer/autorq/link-apple` in `Fixtures/pane-list.json`
+  — so a path underneath would repeat the line above it on every idle shell. A
+  running command retitles the pane, and then the path is what says which shell
+  it is running in. Both are truncated at the head, as the agent rows are.
+- **The plus is a menu: New Terminal, then Start Agent…** New Terminal has no
+  sheet because there is nothing to ask — no name, no kind, no timeout, and no
+  path, since a new tab's pane inherits the *workspace's* directory. It is one
+  `tab create`, and the pane it brings is opened straight away.
+  - **Only from inside a workspace**, because a tab belongs to one.
+  - **The pane is taken from the reply's own `root_pane`**, never from
+    "whichever pane is new" — in a workspace that already had a free pane that
+    is a shell somebody at the Mac may be sitting in. A `root_pane` that did not
+    decode is nil, and then nothing is opened and the reload simply lists it.
+  - **The list reloads on the failure path too**, and that is the failure path's
+    whole answer. A create that threw is not proof that nothing happened: a
+    connection dropping after herdr ran the command leaves the tab there, and a
+    plain refusal invites the retry that makes a second one. What landed is on
+    screen under Terminals instead.
+  - The refusal itself is an alert, for the reason `SessionControlFlow` uses
+    one: there is no sheet of its own for it to be read in.
+- **Opening a terminal row `stty`s that pane, and puts it back on the way
+  out.** `PaneModel` resizes the pty to the phone's grid before it opens the
+  stream — the same write it already makes for an agent's terminal — and
+  `restore` returns it when the screen goes. What is new is *which* panes are
+  one tap away: an agent's pane belongs to an agent, while this section lists
+  the shell somebody at the Mac may be typing in, and looking at it reflows
+  their window for as long as the phone is on that screen. Kept, because a
+  terminal row has nothing else to show and the tap is the ask — but it is why
+  the list only lists, and why nothing here opens a pane the user did not name.
+- **Typing in a shell still takes control, with the same confirmation.** herdr
+  allows one input owner and a `control` attach that is not a takeover is
+  silently inert, so nothing changes here — though for a shell the phone made
+  seconds ago the confirmation's "you are taking it from someone" is more
+  caution than the case needs, and the phone has no way to know that.
+
 ## Repository layout
 
 House layout, matching the other projects in `~/Developer`: code lives in a

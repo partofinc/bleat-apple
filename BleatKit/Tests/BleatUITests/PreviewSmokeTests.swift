@@ -317,6 +317,21 @@ struct PreviewSmokeTests {
                 previewing: .loaded([])
             )
         })
+        // Both kinds, which is the only case that draws the two headings, and
+        // shells with no agents — the shape a workspace the phone has just made
+        // has, and the one that used to report itself as empty.
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "work", workspace: "w2", title: "bleat-apple",
+                previewing: .loaded(Agent.samples), terminals: Pane.samples
+            )
+        })
+        render(context, NavigationStack {
+            AgentsView(
+                peer: .preview, session: "work", workspace: "w2", title: "bleat-apple",
+                previewing: .loaded([]), terminals: Pane.samples
+            )
+        })
         // The other two failure causes. Each draws a different title and a
         // different symbol, and a symbol that does not exist only shows up in
         // a render.

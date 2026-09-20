@@ -33,12 +33,12 @@ final class NewTerminalModel {
 
     private(set) var notice: Notice?
 
-    /// The alert's binding, the shape `SessionControlModel` uses: SwiftUI
-    /// writes false when the alert goes, and that write is what clears it.
-    var isShowingNotice: Bool {
-        get { notice != nil }
-        set { if !newValue { notice = nil } }
-    }
+    /// Presentation, kept **separate from the message rather than derived from
+    /// it**. A binding that nils the notice on dismissal blanks the alert's
+    /// title while it is still animating out, because the title is read from
+    /// the model on the re-render that dismissal causes. The notice outlives
+    /// its alert and is cleared by the next attempt instead.
+    var isShowingNotice = false
 
     /// nil only in `#Preview`; production callers all pass one.
     private let connections: ConnectionStore?
@@ -54,8 +54,14 @@ final class NewTerminalModel {
         self.connections = nil
         self.session = nil
         self.notice = notice
+        self.isShowingNotice = notice != nil
     }
     #endif
+
+    private func show(_ notice: Notice) {
+        self.notice = notice
+        isShowingNotice = true
+    }
 
     /// Adds a tab to `workspace` and answers with the pane it brought, or nil
     /// when there is nothing certain to open.
@@ -73,7 +79,7 @@ final class NewTerminalModel {
     /// and in that case nothing is opened, because the alternative is guessing
     /// at a pane somebody at the Mac may be sitting in. That is **said**
     /// rather than left as a button that appears to do nothing: the terminal
-    /// exists, it is in the list, and only its identity was lost.
+    /// exists and only its identity was lost.
     ///
     /// A failure is reported and nothing is opened, but it is **not** a promise
     /// that nothing was created: a connection that drops after herdr ran the
@@ -83,25 +89,31 @@ final class NewTerminalModel {
     func create(in workspace: String, for peer: PairedPeer) async -> Pane? {
         guard let connections, !isCreating else { return nil }
         isCreating = true
+        // Cleared here rather than on dismissal, so the alert keeps its title
+        // through its own exit animation.
         notice = nil
         defer { isCreating = false }
         do {
             let client = try await connections.client(for: peer, session: session)
             guard let pane = try await client.createTab(inWorkspace: workspace).rootPane else {
-                notice = Notice(
-                    title: "The terminal is in the list",
-                    message: "The host made it but did not say which pane it is, "
-                        + "so it could not be opened straight away."
-                )
+                // **Said in the future tense, because the list has not been
+                // read yet** — this returns before the caller reloads, and a
+                // reload can fail. "It is in the list" would be a claim about
+                // the user's own screen that nothing here has checked.
+                show(Notice(
+                    title: "The terminal was created",
+                    message: "The host did not say which pane it is, so it could not be opened. "
+                        + "It will appear under Terminals."
+                ))
                 return nil
             }
             return pane
         } catch {
             await connections.handle(error)
-            notice = Notice(
+            show(Notice(
                 title: "That did not happen",
                 message: ErrorMessage.failure(of: error).message
-            )
+            ))
             return nil
         }
     }

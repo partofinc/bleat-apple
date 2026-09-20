@@ -11,11 +11,18 @@ import Testing
 @Suite("Terminal row")
 struct TerminalRowTests {
 
-    private func pane(title: String?, cwd: String?) throws -> Pane {
+    /// Shaped like a real `pane list` row, which carries **both** directories:
+    /// where the shell started and where the foreground process is. They are
+    /// equal unless something has `cd`'d, and the difference is what the `~`
+    /// rule turns on.
+    private func pane(title: String?, cwd: String?, foreground: String? = nil) throws -> Pane {
         var fields = ["\"pane_id\":\"w2:p3\"", "\"workspace_id\":\"w2\"", "\"tab_id\":\"w2:t1\"",
                       "\"agent_status\":\"unknown\"", "\"focused\":false"]
         if let title { fields.append("\"terminal_title_stripped\":\"\(title)\"") }
-        if let cwd { fields.append("\"foreground_cwd\":\"\(cwd)\"") }
+        if let cwd {
+            fields.append("\"cwd\":\"\(cwd)\"")
+            fields.append("\"foreground_cwd\":\"\(foreground ?? cwd)\"")
+        }
         return try JSONDecoder().decode(Pane.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
     }
 
@@ -36,6 +43,17 @@ struct TerminalRowTests {
     func home() throws {
         let shell = try pane(title: "ravil@rawillkair:~", cwd: "/Users/ravil")
         #expect(TerminalRow.directory(for: shell) == nil)
+    }
+
+    /// The other half of that exemption: the title speaks for the *shell's*
+    /// directory, so a foreground process somewhere else is exactly when the
+    /// path is the line worth having.
+    @Test("a shell titled with a tilde still shows where its process moved to")
+    func homeWithAProcessElsewhere() throws {
+        let moved = try pane(
+            title: "ravil@rawillkair:~", cwd: "/Users/ravil", foreground: "/Users/ravil/Developer"
+        )
+        #expect(TerminalRow.directory(for: moved) == "/Users/ravil/Developer")
     }
 
     @Test("a running command is not the directory, so the path is shown")

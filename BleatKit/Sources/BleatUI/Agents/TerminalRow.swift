@@ -58,7 +58,17 @@ struct TerminalRow: View {
         guard let titled = pane.displayTitle
             .split(whereSeparator: { $0 == "/" || $0 == ":" }).last
         else { return path }
-        guard titled != "~", titled != path.split(separator: "/").last else { return nil }
+        // A title of `~` describes the *shell's* own directory, so it only
+        // speaks for the line below when nothing has moved: a foreground
+        // process reporting somewhere else is exactly the case the path is
+        // worth drawing for.
+        if titled == "~" {
+            guard let shell = pane.cwd, let foreground = pane.foregroundCwd,
+                  shell != foreground
+            else { return nil }
+            return foreground
+        }
+        guard titled != path.split(separator: "/").last else { return nil }
         return path
     }
 }

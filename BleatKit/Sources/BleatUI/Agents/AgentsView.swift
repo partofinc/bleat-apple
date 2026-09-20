@@ -50,20 +50,28 @@ struct AgentsView: View {
         self.title = title
         _entries = State(wrappedValue: RemoteList(connections: connections, session: session) {
             let agents = try await $0.agents()
-            // **The second list may fail without taking the first with it**,
-            // which is the rule `PaneModel.paneSize` already states: a
-            // `HerdrError` or a `DecodingError` is this host declining to
-            // describe its panes — a herdr whose `pane list` rows have moved,
-            // say — and losing the terminals is not worth losing the agents
-            // this screen exists for. A `TransportError` still propagates,
-            // because that is the connection rather than the command, and
-            // swallowing it would report a dead host as an empty workspace.
+            // **The second list may fail without taking the first with it —
+            // but only while there is a first to protect.** A `HerdrError` or
+            // a `DecodingError` is this host declining to describe its panes,
+            // and losing the terminals is not worth losing the agents this
+            // screen exists for; that is the rule `PaneModel.paneSize` already
+            // states. A `TransportError` propagates either way, because that is
+            // the connection rather than the command.
+            //
+            // **With no agents to keep, the failure is reported rather than
+            // swallowed**, and that clause is the whole of the difference
+            // between honest and confidently wrong. Silence there draws
+            // "nothing is running here" over a workspace that may be full of
+            // live shells — and `openTerminal`'s answer to a create it could
+            // not confirm is "whatever landed is in the list", which an empty
+            // list quietly contradicts, inviting the retry that makes a second
+            // tab.
             let panes: [Pane]
             do {
                 panes = try await $0.panes()
-            } catch is HerdrError {
+            } catch is HerdrError where !agents.isEmpty {
                 panes = []
-            } catch is DecodingError {
+            } catch is DecodingError where !agents.isEmpty {
                 panes = []
             }
             // **Occupancy is judged against every agent in the session, not
@@ -264,6 +272,12 @@ struct AgentsView: View {
             // is not proof that nothing happened, so whatever really landed is
             // listed rather than invisible behind a retry that would make a
             // second one.
+            //
+            // It does mean this reload runs while the pane it just opened is
+            // streaming, and a `TransportError` here releases the connection
+            // under that stream. The pane says so and offers a retry, which is
+            // the cheaper failure: reloading first instead leaves every tap
+            // with nothing to show for itself until it suddenly navigates.
             await entries.load(for: peer)
         }
     }

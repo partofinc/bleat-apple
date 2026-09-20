@@ -10,7 +10,13 @@ public struct PeersView: View {
     public init() {}
 
     public var body: some View {
-        List {
+        @Bindable var navigation = context.navigation
+        // **A selection, not a `NavigationLink` per row.** The host is what the
+        // split view's sidebar selects, and the detail column is rooted on it;
+        // collapsed, SwiftUI turns that same selection into the push this list
+        // used to make itself. A `NavigationLink` here would push onto the
+        // *sidebar*, leaving the detail column showing nothing.
+        List(selection: $navigation.selectedPeer) {
             if let failure = context.peers.failure {
                 Section {
                     Label(failure, systemImage: "exclamationmark.triangle")
@@ -19,10 +25,12 @@ public struct PeersView: View {
             }
 
             ForEach(context.peers.peers) { peer in
-                NavigationLink(value: NavigationRouter.Route.peer(peer: peer.hostKey)) {
-                    PeerRow(peer: peer)
-                }
-                .buttonStyle(.plain)
+                PeerRow(peer: peer)
+                // `PairedPeer.id` is already the host key, so this restates
+                // what `ForEach` would infer — but the selection's type is what
+                // decides whether a row is selectable at all, and the two being
+                // visibly the same thing is worth a line.
+                .tag(peer.hostKey)
                 .swipeActions {
                     // **Swiping asks; it does not unpair.** Unpairing is not
                     // list management — it decides what a machine will let in
@@ -97,10 +105,6 @@ public struct PeersView: View {
         }
         .task {
             context.peers.reload()
-            // Being back at the root means no host is being browsed, so the SSH
-            // session opened for one should not stay open on someone's Mac.
-            // Re-entering costs a handshake; an idle session costs their trust.
-            await context.connections.release()
         }
     }
 
@@ -121,13 +125,16 @@ public struct PeersView: View {
 }
 
 #if DEBUG
+/// In the split view it lives in, so the selection behaves as it does on the
+/// device — in a bare `NavigationStack` a tap highlights a row and nothing
+/// else, which is not what this screen does.
 #Preview("Hosts", traits: .sampleData) {
-    NavigationStack { PeersView() }
+    NavigationSplitView { PeersView() } detail: { Text("Detail") }
 }
 
 /// The first screen on a fresh install, and the one that has to explain what to
 /// do next — the `bleat pair` sentence is the entire onboarding.
 #Preview("No hosts", traits: .noHosts) {
-    NavigationStack { PeersView() }
+    NavigationSplitView { PeersView() } detail: { Text("Detail") }
 }
 #endif

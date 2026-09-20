@@ -59,8 +59,16 @@ struct PreviewSmokeTests {
     /// Mac's real LAN address on it, so a broken seam would not merely fail —
     /// it would open an SSH connection from the test suite. No test touches the
     /// network.
-    private func render(_ context: AppContext, _ view: some View) {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
+    ///
+    /// The size defaults to a phone. `rootScreens` passes an iPad's, which is
+    /// the only way to lay a `NavigationSplitView` out in more than one column
+    /// — collapsed and expanded are different view trees.
+    private func render(
+        _ context: AppContext,
+        _ view: some View,
+        size: CGSize = CGSize(width: 393, height: 759)
+    ) {
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = UIHostingController(rootView: view.environment(context))
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
@@ -127,11 +135,35 @@ struct PreviewSmokeTests {
         #expect(ran.value, "`.task` did not run — the render tests below prove nothing")
     }
 
+    /// The split view itself, in both of its shapes.
+    ///
+    /// They are genuinely different view trees — collapsed, the sidebar is the
+    /// stack's root and the detail column does not exist; expanded, both are on
+    /// screen and the detail has a host-less state of its own that a phone
+    /// never shows. A change that compiles can break either one alone.
+    ///
+    /// **No host is selected, deliberately.** Selecting one mounts
+    /// `PeerDetailView` with a live `RemoteList`, and `PairedPeer.preview`
+    /// carries this Mac's real LAN address — the render would dial.
+    @Test("the root renders collapsed and expanded")
+    func rootScreens() async {
+        let context = sampleContext()
+        render(context, RootView())
+        render(context, RootView(), size: CGSize(width: 1210, height: 834))
+        #expect(context.navigation.selectedPeer == nil, "the root picked a host on its own")
+        await settle(context)
+    }
+
     @Test("the peer screens render")
     func peerScreens() async {
         let context = sampleContext()
-        render(context, NavigationStack { PeersView() })
-        render(sampleContext(peers: []), NavigationStack { PeersView() })
+        // In the sidebar it now lives in, which is what its preview does and
+        // what the selection needs to behave.
+        render(context, NavigationSplitView { PeersView() } detail: { Text("Detail") })
+        render(
+            sampleContext(peers: []),
+            NavigationSplitView { PeersView() } detail: { Text("Detail") }
+        )
         render(context, NavigationStack {
             PeerDetailView(peer: .preview, previewing: .loaded(SessionInfo.samples))
         })

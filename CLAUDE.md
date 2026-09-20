@@ -1828,9 +1828,19 @@ prompts, guesses, or trusts anything on first sight.
 
 - **One live connection at a time**, held by `ConnectionStore`. A phone drills
   into a single host, and every screen in that drill-down wants the same SSH
-  session rather than a handshake each. Returning to the peer list releases it —
+  session rather than a handshake each. No host being browsed releases it —
   re-entering costs a handshake, an idle SSH session left open on someone's Mac
   costs their trust.
+  - **What "no host is being browsed" means moved with the sidebar**, and the
+    old reading became actively harmful. It used to be `PeersView.task`, on the
+    premise that being back at the root was the only way to see that list; with
+    a permanent sidebar the list appears **once, at launch**, so the release
+    would never fire again — and a rotation or a Slide Over resize that
+    re-mounted it would release a connection out from under a live pane.
+    `RootView` watches `NavigationRouter.selectedPeer` going nil instead, which
+    is the condition in both layouts. Switching straight from one host to
+    another needs nothing: `connection(for:)` already releases before dialling
+    a different host key.
 - **Keeping that promise takes more than a stored reference, because a dial
   cannot be called off.** `PeerConnector` races in a detached task precisely so
   a slow address cannot hold up a fast one, so a handshake started for a screen
@@ -1951,6 +1961,53 @@ failure needs a way back, and neither should look like the other.
   follows the running process, and it is truncated at the **head**: every row
   starts `/Users/…/Developer/…`, so truncating at the tail throws away the only
   part that distinguishes one checkout from another.
+
+### Two columns on an iPad, one stack on a phone (Phase 3, 20 Sept 2026)
+
+`RootView` is a `NavigationSplitView`: the paired hosts in the sidebar, and
+everything below a host in the detail column's `NavigationStack`. On a phone the
+split view collapses into the single stack the app already was, with picking a
+host standing in for the first push.
+
+- **Two columns, not three, and the drill-down is why.** It is five screens deep
+  — hosts → sessions → workspaces → agents → pane — and a split view has at most
+  three columns, so something has to stay a stack whatever is chosen. Apple's
+  shape for that is a selection in the sidebar and a stack in the detail, which
+  is also the arrangement that collapses predictably. A three-column version
+  (hosts | sessions→workspaces→agents | pane) would give the pane the widest
+  column and keep the agent list beside it, which is the better *iPad* layout
+  and the one to revisit — it needs the middle column to nest a stack of its
+  own, and the collapse path is then nobody's documented case.
+- **The router is a selection plus a path**, not one path. `selectedPeer` is a
+  host key; `path` is everything under it.
+  - **Changing the selection clears the path in the same write**, which is why
+    it is a computed property over a private stored one rather than an
+    `onChange` in the view. SwiftUI evaluates the detail column from the new
+    selection and the old path together, so clearing afterwards draws one host's
+    workspaces under another host's name for a frame.
+  - **Re-writing the same host key is not a change.** A `List(selection:)`
+    re-asserting its value would otherwise throw away the screens the user is
+    standing on.
+- **`Route.peer` is now the detail column's root and is never pushed.** It stays
+  a route so `RouteView` remains the single place a route becomes a screen —
+  including its answer for a host unpaired while its screens were up.
+- **Unpairing leaves a host's screens only if they are the ones on display.**
+  `popToRoot()` is gone; `leave(hostKey)` replaces it. Before, the only way to
+  reach the unpair swipe was a peer list with nothing pushed over it, so popping
+  unconditionally was right. With the host list permanently on screen a host can
+  be unpaired while a *different* one is being browsed, and an unconditional pop
+  throws away screens for something that did not happen to them.
+- **`PeersView` is a `List(selection:)`, not a `NavigationLink` per row.** A
+  link there pushes onto the *sidebar*, leaving the detail column showing
+  nothing. Collapsed, SwiftUI turns the same selection into the push the list
+  used to make itself.
+- **`PreviewSmokeTests.rootScreens` renders it at both widths**, because
+  collapsed and expanded are genuinely different view trees — expanded has a
+  host-less detail state a phone never shows — and a change that compiles can
+  break either alone. It selects no host **deliberately**: selecting one mounts
+  `PeerDetailView` with a live `RemoteList`, and `PairedPeer.preview` carries
+  this Mac's real LAN address, so the render would dial. `NavigationRouterTests`
+  covers the selection rules without a window.
 
 ### A host's screen is its sessions; everything else is a sheet (Phase 2)
 

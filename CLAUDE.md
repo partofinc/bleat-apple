@@ -862,6 +862,8 @@ a thin shell.
 ```
 Bleat.xcodeproj             # one app target; sources join via a synchronized group
 App/                        # @main App struct and little else
+  AppIcon.icon/             # layered Icon Composer document; joins the target by existing
+Design/icon.swift           # generates the icon's layers — run it, never edit the PNGs
 BleatKit/                   # the local Swift package
   Package.swift
   Sources/
@@ -3286,14 +3288,31 @@ face at any size, and a block cursor once you know the name. It ships as a
 - **The caret is *inside* the head, and the alternative was rendered rather than
   argued about.** A coral bar floating below the chin reads as a mouth at 220pt
   and as a smudge at 29pt — at that size a detached element is indistinguishable
-  from a shadow. Compared at 230/120/60/29 before choosing, which is the only
-  size that decides anything.
+  from a shadow. Compared at 230/120/60/29, which is the only size that decides
+  anything, and re-checked against the document once it existed: **the first
+  comparison was of flat stand-ins the script drew itself**, on a different
+  ground and with none of the shadow or specular the icon actually has. It held,
+  but it was luck rather than method, which is why the sheet is rendered from
+  the product now.
 - **`Design/icon.swift` is the source; the PNGs are output.** The mark is
   rounded rects and two rotated capsules, so it is generated. `swift
   Design/icon.swift` rewrites the two layers in place and reproduces the
-  committed files byte for byte; `extras` gets flat renders and a contact sheet
-  that are only for looking at. It sits outside `App/`, so the target's
-  synchronized group does not try to compile it.
+  committed files byte for byte, then renders the contact sheet **from
+  `App/AppIcon.icon` via `ictool`** — the icon as it ships, not an impression of
+  it. It sits outside `App/`, so the target's synchronized group does not try to
+  compile it.
+  - **Its paths resolve against `#filePath`, never the working directory.** A
+    relative default plus `withIntermediateDirectories` builds a whole
+    `App/AppIcon.icon/Assets` tree wherever it is run from, writes the layers
+    into it, and prints where they went — a confident success over files it
+    never touched, which is the failure this repo keeps a list of.
+  - **Every write is checked, `CGImageDestinationFinalize` included.** That call
+    is where a full disk or an unwritable file surfaces; dropping its `Bool` is
+    the same lie one layer down. A failed directory create reports the path and
+    the reason rather than dying on a nil unwrap forty frames later.
+  - **The sheet is skipped when the layers were written elsewhere**, since it
+    renders the committed document and would otherwise show an icon that does
+    not contain them.
 - **The eyes are punched through the wool, not filled.** The ground then shows
   through them in every appearance the system derives — including the clear
   ones, where a filled eye would be a flat blob sitting on glass.

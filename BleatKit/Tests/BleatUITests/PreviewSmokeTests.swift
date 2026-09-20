@@ -63,16 +63,63 @@ struct PreviewSmokeTests {
     /// The size defaults to a phone. `rootScreens` passes an iPad's, which is
     /// the only way to lay a `NavigationSplitView` out in more than one column
     /// — collapsed and expanded are different view trees.
+    @discardableResult
     private func render(
         _ context: AppContext,
         _ view: some View,
         size: CGSize = CGSize(width: 393, height: 759)
-    ) {
+    ) -> UIWindow {
+        // **Every previous window goes first, and that is not tidiness.** A
+        // `UIWindow` made key and visible stays in the application's window
+        // list, and this suite builds dozens. Left up, a window created later
+        // does not reliably get a render: `rootExpanded` — the one test here
+        // that reads the view hierarchy rather than merely surviving it —
+        // passed alone and failed in a full run, finding an empty detail
+        // column that had simply never been built. Every other test here only
+        // asserts that rendering did not trap, so the pollution was invisible
+        // until something looked.
+        for stale in Self.windows {
+            stale.isHidden = true
+            stale.rootViewController = nil
+        }
+        Self.windows.removeAll()
+
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = UIHostingController(rootView: view.environment(context))
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
+        Self.windows.append(window)
+        return window
     }
+
+    /// Held only so the next `render` can take them down. The suite is
+    /// `.serialized`, so there is never more than one in flight.
+    private static var windows: [UIWindow] = []
+
+    /// Which layout `NavigationSplitView` actually chose.
+    ///
+    /// **The honest probe, after two dishonest ones.** Asserting on rendered
+    /// *text* was the obvious idea and does not work: SwiftUI does not back a
+    /// `Text` with a `UILabel`, so an accessibility walk over a correctly
+    /// expanded iPad window returned `["Bleat"]` — the navigation bar's title
+    /// and nothing else — while the columns were demonstrably there
+    /// (`size=(1210, 834)`, `horizontalSizeClass=.regular`). A test built on
+    /// that walk passed alone, failed in a full run, and measured nothing
+    /// either way.
+    ///
+    /// `UISplitViewController.isCollapsed` is the thing the question is
+    /// actually about, and UIKit answers it directly.
+    private func splitViewController(in window: UIWindow) -> UISplitViewController? {
+        func find(_ controller: UIViewController) -> UISplitViewController? {
+            if let split = controller as? UISplitViewController { return split }
+            for child in controller.children {
+                if let found = find(child) { return found }
+            }
+            return nil
+        }
+        return window.rootViewController.flatMap(find)
+    }
+
 
     @Test("the sample context has the hosts the previews are drawn against")
     func sampleData() {
@@ -135,21 +182,60 @@ struct PreviewSmokeTests {
         #expect(ran.value, "`.task` did not run — the render tests below prove nothing")
     }
 
-    /// The split view itself, in both of its shapes.
-    ///
-    /// They are genuinely different view trees — collapsed, the sidebar is the
-    /// stack's root and the detail column does not exist; expanded, both are on
-    /// screen and the detail has a host-less state of its own that a phone
-    /// never shows. A change that compiles can break either one alone.
+    /// The split view collapsed — a phone, and what every destination can
+    /// check.
     ///
     /// **No host is selected, deliberately.** Selecting one mounts
     /// `PeerDetailView` with a live `RemoteList`, and `PairedPeer.preview`
     /// carries this Mac's real LAN address — the render would dial.
-    @Test("the root renders collapsed and expanded")
-    func rootScreens() async {
+    @Test("the root renders collapsed")
+    func rootCollapsed() async {
         let context = sampleContext()
-        render(context, RootView())
-        render(context, RootView(), size: CGSize(width: 1210, height: 834))
+        let phone = render(context, RootView().environment(\.horizontalSizeClass, .compact))
+        // Either SwiftUI built no split controller at all, or it built one and
+        // collapsed it. Both are the single-stack tree; what must not happen
+        // is two columns on a phone.
+        #expect(splitViewController(in: phone)?.isCollapsed != false)
+        #expect(context.navigation.selectedPeer == nil, "the root picked a host on its own")
+        await settle(context)
+    }
+
+    /// The split view expanded — an iPad, where the sidebar and the detail
+    /// column are on screen together.
+    ///
+    /// **It takes both an environment override and an iPad destination**, and
+    /// each half was measured rather than reasoned about:
+    ///
+    /// - A window's **frame does not set the size class**. The first version
+    ///   only made the window 1210 points wide, which exercised the collapsed
+    ///   tree twice while the comment claimed it covered both.
+    /// - The **override is necessary**: without
+    ///   `.environment(\.horizontalSizeClass, .regular)` this fails even on an
+    ///   iPad simulator, because a `UIWindow` built here has no scene to
+    ///   inherit a regular size class from.
+    /// - The **override is not sufficient**: with it, this still fails on an
+    ///   iPhone simulator. The idiom wins.
+    ///
+    /// So it is skipped rather than quietly weakened when the destination
+    /// cannot produce it — a test that cannot test what it is named after
+    /// should say so. See `Package.swift` for the destination.
+    @Test(
+        "the root renders expanded",
+        .enabled(
+            if: UIDevice.current.userInterfaceIdiom == .pad,
+            "the expanded column layout needs an iPad destination"
+        )
+    )
+    func rootExpanded() async {
+        let context = sampleContext()
+        let pad = render(
+            context,
+            RootView().environment(\.horizontalSizeClass, .regular),
+            size: CGSize(width: 1210, height: 834)
+        )
+        let split = splitViewController(in: pad)
+        #expect(split != nil, "no split view controller — this is not the two-column tree")
+        #expect(split?.isCollapsed == false, "the split view collapsed at iPad size")
         #expect(context.navigation.selectedPeer == nil, "the root picked a host on its own")
         await settle(context)
     }

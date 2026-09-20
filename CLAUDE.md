@@ -1851,6 +1851,19 @@ prompts, guesses, or trusts anything on first sight.
   `release()` **closes itself** instead of installing. `SSHTransport.disconnect`
   documents the same hazard for its own dial; the store reproduced it one level
   up before this.
+- **A release takes what it is responsible for *before* it suspends.** It
+  awaits the endpoint refresh, bounded only by an already-running SSH command —
+  the `tailscale` probe's watchdog is five seconds — and it is started by a
+  screen going away rather than by anything anybody waits on, so a later caller
+  can dial and install inside that window. Reading `connecting` and `current`
+  *after* the await and closing whatever was found there meant a release could
+  disconnect a brand new connection to a **different host**: back out of one
+  Mac, pick another within a few seconds, and its list screens fail against a
+  transport that call had closed under them. Clearing both up front makes a
+  later dial invisible to it. The `pending` cancel moved up for the same
+  reason — `connected(for:)` re-checks `task.isCancelled` before installing,
+  and that check is only worth anything if the cancellation has already
+  happened.
 - **A cached connection is keyed by link state as well as host key.** It is
   raced once and then pinned to the address that won, so one made on Wi-Fi
   against a `.local` name can only fail after the phone moves to cellular —
@@ -2001,13 +2014,74 @@ host standing in for the first push.
   link there pushes onto the *sidebar*, leaving the detail column showing
   nothing. Collapsed, SwiftUI turns the same selection into the push the list
   used to make itself.
-- **`PreviewSmokeTests.rootScreens` renders it at both widths**, because
-  collapsed and expanded are genuinely different view trees — expanded has a
-  host-less detail state a phone never shows — and a change that compiles can
-  break either alone. It selects no host **deliberately**: selecting one mounts
-  `PeerDetailView` with a live `RemoteList`, and `PairedPeer.preview` carries
-  this Mac's real LAN address, so the render would dial. `NavigationRouterTests`
-  covers the selection rules without a window.
+- **The detail root carries `.id(hostKey)`, and leaving it off shipped a bug.**
+  Every screen below it is *pushed*, so it gets a fresh view and fresh `@State`
+  by construction; the root is **reused** when the selection changes — same
+  type, same position — so `PeerDetailView` kept the `RemoteList` holding the
+  previous host's sessions, and its plain `.task` never re-ran because the view
+  never re-appeared. What reached the iPad was one host's name over another
+  host's sessions. A `.task(id:)` would have fixed the list and left the rest —
+  a half-typed session name, an armed confirmation, a start in flight —
+  attached to the host that had been left. `DetailIdentityTests` keeps the
+  broken shape beside the fixed one, as `ColorSchemeTests` does.
+- **Releasing the connection needs a second trigger on an iPad, and the
+  selection alone would have left a session open forever.** A split view that
+  never collapses has no gesture that deselects — tapping the highlighted row
+  rewrites the same host key, which is not a change — so `selectedPeer` goes
+  nil essentially never there. `RootView` also releases on `scenePhase ==
+  .background`. Not `.inactive`: that is an app-switcher glance or a
+  notification banner, and it would cost a handshake every time the user looked
+  away.
+- **`rootCollapsed` and `rootExpanded` render it in both shapes**, and getting
+  that to mean anything took three attempts, each worth not repeating:
+  - **A window's frame does not set the size class.** The first version only
+    made the window 1210 points wide; `NavigationSplitView` collapses on
+    `horizontalSizeClass`, which UIKit takes from the scene and the device
+    idiom, so both calls exercised the collapsed tree while the comment claimed
+    they covered both.
+  - **`.environment(\.horizontalSizeClass, .regular)` is necessary but not
+    sufficient.** Without it the test fails even on an iPad simulator — a
+    `UIWindow` built in a test has no scene to inherit from. With it, it still
+    fails on an iPhone simulator; the idiom wins. So `rootExpanded` is
+    `.enabled(if: UIDevice.current.userInterfaceIdiom == .pad)` and says so,
+    rather than being quietly weakened into something every destination passes.
+  - **Do not assert on rendered text.** SwiftUI does not back a `Text` with a
+    `UILabel`, so an accessibility walk over a correctly expanded iPad window
+    returned `["Bleat"]` — the navigation bar's title and nothing else — while
+    the columns were demonstrably there. A test built on that walk passed alone,
+    failed in a full run, and measured nothing either way.
+    `UISplitViewController.isCollapsed` is what the question is actually about
+    and UIKit answers it directly.
+  - Both select no host **deliberately**: selecting one mounts `PeerDetailView`
+    with a live `RemoteList`, and `PairedPeer.preview` carries this Mac's real
+    LAN address, so the render would dial. `NavigationRouterTests` covers the
+    selection rules without a window.
+
+#### Two things the sidebar makes reachable that were not (open)
+
+Neither is new *behaviour* — both are existing rules meeting a new affordance —
+and neither is fixed. Written down rather than discovered twice.
+
+- **Unpairing a host takes the connection away from the host being browsed.**
+  `UnpairModel` revokes over `connections.shell(for:)`, and `ConnectionStore`
+  holds one connection at a time, so unpairing B releases A's. Before the
+  sidebar this could not happen: the unpair swipe lived on a root list with
+  nothing pushed over it. Now a swipe in the sidebar can do it while A's
+  screens are up. The list screens recover by themselves — they re-dial on the
+  next load — so the casualty is a **live pane**, whose `observe` stream dies
+  under it. `leave(hostKey)` deliberately does *not* pop A: being thrown out of
+  the host you are watching is the worse everyday outcome, and the old
+  unconditional `popToRoot()` did exactly that. Revisit if the pane's ended
+  state turns out to read as a bug rather than as what happened.
+- **Toggling the sidebar resizes a live pane's pty on someone's Mac.** The
+  pane's grid comes from the terminal view's bounds and `PaneModel.start()`
+  `stty`s the host to match, so the detail column's width is now a function of
+  `columnVisibility` — a button. This is the hazard the `PaneKeyBar` note
+  already states ("anything in a safe area is layout, and layout here is the
+  stream's size"), and rotation has always been able to trigger it; the sidebar
+  button is a new way in, not a new failure. The fix, when it is wanted, is the
+  one the keyboard path already uses: freeze the grid while the pane is held
+  and thaw when it is released.
 
 ### A host's screen is its sessions; everything else is a sheet (Phase 2)
 

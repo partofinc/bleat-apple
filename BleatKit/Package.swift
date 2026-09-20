@@ -86,8 +86,18 @@ let package = Package(
         // arithmetic here has until now been verified by looking at a phone,
         // which is how several sizing bugs survived a green test run. It needs
         // a simulator destination:
-        //   xcodebuild test -scheme bleat-Package \
-        //     -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+        //   xcodebuild test -scheme BleatKit-Package \
+        //     -destination 'platform=iOS Simulator,name=iPhone 17'
+        //
+        // **An iPad destination covers strictly more**, and one test says so
+        // out loud rather than passing quietly: `NavigationSplitView` chooses
+        // its layout from `horizontalSizeClass`, which comes from the device
+        // idiom and **cannot be forced from the environment** — measured, a
+        // `.environment(\.horizontalSizeClass, .regular)` on an iPhone
+        // simulator still collapses. So the expanded two-column tree is only
+        // reachable on an iPad, and `rootExpanded` is `.enabled(if:)` on that.
+        //   xcodebuild test -scheme BleatKit-Package \
+        //     -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)'
         .testTarget(
             name: "BleatUITests",
             dependencies: ["BleatUI", "BleatKit"],

@@ -16,6 +16,7 @@ import SwiftUI
 /// somewhere to send it.
 public struct RootView: View {
     @Environment(AppContext.self) private var context
+    @Environment(\.scenePhase) private var scenePhase
     /// Both columns where there is room for both. The default hides the
     /// sidebar in portrait, which on an iPad is most of the time — and the host
     /// list being on screen is the whole point of the change.
@@ -53,6 +54,25 @@ public struct RootView: View {
             guard peer == nil else { return }
             Task { await context.connections.release() }
         }
+        // **The selection is not enough on an iPad, and on its own it would
+        // have held a session open on someone's Mac indefinitely.** A split
+        // view that never collapses has no gesture that deselects: tapping the
+        // highlighted row rewrites the same host key, which is not a change.
+        // So on that device `selectedPeer` goes nil essentially never, and the
+        // rule this app makes about not leaving an idle SSH session behind
+        // would have had no trigger at all. On a phone the collapse gave one
+        // for free, which is exactly why it was easy to miss.
+        //
+        // `.background`, not `.inactive`: the app is inactive for an app
+        // switcher glance or a notification banner, and dropping the
+        // connection for those would cost a handshake every time the user
+        // looked away. Backgrounding is also when iOS takes the socket anyway
+        // — "reconnect is normal" — so this makes explicit what the network
+        // does regardless.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background else { return }
+            Task { await context.connections.release() }
+        }
         // On the split view, not on a screen inside it: the peer list and a
         // peer's detail can both start an unpair, and a modifier on each would
         // bind two presentations to one piece of state.
@@ -71,10 +91,27 @@ public struct RootView: View {
     /// Through `RouteView` rather than building `PeerDetailView` here, so that
     /// resolving a host key to a screen — including the answer for one that has
     /// been unpaired — stays in one place.
+    ///
+    /// **`.id(hostKey)` is the whole of switching hosts working, and leaving it
+    /// off shipped a bug.** Every screen below here is *pushed*, so it gets a
+    /// fresh view and fresh `@State` by construction; this one is the stack's
+    /// root and is **reused** when the selection changes. Same view type, same
+    /// position, so SwiftUI keeps `PeerDetailView`'s `@State` — the
+    /// `RemoteList` holding the previous host's sessions — and its plain
+    /// `.task` never re-runs, because the view does not re-appear. What
+    /// reached the iPad was one host's name over another host's sessions.
+    /// Giving the view the host key as its identity makes a different host a
+    /// different view, which is what a push used to do for free.
+    ///
+    /// **It is not the same as reloading the list.** A `.task(id:)` in
+    /// `PeerDetailView` would fix the sessions and leave the rest — the
+    /// half-typed session name, the confirmation a swipe had armed, the
+    /// start in flight — attached to the host that has been left.
     @ViewBuilder
     private var detail: some View {
         if let hostKey = context.navigation.selectedPeer {
             RouteView(route: .peer(peer: hostKey))
+                .id(hostKey)
         } else {
             // Only ever seen on a wide screen. Collapsed, the sidebar *is* the
             // root and there is no detail column to fill.

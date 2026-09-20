@@ -17,7 +17,7 @@ struct TerminalRow: View {
                     // that string is `user@host:` and the end is the part that
                     // says which shell this is.
                     .truncationMode(.head)
-                if let directory {
+                if let directory = Self.directory(for: pane) {
                     Text(directory)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -41,10 +41,24 @@ struct TerminalRow: View {
     /// underneath would repeat the line above it for every idle shell. When
     /// something is running the title is that command instead, and then the
     /// directory is the thing that says which shell it is running in.
-    private var directory: String? {
+    ///
+    /// **The comparison is between path *segments*, not a plain suffix**, and
+    /// both halves of that were wrong in the first version. The title's last
+    /// segment is taken after the final `/` **or `:`**, so `git log` run in
+    /// `/var/log` no longer reads as the title repeating the directory. And a
+    /// shell sitting in the home directory titles itself `user@host:~` against
+    /// a `cwd` of `/Users/ravil`, which matches nothing by name — that is the
+    /// shape every session the phone starts has, since its one workspace is the
+    /// SSH user's home, so `~` is taken as saying the same thing.
+    ///
+    /// Static and internal so `TerminalRowTests` can hold it to those cases. A
+    /// rule this fiddly is not worth having if nothing checks it.
+    static func directory(for pane: Pane) -> String? {
         guard let path = pane.foregroundCwd ?? pane.cwd, !path.isEmpty else { return nil }
-        guard let leaf = path.split(separator: "/").last,
-              !pane.displayTitle.hasSuffix(leaf) else { return nil }
+        guard let titled = pane.displayTitle
+            .split(whereSeparator: { $0 == "/" || $0 == ":" }).last
+        else { return path }
+        guard titled != "~", titled != path.split(separator: "/").last else { return nil }
         return path
     }
 }

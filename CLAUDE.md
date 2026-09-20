@@ -838,6 +838,15 @@ so a shell had no row and no route; and the only button on it was Start Agent.
     screen under Terminals instead.
   - The refusal itself is an alert, for the reason `SessionControlFlow` uses
     one: there is no sheet of its own for it to be read in.
+- **Opening a terminal row `stty`s that pane, and puts it back on the way
+  out.** `PaneModel` resizes the pty to the phone's grid before it opens the
+  stream — the same write it already makes for an agent's terminal — and
+  `restore` returns it when the screen goes. What is new is *which* panes are
+  one tap away: an agent's pane belongs to an agent, while this section lists
+  the shell somebody at the Mac may be typing in, and looking at it reflows
+  their window for as long as the phone is on that screen. Kept, because a
+  terminal row has nothing else to show and the tap is the ask — but it is why
+  the list only lists, and why nothing here opens a pane the user did not name.
 - **Typing in a shell still takes control, with the same confirmation.** herdr
   allows one input owner and a `control` attach that is not a takeover is
   silently inert, so nothing changes here — though for a shell the phone made

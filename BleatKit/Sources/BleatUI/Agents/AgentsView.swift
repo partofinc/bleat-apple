@@ -50,7 +50,22 @@ struct AgentsView: View {
         self.title = title
         _entries = State(wrappedValue: RemoteList(connections: connections, session: session) {
             let agents = try await $0.agents()
-            let panes = try await $0.panes()
+            // **The second list may fail without taking the first with it**,
+            // which is the rule `PaneModel.paneSize` already states: a
+            // `HerdrError` or a `DecodingError` is this host declining to
+            // describe its panes — a herdr whose `pane list` rows have moved,
+            // say — and losing the terminals is not worth losing the agents
+            // this screen exists for. A `TransportError` still propagates,
+            // because that is the connection rather than the command, and
+            // swallowing it would report a dead host as an empty workspace.
+            let panes: [Pane]
+            do {
+                panes = try await $0.panes()
+            } catch is HerdrError {
+                panes = []
+            } catch is DecodingError {
+                panes = []
+            }
             // **Occupancy is judged against every agent in the session, not
             // just this workspace's.** They are the same set here — an agent
             // is in the workspace its pane is — and asking the whole list
@@ -105,7 +120,13 @@ struct AgentsView: View {
         @Bindable var newTerminal = newTerminal
         return RemoteListView(
             state: entries.state,
-            empty: "Nothing is running here. Open a terminal, or start an agent in one.",
+            // Named for what this screen can actually do. The session-wide
+            // list has no plus for a terminal — a tab belongs to a workspace —
+            // so telling that one to open a terminal is advice it refuses to
+            // take.
+            empty: workspace == nil
+                ? "Nothing is running in this session. Open a workspace to start something in it."
+                : "Nothing is running here. Open a terminal, or start an agent in one.",
             retry: { await entries.load(for: peer) }
         ) { list in
             // Each section is drawn only when it has rows: a heading over
@@ -131,36 +152,48 @@ struct AgentsView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
-                Menu {
-                    // **Only from inside a workspace.** A tab belongs to one,
-                    // and the session-wide list is not in one — guessing which
-                    // workspace should gain a pane puts one in somebody's
-                    // project.
-                    if let workspace {
+                // **A menu only where it has two things in it.** A tab belongs
+                // to a workspace, so the session-wide list cannot make a
+                // terminal — and a menu of one item is the old button with an
+                // extra tap in front of it.
+                if let workspace {
+                    Menu {
                         Button("New Terminal", systemImage: "terminal") {
                             openTerminal(in: workspace)
                         }
                         .disabled(newTerminal.isCreating)
+                        Button("Start Agent…", systemImage: "sparkles") {
+                            // A whole reset, not just the failure: the model
+                            // outlives the sheet. See `NewWorkspaceModel.reset`.
+                            newAgent.reset()
+                            isStarting = true
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
                     }
-                    Button("Start Agent…", systemImage: "sparkles") {
-                        // A whole reset, not just the failure: the model
-                        // outlives the sheet. See `NewWorkspaceModel.reset`.
+                    .buttonStyle(.glassProminent)
+                } else {
+                    Button("Start Agent", systemImage: "plus") {
                         newAgent.reset()
                         isStarting = true
                     }
-                } label: {
-                    Label("Add", systemImage: "plus")
+                    .buttonStyle(.glassProminent)
                 }
-                .buttonStyle(.glassProminent)
             }
         }
-        // A terminal is one command with no sheet of its own, so a refusal has
-        // nowhere else to be read. `SessionControlFlow` says the same sentence
-        // for the same reason.
-        .alert("That did not happen", isPresented: $newTerminal.isShowingFailure) {
+        // A terminal is one command with no sheet of its own, so anything worth
+        // reading has nowhere else to go. `SessionControlFlow` uses an alert
+        // for the same reason — and the title comes from the notice, because
+        // "that did not happen" is a lie about the tab that was created out of
+        // a reply that did not name its pane.
+        .alert(
+            newTerminal.notice?.title ?? "",
+            isPresented: $newTerminal.isShowingNotice,
+            presenting: newTerminal.notice
+        ) { _ in
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(newTerminal.failure ?? "The host did not say why.")
+        } message: { notice in
+            Text(notice.message)
         }
         // **The pane is opened from `onDismiss`, not from inside the sheet.**
         // SwiftUI will not act on a navigation raised by a view that is on its
@@ -211,15 +244,27 @@ struct AgentsView: View {
     /// The push is straight from the button, not from an `onDismiss`: a menu
     /// has already gone by the time its action runs, so there is no view on its
     /// way out for the navigation to be swallowed by.
+    ///
+    /// **The pane is pushed before the list is reloaded**, and the order is the
+    /// whole of the feedback. A reload keeps the rows it has and draws no
+    /// spinner, so reloading first leaves the tap with nothing to show for
+    /// itself for a `tab create` plus two list commands — and then navigates on
+    /// its own, at a moment the user has stopped expecting it, possibly from a
+    /// screen they have since left.
     private func openTerminal(in workspace: String) {
         Task {
             let pane = await newTerminal.create(in: workspace, for: peer)
+            if let pane {
+                context.navigation.push(.pane(
+                    peer: peer.hostKey, session: session, target: pane.target,
+                    title: pane.displayTitle, mode: .terminal
+                ))
+            }
+            // After the push, and on the refusal path too: a create that threw
+            // is not proof that nothing happened, so whatever really landed is
+            // listed rather than invisible behind a retry that would make a
+            // second one.
             await entries.load(for: peer)
-            guard let pane else { return }
-            context.navigation.push(.pane(
-                peer: peer.hostKey, session: session, target: pane.target,
-                title: pane.displayTitle, mode: .terminal
-            ))
         }
     }
     #endif

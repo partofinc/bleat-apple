@@ -17,16 +17,27 @@ import Observation
 @Observable
 final class NewTerminalModel {
     private(set) var isCreating = false
-    /// Shown in an alert and cleared by it. Creating a terminal is one command
-    /// with no sheet to report into, so a refusal has nowhere else to go.
-    private(set) var failure: String?
+
+    /// What the alert says. Creating a terminal is one command with no sheet to
+    /// report into, so anything worth reading has nowhere else to go.
+    ///
+    /// **Two shapes, and they are not both failures.** A refusal is herdr
+    /// declining and nothing was created; the other is a tab that *was*
+    /// created out of a reply that did not say which pane it brought, where
+    /// "that did not happen" would be a lie about somebody's Mac.
+    struct Notice: Identifiable, Sendable {
+        let title: String
+        let message: String
+        var id: String { title + message }
+    }
+
+    private(set) var notice: Notice?
 
     /// The alert's binding, the shape `SessionControlModel` uses: SwiftUI
-    /// writes false when the alert goes, and that write is what clears the
-    /// message.
-    var isShowingFailure: Bool {
-        get { failure != nil }
-        set { if !newValue { failure = nil } }
+    /// writes false when the alert goes, and that write is what clears it.
+    var isShowingNotice: Bool {
+        get { notice != nil }
+        set { if !newValue { notice = nil } }
     }
 
     /// nil only in `#Preview`; production callers all pass one.
@@ -39,10 +50,10 @@ final class NewTerminalModel {
     }
 
     #if DEBUG
-    init(previewing failure: String? = nil) {
+    init(previewing notice: Notice? = nil) {
         self.connections = nil
         self.session = nil
-        self.failure = failure
+        self.notice = notice
     }
     #endif
 
@@ -59,9 +70,10 @@ final class NewTerminalModel {
     /// **The pane is taken from the reply's own `root_pane`, never from
     /// "whichever pane is new".** `TabCreated` makes that field optional
     /// because a malformed one must not fail a tab that was really created —
-    /// and in that case the honest answer is nil: the caller reloads, the new
-    /// terminal appears in the list with the rest, and nothing has guessed at a
-    /// pane somebody at the Mac may be sitting in.
+    /// and in that case nothing is opened, because the alternative is guessing
+    /// at a pane somebody at the Mac may be sitting in. That is **said**
+    /// rather than left as a button that appears to do nothing: the terminal
+    /// exists, it is in the list, and only its identity was lost.
     ///
     /// A failure is reported and nothing is opened, but it is **not** a promise
     /// that nothing was created: a connection that drops after herdr ran the
@@ -71,14 +83,25 @@ final class NewTerminalModel {
     func create(in workspace: String, for peer: PairedPeer) async -> Pane? {
         guard let connections, !isCreating else { return nil }
         isCreating = true
-        failure = nil
+        notice = nil
         defer { isCreating = false }
         do {
             let client = try await connections.client(for: peer, session: session)
-            return try await client.createTab(inWorkspace: workspace).rootPane
+            guard let pane = try await client.createTab(inWorkspace: workspace).rootPane else {
+                notice = Notice(
+                    title: "The terminal is in the list",
+                    message: "The host made it but did not say which pane it is, "
+                        + "so it could not be opened straight away."
+                )
+                return nil
+            }
+            return pane
         } catch {
             await connections.handle(error)
-            failure = ErrorMessage.failure(of: error).message
+            notice = Notice(
+                title: "That did not happen",
+                message: ErrorMessage.failure(of: error).message
+            )
             return nil
         }
     }

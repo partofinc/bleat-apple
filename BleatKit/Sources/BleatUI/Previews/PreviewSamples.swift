@@ -62,8 +62,8 @@ extension Agent {
             Agent(
                 paneID: "w2:p1", workspaceID: "w2", tabID: "t1", agentStatus: .blocked,
                 agent: "claude",
-                cwd: "/Users/ravil/Developer/rawillk/bleat-apple",
-                foregroundCwd: "/Users/ravil/Developer/rawillk/bleat-apple/BleatKit",
+                cwd: "/Users/ravil/Developer/partofinc/bleat-apple",
+                foregroundCwd: "/Users/ravil/Developer/partofinc/bleat-apple/BleatKit",
                 terminalTitleStripped: "Do you want to make this edit to PeerDetailView.swift?"
             ),
             Agent(
@@ -150,13 +150,13 @@ extension Pane {
         // falls back to the pane id.
         let body = """
         [{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
-          "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
-          "terminal_title":"ravil@rawillkair:~/Developer/rawillk/bleat-apple",
-          "terminal_title_stripped":"ravil@rawillkair:~/Developer/rawillk/bleat-apple"},
+          "focused":false,"cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
+          "foreground_cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
+          "terminal_title":"ravil@rawillkair:~/Developer/partofinc/bleat-apple",
+          "terminal_title_stripped":"ravil@rawillkair:~/Developer/partofinc/bleat-apple"},
          {"pane_id":"w2:p3","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
-          "focused":false,"cwd":"/Users/ravil/Developer/rawillk/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/rawillk/bleat-apple/BleatKit",
+          "focused":false,"cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
+          "foreground_cwd":"/Users/ravil/Developer/partofinc/bleat-apple/BleatKit",
           "terminal_title":"swift test","terminal_title_stripped":"swift test"},
          {"pane_id":"w653998617a6031:p1","workspace_id":"w653998617a6031",
           "tab_id":"w653998617a6031:t1","agent_status":"unknown","focused":false,
@@ -173,7 +173,7 @@ extension Pane {
     /// truncation the right choice in the row.
     static var sampleDirectories: [String] {
         [
-            "/Users/ravil/Developer/rawillk/bleat-apple",
+            "/Users/ravil/Developer/partofinc/bleat-apple",
             "/Users/ravil/Developer/rawillk/herdr",
             "/Users/ravil/Developer/nuvio/nuvio-assess",
             "/Users/ravil/dotfiles",

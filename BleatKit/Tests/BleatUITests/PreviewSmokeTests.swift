@@ -293,7 +293,7 @@ struct PreviewSmokeTests {
         // one nobody will otherwise ever see — created, somewhere else.
         for model in [
             NewWorkspaceModel(
-                previewing: "/Users/ravil/Developer/rawillk/bleat-apple",
+                previewing: "/Users/ravil/Developer/partofinc/bleat-apple",
                 suggestions: Pane.sampleDirectories
             ),
             NewWorkspaceModel(previewing: "Developer/bleat-apple"),
@@ -328,11 +328,11 @@ struct PreviewSmokeTests {
             ),
             NewAgentModel(
                 previewing: "reviewer", workspace: "w2",
-                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple"
+                workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple"
             ),
             NewAgentModel(
                 previewing: "reviewer", workspace: "w2",
-                workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
+                workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple",
                 isAddingPane: true
             ),
             // The host never answered about its panes, so the screen must not

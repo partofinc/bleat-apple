@@ -202,7 +202,7 @@ struct NewWorkspaceForm: View {
 /// The ordinary case: a directory picked from the host's own list.
 #Preview("Naming", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer/rawillk/bleat-apple",
+        previewing: "/Users/ravil/Developer/partofinc/bleat-apple",
         suggestions: Pane.sampleDirectories
     ))
 }
@@ -258,7 +258,7 @@ struct NewWorkspaceForm: View {
 
 #Preview("Creating", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer/rawillk/bleat-apple", isCreating: true
+        previewing: "/Users/ravil/Developer/partofinc/bleat-apple", isCreating: true
     ))
 }
 

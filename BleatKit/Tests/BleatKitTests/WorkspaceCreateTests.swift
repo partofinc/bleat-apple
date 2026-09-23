@@ -183,7 +183,7 @@ struct WorkspaceCreateTests {
     /// the label blank will do. Every row here is a create with no `--label`
     /// run against herdr 0.9.0.
     @Test("the suggested label is the basename, which is what herdr would pick", arguments: [
-        ("/Users/ravil/Developer/rawillk/bleat-apple", "bleat-apple"),
+        ("/Users/ravil/Developer/partofinc/bleat-apple", "bleat-apple"),
         ("/Users/ravil/Developer", "Developer"),
         ("/tmp", "tmp"),
         ("/", "/"),

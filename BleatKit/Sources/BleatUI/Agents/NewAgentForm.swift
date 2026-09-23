@@ -324,14 +324,14 @@ struct NewAgentForm: View {
 #Preview("No free panes", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", workspace: "w2",
-        workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple"
+        workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple"
     ))
 }
 
 #Preview("Adding a pane", traits: .sampleData) {
     NewAgentPreview(model: NewAgentModel(
         previewing: "reviewer", workspace: "w2",
-        workspaceDirectory: "/Users/ravil/Developer/rawillk/bleat-apple",
+        workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple",
         isAddingPane: true
     ))
 }

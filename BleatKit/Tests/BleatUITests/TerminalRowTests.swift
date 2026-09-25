@@ -58,8 +58,8 @@ struct TerminalRowTests {
 
     @Test("a running command is not the directory, so the path is shown")
     func runningCommand() throws {
-        let running = try pane(title: "swift test", cwd: "/Users/ravil/Developer/rawillk/bleat-apple")
-        #expect(TerminalRow.directory(for: running) == "/Users/ravil/Developer/rawillk/bleat-apple")
+        let running = try pane(title: "swift test", cwd: "/Users/ravil/Developer/partofinc/bleat-apple")
+        #expect(TerminalRow.directory(for: running) == "/Users/ravil/Developer/partofinc/bleat-apple")
     }
 
     /// The false positive a plain suffix test had: the command's last word is

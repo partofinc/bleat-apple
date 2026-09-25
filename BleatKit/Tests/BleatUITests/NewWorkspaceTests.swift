@@ -39,7 +39,7 @@ struct NewWorkspaceTests {
     /// lying about what leaving the field blank will do.
     @Test("the label placeholder is the folder's name")
     func placeholderIsTheBasename() {
-        #expect(NewWorkspaceModel(previewing: "/Users/ravil/Developer/rawillk/bleat-apple")
+        #expect(NewWorkspaceModel(previewing: "/Users/ravil/Developer/partofinc/bleat-apple")
             .labelPlaceholder == "bleat-apple")
     }
 

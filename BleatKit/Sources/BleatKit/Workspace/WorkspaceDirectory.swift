@@ -86,7 +86,7 @@ public struct WorkspaceDirectory: Sendable, Hashable {
     ///
     /// | cwd | label |
     /// |---|---|
-    /// | `/Users/ravil/Developer/rawillk/bleat-apple` | `bleat-apple` |
+    /// | `/Users/ravil/Developer/partofinc/bleat-apple` | `bleat-apple` |
     /// | `/Users/ravil/Developer` | `Developer` |
     /// | `/tmp` | `tmp` |
     /// | `/` | `/` |

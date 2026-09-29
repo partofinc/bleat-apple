@@ -146,9 +146,9 @@ struct SessionControlTests {
     }
 
     /// **Forgetting on delete is not tidiness.** The name is the only thing
-    /// tying a session to this install, so one left behind would be inherited
-    /// by the next session of that name — made by whoever is at the Mac — and
-    /// hand the phone a Stop action over their work.
+    /// tying a session to this install, so one left behind would be inherited by
+    /// the next session of that name — made by whoever is at the Mac — and hand
+    /// the phone a Delete over their layout.
     @Test("deleting a session drops the claim on its name")
     func forgetsOnDelete() throws {
         let registry = registry()
@@ -160,11 +160,12 @@ struct SessionControlTests {
         #expect(stored?.createdSessions == nil, "an empty list should not linger as an empty array")
     }
 
-    /// **The claim Stop is offered on, and why it expires.** It means "this
-    /// phone is why it is running" — so once the session is down it is no
+    /// **The claim the stop confirmation reads, and why it expires.** It means
+    /// "this phone is why it is running" — so once the session is down it is no
     /// longer true. Left standing, starting and stopping the user's own `work`
-    /// session from the phone would leave a permanent claim on that name, and a
-    /// Stop button over whatever they started next.
+    /// session from the phone would leave a permanent claim on that name, and
+    /// the confirmation would then call whatever they started next under it this
+    /// phone's own doing.
     @Test("stopping a session drops the claim that it is running because of us")
     func startedClaimExpires() throws {
         let registry = registry()
@@ -178,8 +179,9 @@ struct SessionControlTests {
         #expect(stored?.startedSessions == nil, "an empty list should not linger as an empty array")
     }
 
-    /// Restarting somebody else's session earns a Stop, never a Delete —
-    /// deleting removes the session directory, and that is their layout.
+    /// Restarting somebody else's session never earns a Delete — that removes
+    /// the session directory, and the directory is their layout. Stop needs no
+    /// claim at all; this is what keeps the two from being confused.
     @Test("the two claims are independent")
     func claimsAreIndependent() throws {
         let registry = registry()

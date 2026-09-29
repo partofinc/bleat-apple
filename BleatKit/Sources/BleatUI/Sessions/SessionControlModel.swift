@@ -2,28 +2,38 @@ import BleatKit
 import Foundation
 import Observation
 
-/// Stopping and deleting a session, for the sessions this phone started.
+/// Starting, stopping and deleting a session.
 ///
-/// **The most destructive thing Bleat does, and the only one that ends work
-/// nobody asked about.** Unpairing takes away this phone's access; stopping a
-/// session takes away *the host's processes*. Measured against herdr 0.9.0: a
-/// session with one pane was stopped and its shell — pid and all — was gone a
-/// second later. On a session holding agents that is their work ending, with
-/// no undo and nothing on the Mac to say who did it.
+/// **Stopping is the most destructive thing Bleat does, and the only one that
+/// ends work nobody asked about.** Unpairing takes away this phone's access;
+/// stopping a session takes away *the host's processes*. Measured against herdr
+/// 0.9.0: a session with one pane was stopped and its shell — pid and all —
+/// was gone a second later. On a session holding agents that is their work
+/// ending, with no undo and nothing on the Mac to say who did it.
 ///
-/// Three things stand between that and a swipe, and all three are needed:
+/// **And it is offered for every running session, which it was not at first.**
+/// Stop used to be gated on `PairedPeer.startedHere`, on the rule that the
+/// phone may undo what it did — and that withheld it from the case the feature
+/// turns out to be for: starting and stopping a host's sessions is the handy
+/// thing about having a phone, and the gate denied it to every session started
+/// at the Mac and to every session this install had forgotten. The claim is not
+/// gone; it moved from the gate to the confirmation's wording, which now says
+/// when a session was not started from this phone.
 ///
-/// - **Only sessions this phone created.** `PairedPeer.createdHere` is checked
-///   before the actions are offered at all, so the `work` session someone is
-///   sitting in front of has no swipe. The claim is only ever what this install
-///   remembers doing — a reinstall forgets, and then offers nothing, which is
-///   the safe direction.
+/// Two things still stand between a swipe and `herdr session stop`, and with
+/// the claim no longer gating, they are the whole of it:
+///
 /// - **A swipe asks; it does not act.** The same rule as unpairing a peer. A
 ///   full swipe reaching a confirmation is survivable; one reaching `session
-///   stop` is not.
+///   stop` is not. `confirmation(for:about:on:)` names the session, says what
+///   exits with it, and says whose it is.
 /// - **The result is checked, not assumed.** `deleted: true` comes back for a
 ///   session that never existed — see `SessionChange` — so the list is read
 ///   again and the answer is whether the name is really gone.
+///
+/// **Delete is still gated, and on the stronger claim.** It removes the session
+/// *directory* — for a session somebody else set up, that is their layout — and
+/// unlike a stop there is no command that puts it back. `createdHere` guards it.
 @Observable
 @MainActor
 final class SessionControlModel {
@@ -102,19 +112,16 @@ final class SessionControlModel {
 
     /// What may be offered for a row, in the order the swipe shows them.
     ///
-    /// Empty for a session this phone did not start — which is the whole guard
-    /// — and never both at once: herdr refuses to delete a running session, so
-    /// offering Delete there would be an action that has already failed before
-    /// it is taken.
+    /// Never Stop and Delete at once: herdr refuses to delete a running
+    /// session, so offering Delete there would be an action that had already
+    /// failed before it was taken.
     static func actions(for session: SessionInfo, on peer: PairedPeer) -> [Action] {
-        // **Stop is the guarded one, and it is guarded on `startedHere` rather
-        // than on who created the session.** The rule is that the phone may
-        // undo what it did: a session it started, it may stop. One that is
-        // running because somebody is using it has no Stop, which is the whole
-        // point.
-        guard !session.running else {
-            return peer.startedHere(session.name) ? [.stop] : []
-        }
+        // **Every running session may be stopped, and the confirmation is what
+        // makes that safe** — see the note on this type for what this used to
+        // be gated on and why it is not any more. Stop is also the only action
+        // a running session has, so it is what a full swipe reaches; that is
+        // survivable precisely because reaching it raises a question.
+        guard !session.running else { return [.stop] }
         // **Start is offered for anyone's stopped session.** It restores rather
         // than creates — measured: the workspaces, panes and a fresh shell in
         // each come back at their recorded cwd — so it ends nothing, and it is
@@ -134,6 +141,36 @@ final class SessionControlModel {
     /// and the way back from an unwanted one is the Stop button beside it.
     /// Stopping and deleting both end things that cannot be brought back.
     static func needsConfirmation(_ action: Action) -> Bool { action != .start }
+
+    /// What the confirmation says — which for Stop is now the whole of the
+    /// safety story, so it lives here rather than inside the view modifier
+    /// that presents it.
+    ///
+    /// **A private `message` in a `ViewModifier` is reachable by nothing.** With
+    /// the `startedHere` gate gone, this sentence is the one thing standing in
+    /// front of `herdr session stop` for somebody else's session, and it is
+    /// pinned by `SessionActionsTests`.
+    static func confirmation(
+        for action: Action, about session: SessionInfo, on peer: PairedPeer
+    ) -> String {
+        switch action {
+        // Never asked about — `needsConfirmation` says so — but the switch has
+        // to be total.
+        case .start: ""
+        case .stop:
+            // Named plainly, because it is the part that cannot be taken back:
+            // anything running in that session, an agent mid-task included,
+            // exits with it. And **whose** session it is, because the phone can
+            // now stop one it never started — that clause is the difference
+            // between ending a scratch session and ending somebody's afternoon.
+            "Everything running in \(session.name) on \(peer.name) exits, "
+                + "including any agents. This cannot be undone."
+                + (peer.startedHere(session.name) ? "" : " This phone did not start it, "
+                    + "so somebody may be working in it.")
+        case .delete:
+            "\(session.name) and its workspaces are removed from \(peer.name)."
+        }
+    }
 
     func ask(_ action: Action, about session: SessionInfo) {
         phase = .confirming(action, session)

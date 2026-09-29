@@ -86,9 +86,8 @@ public final class PeerStore {
         reload()
     }
 
-    /// Remembers that this phone started a session on the host, which is what
-    /// lets it be stopped and deleted from here later. See
-    /// `PairedPeer.createdSessions`.
+    /// Remembers that this phone created a session on the host, which is what
+    /// lets it be deleted from here later. See `PairedPeer.createdSessions`.
     ///
     /// Failing to record it is not worth reporting: the session is running
     /// either way, and the only cost is that the phone will treat it as
@@ -98,8 +97,8 @@ public final class PeerStore {
         reload()
     }
 
-    /// Records that this phone is why a session is running, which is what Stop
-    /// is offered on. See `PairedPeer.startedSessions`.
+    /// Records that this phone is why a session is running, which is what the
+    /// stop confirmation reads. See `PairedPeer.startedSessions`.
     public func recordStartedSession(_ session: String, for peer: PairedPeer) {
         try? registry.recordStartedSession(session, forHostKey: peer.hostKey)
         reload()

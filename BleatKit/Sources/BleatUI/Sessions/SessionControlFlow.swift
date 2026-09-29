@@ -8,11 +8,13 @@ import SwiftUI
 /// presentation per session, of which SwiftUI raises whichever it reaches first
 /// and silently drops the rest.
 ///
-/// **The dialog is the whole safety story for stopping.** herdr ends every
-/// process in a session when it stops — measured, a pane's shell was gone a
-/// second later — and there is no undo and nothing at the Mac saying who did
-/// it. So the message names the session and says what goes with it, rather than
-/// asking "are you sure?" about a verb.
+/// **The dialog is the whole safety story for stopping, and that is now literal
+/// rather than nearly so.** herdr ends every process in a session when it stops
+/// — measured, a pane's shell was gone a second later — there is no undo and
+/// nothing at the Mac saying who did it, and since Stop stopped being gated on
+/// `startedHere` there is no second guard behind this one. So the message names
+/// the session, says what goes with it and says whose it is, rather than asking
+/// "are you sure?" about a verb.
 struct SessionControlFlow: ViewModifier {
     let control: SessionControlModel
     let peer: PairedPeer
@@ -74,21 +76,15 @@ struct SessionControlFlow: ViewModifier {
         return "\(pending.action.title) \(pending.session.name)?"
     }
 
+    /// **The wording lives on the model, not here.** Stop is offered for every
+    /// running session now, so what this says is the safety story rather than a
+    /// label for it — and a `private var` on a view modifier is something no
+    /// test can read. See `SessionControlModel.confirmation(for:about:on:)`.
     private var message: String {
         guard let pending = control.pending else { return "" }
-        switch pending.action {
-        // Never asked about — `needsConfirmation` says so — but the switch has
-        // to be total.
-        case .start: return ""
-        case .stop:
-            // Named plainly, because it is the part that cannot be taken back.
-            // Anything running in that session — an agent mid-task included —
-            // exits with it.
-            return "Everything running in \(pending.session.name) on \(peer.name) exits, "
-                + "including any agents. This cannot be undone."
-        case .delete:
-            return "\(pending.session.name) and its workspaces are removed from \(peer.name)."
-        }
+        return SessionControlModel.confirmation(
+            for: pending.action, about: pending.session, on: peer
+        )
     }
 }
 

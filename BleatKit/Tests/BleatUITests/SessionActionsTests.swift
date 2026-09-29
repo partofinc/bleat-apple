@@ -2,11 +2,13 @@ import BleatKit
 import Testing
 @testable import BleatUI
 
-/// Which sessions a swipe may act on — the guard, on its own.
+/// Which sessions a swipe may act on, and what it asks before it acts.
 ///
-/// Worth its own suite because it is the only thing standing between a swipe
-/// and `herdr session stop`, which ends every process in a session. Measured
-/// against herdr 0.9.0: stopping a session killed its pane's shell outright.
+/// Worth its own suite because between a swipe and `herdr session stop` — which
+/// ends every process in a session; measured against herdr 0.9.0, it killed a
+/// pane's shell outright — there is now only the confirmation. Stop used to be
+/// gated on `startedHere` as well; it is not, so the wording is covered here
+/// beside the actions.
 @Suite("What a session row offers")
 @MainActor
 struct SessionActionsTests {
@@ -30,16 +32,20 @@ struct SessionActionsTests {
         )
     }
 
-    // MARK: - Stop, which is the guarded one
+    // MARK: - Stop, which is offered for anyone's session
 
-    /// **The one that matters.** `work` is somebody's real session, running
-    /// because they are using it. Nothing this phone did put it there, so there
-    /// is no Stop.
-    @Test("a running session this phone did not start cannot be stopped")
-    func noStopForSomebodyElses() {
-        #expect(actions("work", running: true).isEmpty)
-        // Not even when the phone owns a *different* session on the same host.
-        #expect(actions("work", running: true, created: ["scratch"], started: ["scratch"]).isEmpty)
+    /// **The one that changed, and the case the feature is for.** `work` is
+    /// somebody's real session, running because they are using it — and it can
+    /// be stopped from the phone. Gating this on `startedHere` withheld Stop
+    /// from every session started at the Mac and from every session a reinstall
+    /// had forgotten, which is most of them.
+    @Test("a running session this phone did not start can still be stopped")
+    func stopAnybodysRunningSession() {
+        #expect(actions("work", running: true) == [.stop])
+        // Nor does owning a *different* session on the same host come into it.
+        #expect(
+            actions("work", running: true, created: ["scratch"], started: ["scratch"]) == [.stop]
+        )
     }
 
     @Test("a running session this phone started can be stopped")
@@ -47,15 +53,15 @@ struct SessionActionsTests {
         #expect(actions("scratch", running: true, started: ["scratch"]) == [.stop])
     }
 
-    /// The claim that matters for Stop is "this phone is why it is running",
-    /// not "this phone made it once". A session created here but started again
-    /// by somebody at the Mac is theirs while it runs.
-    @Test("having created a session is not on its own a licence to stop it")
-    func createdButNotStarted() {
+    /// Stop is the *only* action a running session has, whoever started it:
+    /// herdr refuses to delete one that is up, so offering Delete there would be
+    /// an action that had already failed before it was taken.
+    @Test("a running session is never offered Delete")
+    func noDeleteWhileRunning() {
         #expect(
-            actions("scratch", running: true, created: ["scratch"]).isEmpty,
-            "a session running for somebody else's reasons offered a Stop"
+            actions("scratch", running: true, created: ["scratch"], started: ["scratch"]) == [.stop]
         )
+        #expect(!actions("work", running: true).contains(.delete))
     }
 
     // MARK: - Start, which is not guarded
@@ -85,12 +91,55 @@ struct SessionActionsTests {
     }
 
     /// A reinstall loses both records — they live in Application Support, which
-    /// is excluded from backup. It can still start things, and can stop nothing
-    /// it did not start. That is the intended direction.
-    @Test("a fresh install can start anything and stop nothing")
+    /// is excluded from backup. It can still start and stop anything; what it
+    /// cannot do is delete, and that is the line that matters. A stop has a
+    /// Start beside it; a delete has nothing at all.
+    @Test("a fresh install can start and stop anything, and delete nothing")
     func freshInstall() {
         #expect(actions("scratch", running: false) == [.start])
-        #expect(actions("scratch", running: true).isEmpty)
+        #expect(actions("scratch", running: true) == [.stop])
+    }
+
+    // MARK: - What the confirmation says, which is the guard that is left
+
+    /// **The sentence in front of `herdr session stop`.** With Stop offered for
+    /// anyone's session, this is the only thing that tells the user they are
+    /// about to end work that is not theirs — so it is pinned here rather than
+    /// left inside a view modifier where nothing could read it.
+    @Test("stopping a session this phone did not start says so")
+    func stopConfirmationNamesWhoseSessionItIs() {
+        let message = SessionControlModel.confirmation(
+            for: .stop, about: session("work", running: true), on: peer()
+        )
+        #expect(message.contains("work"))
+        #expect(message.contains("cannot be undone"))
+        #expect(
+            message.contains("did not start"),
+            "nothing in the confirmation said the session is not this phone's to end"
+        )
+    }
+
+    /// And it does not say it about a session the phone did start, which would
+    /// be false — and a warning that is there every time is one to tap through
+    /// on the occasion it is true.
+    @Test("stopping our own session does not claim somebody may be working in it")
+    func stopConfirmationIsQuietAboutOurOwn() {
+        let message = SessionControlModel.confirmation(
+            for: .stop, about: session("scratch", running: true), on: peer(started: ["scratch"])
+        )
+        #expect(message.contains("scratch"))
+        #expect(!message.contains("did not start"))
+    }
+
+    /// Delete says what it removes, and says nothing about who started it: the
+    /// claim that gates it has already answered that question.
+    @Test("deleting names the session and its workspaces")
+    func deleteConfirmation() {
+        let message = SessionControlModel.confirmation(
+            for: .delete, about: session("scratch", running: false), on: peer(created: ["scratch"])
+        )
+        #expect(message.contains("scratch"))
+        #expect(message.contains("workspaces"))
     }
 
     /// Starting is the one action that ends nothing, and the way back is the

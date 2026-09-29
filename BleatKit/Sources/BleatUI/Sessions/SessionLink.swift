@@ -1,8 +1,8 @@
 import BleatKit
 import SwiftUI
 
-/// A session row that pushes its workspaces, and — for a session this phone
-/// started — swipes to stop or delete it.
+/// A session row that pushes its workspaces, and swipes to start, stop or
+/// delete it.
 struct SessionLink: View {
     let peer: PairedPeer
     let session: SessionInfo
@@ -18,11 +18,13 @@ struct SessionLink: View {
             SessionRow(session: session)
         }
         .buttonStyle(.plain)
-        // **Asking, never acting** — the rule the peer row already follows.
-        // Stopping a session ends every process in it, which is not something a
-        // full swipe may do on its own; what a full swipe reaches here is a
-        // confirmation. And nothing is offered at all for a session this phone
-        // did not create, so the host's real work has no swipe.
+        // **Asking, never acting** — the rule the peer row already follows, and
+        // the one that now carries this screen on its own. Stopping a session
+        // ends every process in it, which is not something a full swipe may do
+        // by itself; what a full swipe reaches here is a confirmation that
+        // names the session and says whose it is. Every running session has a
+        // Stop, the host's own included, so that question is the only guard
+        // left between the gesture and somebody's agents.
         .swipeActions {
             if let control {
                 ForEach(SessionControlModel.actions(for: session, on: peer), id: \.self) { action in
@@ -61,9 +63,11 @@ struct SessionLink: View {
     }
 }
 
-/// The same rows on a peer that started two of them from this phone: `work`
-/// swipes to Stop because it runs, `bleat-test` to Delete because it does not,
-/// and `phone` — which this install did not create — has no swipe at all.
+/// The same rows on a peer that started two of them from this phone. `work` and
+/// `phone` both swipe to Stop because they are running — the phone started
+/// `work` and did not start `phone`, which changes what the confirmation says
+/// and nothing about what is offered — and `bleat-test` swipes to Start then
+/// Delete, the second of which is still earned by having created it.
 #Preview("Session links, some ours", traits: .sampleData) {
     NavigationStack {
         List {

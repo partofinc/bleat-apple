@@ -89,9 +89,11 @@ enum SessionStarter {
         // to a session that may not exist.
         //
         // `createdSessions` only when the host had never heard of the name.
-        // Restarting an existing session earns a Stop, because this phone is
-        // now why it is running, and never a Delete: the layout it would throw
-        // away is whoever set it up's. See `PairedPeer.startedSessions`.
+        // Restarting an existing session never earns a Delete: the layout it
+        // would throw away is whoever set it up's. Stop needs no claim — it is
+        // offered for anything running — so what `startedSessions` buys is the
+        // shorter confirmation on a session this phone really did bring up.
+        // See `PairedPeer.startedSessions`.
         if before == nil { peers?.recordCreatedSession(name.text, for: peer) }
         peers?.recordStartedSession(name.text, for: peer)
         return .started

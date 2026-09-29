@@ -284,20 +284,42 @@ session holding agents that is their work ending, with no undo and nothing at
 the Mac to say who did it. This is the most destructive thing Bleat does —
 unpairing only takes away the phone's own access.
 
-So it is guarded three ways, and all three are needed:
+**Stop is offered for every running session, and it used to be gated.** Changed
+29 Sept 2026, on the report that starting and stopping sessions is the handy
+thing about having the phone: the gate was `startedSessions`, and it withheld
+Stop from every session started at the Mac and from every session a reinstall
+had forgotten — which is nearly all of them. A phone that can start a session
+and cannot stop the one it is looking at is the wrong shape, and the `work`
+session is exactly the one a person wants to put down from the sofa.
 
-- **The phone may undo what it did, and no more.** Two claims, kept apart on
-  purpose:
-  - **`startedSessions` — "this phone is why it is running"** — is what **Stop**
-    is offered on. Written when a launch the host has confirmed running
-    succeeds, and **dropped when the session stops**, because that is when it
-    stops being true.
+**So there are two guards now, not three — and the claim did not disappear, it
+moved from the gate to the confirmation's wording.** That makes "the dialog is
+the whole safety story for stopping" literal rather than nearly so: there is
+nothing behind it. What follows is the two remaining guards, and first what
+became of the claims, which still gate **Delete**.
+
+- **What the two claims are for.** Kept apart on purpose, as they were:
+  - **`startedSessions` — "this phone is why it is running"** — now decides
+    **what the stop confirmation says**. A session this phone did not start gets
+    an extra sentence naming it as somebody else's, so ending a scratch session
+    and ending somebody's afternoon do not ask the same question. Written when a
+    launch the host has confirmed running succeeds, and **dropped when the
+    session stops**, because that is when it stops being true.
+    - **The wording lives on `SessionControlModel`, not in
+      `SessionControlFlow`.** `confirmation(for:about:on:)` is a static function
+      beside `needsConfirmation` because a `private var message` on a view
+      modifier is reachable by no test, and with the gate gone that sentence is
+      the guard. `SessionActionsTests` pins both halves: that it appears for a
+      session this phone did not start, and that it does **not** appear for one
+      it did — a warning shown every time is one to tap through on the occasion
+      it is true.
     - **Both claims are derived from what the host said *before* the launch,
       never from the caller.** `SessionStarter` reads `session list` first. A
       version that launched and then asked only "is it running now?" answered
       yes when the launch had done nothing *because it was already up*, and
-      recorded a session somebody was working in as ours, which is a Stop over
-      their agents. A stale row is all it takes. **`session attach` makes this
+      recorded a session somebody was working in as ours, which is now a Delete
+      over their layout and used to be a Stop over their agents. A stale row is
+      all it takes. **`session attach` makes this
       load-bearing rather than belt-and-braces:** the old `herdr server` at
       least failed loudly at a running session, while `attach` is idempotent and
       succeeds silently, so this look is now the only thing that tells the two
@@ -305,33 +327,55 @@ So it is guarded three ways, and all three are needed:
       other claim: `createdSessions` only when the host had never heard of the
       name, so typing the name of somebody's stopped session into the new-
       session field resumes it without earning a Delete over their layout. Without expiry, starting and stopping the user's own
-    `work` session from the phone would leave a permanent claim on the name and
-    a Stop button over whatever they started next.
+    `work` session from the phone would leave a permanent claim on the name, and
+    the confirmation would then describe whatever the person at the Mac started
+    next under it as this phone's own doing.
+    - **A stop this phone did not perform still has to expire the claim, and
+      `forgetStartedSession` cannot see one.** It is called from the stop path
+      only, so a session the phone started and the *Mac* stopped — a reboot, or
+      somebody stopping and re-attaching it at the keyboard — kept the claim, and
+      the person at the Mac was then working in a session the phone called its
+      own. While the claim gated Stop that was an unearned button; now that it
+      words the confirmation it is worse, because the warning is the last guard
+      and it would go missing in exactly the case it exists for.
+      `PeerStore.reconcileStartedSessions(with:forHostKey:)` drops the claim for
+      every claimed name the host reports as **stopped**, and both screens that
+      read `session list` call it — `PeerDetailView`'s fetch and
+      `SessionStatus.load`, which is the one behind the bar that offers Stop.
+      - **On `running: false`, never on absence from the list**, and never on
+        presence. Reconciling on presence would drop the claim on every refresh;
+        absence means the session was *deleted*, which `forgetCreatedSession`
+        already covers where the phone did it. Keyed by host key and read back
+        from the store, so a caller holding a stale record cannot decide against
+        a stale copy of the field being reconciled. `StartedClaimTests` pins all
+        three halves, including that a still-running session keeps its claim.
   - **`createdSessions` — "this phone made it from nothing"** — is what
-    **Delete** is offered on, and nothing else. Deleting removes the session
-    *directory*; for a session somebody else set up, that is their layout.
-  - So `SessionControlModel.actions(for:on:)` offers no Stop for a session
-    running for somebody else's reasons — the `work` session someone is sitting
-    in front of has no swipe at all — and no Delete for one this phone merely
-    restarted. It is a name, not an identity: herdr has no notion of who created a
+    **Delete** is offered on, and that one is still a gate. Deleting removes the
+    session *directory*; for a session somebody else set up, that is their
+    layout, and unlike a stop there is no command that puts it back.
+  - So `SessionControlModel.actions(for:on:)` offers Stop for anything running,
+    whoever started it, and **no Delete for one this phone merely restarted.**
+    It is a name, not an identity: herdr has no notion of who created a
   session, so this is only ever what this install remembers doing. **A reinstall
-  forgets and then offers nothing**, which is the safe direction — the record
-  lives under Application Support, which is excluded from backup and does not
-  restore to a new phone.
+  forgets, and then every stop asks the longer question and nothing can be
+  deleted** — the safe direction, and the record lives under Application
+  Support, which is excluded from backup and does not restore to a new phone.
   - **The claim is dropped on delete**, and that is not tidiness. The name is
     all that ties a session to this install, so one left behind would be
     inherited by the next session of that name — made by whoever is at the Mac
-    — handing the phone a Stop action over their work.
+    — handing the phone a Delete over their layout.
   - **`merging` unions it.** A re-pair builds the incoming record from a
     scanned QR, which carries no sessions, so taking the newer value would
-    withdraw the actions from every session this phone had started.
+    withdraw the Delete action from every session this phone had created.
   - Stored as an **optional array**, not a defaulted one: the synthesized
     decoder does not apply default values for a missing key, and
     `PeerRegistry.all()` treats an undecodable file as a hard failure — a
     defaulted `Set` would have stranded every already-paired host on the first
     launch after this shipped.
-- **A swipe asks; it does not act.** The peer row's rule. The dialog names the
-  session and says what goes with it rather than asking "are you sure?".
+- **A swipe asks; it does not act.** The peer row's rule, and for Stop it is now
+  the only thing between the gesture and somebody's agents. The dialog names the
+  session, says what goes with it and says whose it is, rather than asking "are
+  you sure?" about a verb.
   - **A confirmed action takes its values as parameters, never reads them back
     out of the model.** SwiftUI clears a `confirmationDialog`'s binding *before*
     running the tapped button, and a model whose `isConfirming` setter resets
@@ -377,7 +421,8 @@ Two more shapes worth knowing:
 - **Delete is refused while the session runs** — `session_delete_failed`,
   "stop it before deleting" — so the row offers Stop *or* Delete, never both.
 - **Stop is refused when it is not running** (`session_stop_failed`), for the
-  same reason the row does not offer it.
+  same reason the row does not offer it — which is the one thing still gating
+  Stop, and it is the session's own state rather than a claim about it.
 
 Errors arrive as the unenveloped client-side shape, `{"error":{…}}` on stderr
 with exit 1, which `HerdrError.fromStderr` already parses.
@@ -400,12 +445,16 @@ question.
   **Agents are not restarted**: `herdr agent start` is a separate step herdr
   does not replay, so a pane that held one comes back as a plain shell. The
   stopped empty state says so.
-- A running session offers **Stop** (if the phone started it); a stopped one
-  offers **Start**, then **Delete** if the phone created it — Start first, so a
-  full swipe reaches the harmless one. Never a pair herdr would refuse.
+- A running session offers **Stop**, whoever started it; a stopped one offers
+  **Start**, then **Delete** if the phone created it — Start first, so a full
+  swipe reaches the harmless one. Never a pair herdr would refuse, and **nothing
+  at all for a name `SessionName` will not accept**: herdr takes `-x` and this
+  app cannot address it, so a row created at the Mac under such a name would
+  otherwise offer an action that fails by construction.
 - **The session screen has a bottom bar too**, the same shape as the peer
   screen's: the action on the left, prominent, and Delete to the right when
-  there is one. Empty for a session this phone did not start.
+  there is one. Empty while a session runs, since Stop is already the one on the
+  right.
 - **`SessionStatus` fetches whether the session is running**, because the route
   cannot carry it: a route's identity would then change the moment the session
   stopped, which is exactly when the screen has to stay put. `nil` means "not

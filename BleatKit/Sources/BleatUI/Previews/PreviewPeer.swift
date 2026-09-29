@@ -68,14 +68,16 @@ extension PairedPeer {
     /// phone — so the session rows can show what a swipe offers and, more to
     /// the point, what it does *not*.
     ///
-    /// `work` runs and so offers Stop; `bleat-test` is stopped and so offers
-    /// Delete; `phone` was started at the Mac and has no swipe at all. That
-    /// last row is the one worth looking at: it is the guard.
+    /// `work` and `phone` both run and so both offer Stop; `bleat-test` is
+    /// stopped and so offers Start then Delete. The row worth looking at is
+    /// `phone`, started at the Mac: it has the same swipe as `work` and a
+    /// different confirmation behind it, which is where the claim went when it
+    /// stopped being a gate.
     static var previewOwningSessions: PairedPeer {
         var peer = preview
         peer.createdSessions = ["work", "bleat-test"]
-        // `work` is running because this phone started it, which is what a
-        // Stop is offered on; `bleat-test` is down, so the claim has expired.
+        // `work` is running because this phone started it, so its confirmation
+        // is the shorter one; `bleat-test` is down, so the claim has expired.
         peer.startedSessions = ["work"]
         return peer
     }

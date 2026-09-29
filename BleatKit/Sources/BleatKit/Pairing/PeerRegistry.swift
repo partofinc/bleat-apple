@@ -187,8 +187,8 @@ public struct PeerRegistry: Sendable {
         return peers[index]
     }
 
-    /// Records that this phone is why `session` is running, which is what Stop
-    /// is offered on. See `PairedPeer.startedSessions`.
+    /// Records that this phone is why `session` is running, which is what the
+    /// stop confirmation reads. See `PairedPeer.startedSessions`.
     @discardableResult
     public func recordStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
         var peers = try all()
@@ -204,8 +204,9 @@ public struct PeerRegistry: Sendable {
     /// **Called on stop, and this is what keeps the claim honest.** It means
     /// "this phone is why it is running", so a session that is no longer
     /// running has no such reason. Left standing, starting and stopping the
-    /// user's own `work` session from the phone would leave a permanent claim
-    /// on that name — and a Stop button over whatever they started next.
+    /// user's own `work` session from the phone would leave a permanent claim on
+    /// that name — and the stop confirmation would then describe whatever they
+    /// started next under it as this phone's own doing.
     @discardableResult
     public func forgetStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
         var peers = try all()
@@ -222,9 +223,9 @@ public struct PeerRegistry: Sendable {
     /// **Called on delete, and that is not bookkeeping.** The name is the only
     /// thing tying a session to this install, so a name left in the list
     /// outlives the session it referred to — and the next session of that name,
-    /// made by whoever is at the Mac, would inherit the stop and delete actions
-    /// as if the phone had created it. Deleting is exactly when the claim stops
-    /// being true.
+    /// made by whoever is at the Mac, would inherit the Delete action as if the
+    /// phone had created it. Deleting is exactly when the claim stops being
+    /// true.
     @discardableResult
     public func forgetCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
         var peers = try all()
@@ -235,8 +236,8 @@ public struct PeerRegistry: Sendable {
         let remaining = (peers[index].createdSessions ?? []).filter { $0 != session }
         peers[index].createdSessions = remaining.isEmpty ? nil : remaining
         // A deleted session is not running either, so the other claim goes with
-        // it — otherwise a session of that name made later at the Mac would
-        // inherit a Stop button.
+        // it — otherwise a session of that name made later at the Mac would be
+        // described by the stop confirmation as one this phone had started.
         let started = (peers[index].startedSessions ?? []).filter { $0 != session }
         peers[index].startedSessions = started.isEmpty ? nil : started
         try write(peers)

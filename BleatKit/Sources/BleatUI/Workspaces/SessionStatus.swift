@@ -25,10 +25,15 @@ final class SessionStatus {
 
     private let connections: ConnectionStore?
     private let name: String?
+    /// Only to reconcile the started-session claim against what comes back —
+    /// see `PeerStore.reconcileStartedSessions`. This screen's bar offers Stop,
+    /// so the freshest `session list` it reads is worth spending on that.
+    private let peers: PeerStore?
 
-    init(connections: ConnectionStore, name: String?) {
+    init(connections: ConnectionStore, name: String?, peers: PeerStore) {
         self.connections = connections
         self.name = name
+        self.peers = peers
     }
 
     #if DEBUG
@@ -36,6 +41,7 @@ final class SessionStatus {
     init(previewing info: SessionInfo?) {
         self.connections = nil
         self.name = info?.name
+        self.peers = nil
         self.info = info
     }
     #endif
@@ -52,6 +58,9 @@ final class SessionStatus {
         guard let client = try? await connections.sessionAgnosticClient(for: peer),
               let sessions = try? await client.sessions()
         else { return }
+        // The whole list came back, not just this session's row, so the claim
+        // on every one of them can be checked against it while it is in hand.
+        peers?.reconcileStartedSessions(with: sessions, forHostKey: peer.hostKey)
         info = sessions.first { $0.name == name }
     }
 }

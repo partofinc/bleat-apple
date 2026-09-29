@@ -27,7 +27,9 @@ struct WorkspacesView: View {
         _workspaces = State(wrappedValue: RemoteList(connections: connections, session: session) {
             try await $0.workspaces()
         })
-        _status = State(wrappedValue: SessionStatus(connections: connections, name: session))
+        _status = State(wrappedValue: SessionStatus(
+            connections: connections, name: session, peers: peers
+        ))
         _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
         _newWorkspace = State(wrappedValue: NewWorkspaceModel(connections: connections, session: session))
     }
@@ -131,8 +133,9 @@ struct WorkspacesView: View {
         )
     }
 
-    /// Empty for a session this phone did not start, which is the guard — see
-    /// `SessionControlModel.actions(for:on:)`.
+    /// What this screen's session offers — see
+    /// `SessionControlModel.actions(for:on:)`. Never empty for a running
+    /// session: Stop is offered for anyone's.
     private var actions: [SessionControlModel.Action] {
         guard let info = status.info else { return [] }
         return SessionControlModel.actions(for: info, on: peer)
@@ -197,10 +200,11 @@ struct WorkspacesView: View {
 
     /// Whatever action goes to the right of the bar, if any.
     ///
-    /// Empty for a session this phone did not start, which is the guard rather
-    /// than an oversight: see `SessionControlModel.actions(for:on:)`. Empty too
-    /// while the session runs and this phone started it, because the only
-    /// action then is Stop and it is already the one on the right.
+    /// Empty while the session runs, because the only action then is Stop and
+    /// it is already the one on the right. Empty too for a stopped session this
+    /// phone did not create, where Start is the whole of the list — Delete is
+    /// still earned rather than offered. See
+    /// `SessionControlModel.actions(for:on:)`.
     @ViewBuilder
     private func trailingAction(prominent: Bool) -> some View {
         if let info = status.info {
@@ -265,9 +269,9 @@ struct WorkspacesView: View {
     }
 }
 
-/// **The guard.** A session running for somebody else's reasons: the
-/// workspaces are there and the bar is empty, because ending it is not on
-/// offer.
+/// A session running for somebody else's reasons. The bar offers Stop just as
+/// it does for our own — the claim stopped gating that — and what differs is the
+/// confirmation behind it, which says the phone did not start this one.
 #Preview("Not ours, running", traits: .sampleData) {
     NavigationStack {
         WorkspacesView(

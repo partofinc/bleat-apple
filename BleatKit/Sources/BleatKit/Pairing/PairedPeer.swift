@@ -95,23 +95,28 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// recorded cwd — so it ends nothing and is the only way back when the Mac
     /// has rebooted with nothing up.
     ///
-    /// But it does spawn processes, and a phone that can start something it
-    /// cannot stop is a worse shape than one that can do neither. So starting
-    /// records the claim, and the claim is what Stop is offered on: **the phone
-    /// may undo what it did.**
+    /// **It used to be what Stop was offered on, and it is not any more.** The
+    /// rule was "the phone may undo what it did", which withheld Stop from every
+    /// session started at the Mac — and starting and stopping a host's sessions
+    /// from a phone turns out to be the useful thing about having one. Stop is
+    /// offered for anything that is running; what this claim does now is decide
+    /// **what the confirmation says**, which is the guard that is left:
+    /// `SessionControlModel.confirmation(for:about:on:)` adds a sentence naming
+    /// the session as one this phone did not start, so ending somebody's
+    /// afternoon and ending a scratch session do not ask the same question.
     ///
     /// **Dropped when the session stops**, which is what keeps it honest. The
     /// claim is "this phone is why it is running" — not "this phone once
-    /// touched it" — so once it is down the claim has expired. Without that,
-    /// starting and stopping `work` from the phone would leave a standing claim
-    /// on the name, and a Stop button over whatever the person at the Mac
-    /// started next.
+    /// touched it" — so once it is down the claim has expired. Left standing,
+    /// starting and stopping `work` from the phone would leave the warning off
+    /// whatever the person at the Mac started next under that name.
     public var startedSessions: [String]?
 
     public var id: String { hostKey }
 
-    /// Whether this phone is why `session` is currently running, and so may
-    /// stop it. Creating one implies starting it.
+    /// Whether this phone is why `session` is currently running. Creating one
+    /// implies starting it. Read by the stop confirmation, not by the gate —
+    /// see `startedSessions`.
     public func startedHere(_ session: String) -> Bool {
         startedSessions?.contains(session) ?? false
     }

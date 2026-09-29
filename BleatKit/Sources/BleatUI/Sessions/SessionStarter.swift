@@ -24,9 +24,12 @@ enum SessionStarter {
     /// that name was running *now* — which is true when the launch did nothing
     /// because it was already up. The poll saw it running on its first try and
     /// the phone recorded "we started this" for a session somebody was working
-    /// in. That is a Stop button over their agents, which is the one thing the
-    /// whole guard exists to prevent, and a stale list is all it takes: the row
-    /// said stopped because it was stopped when the list loaded.
+    /// in. A stale list is all it takes: the row said stopped because it was
+    /// stopped when the list loaded. What that costs is now a **Delete** over
+    /// their layout — `createdSessions` is the claim still gating an action —
+    /// and, on the other claim, a stop confirmation that does not warn them
+    /// the session is not this phone's. It used to be a Stop button over their
+    /// agents, which is what this rule was written for.
     ///
     /// **`session attach` makes this rule matter more than it used to, not
     /// less.** The old `herdr server` at least failed loudly at an already-
@@ -89,9 +92,11 @@ enum SessionStarter {
         // to a session that may not exist.
         //
         // `createdSessions` only when the host had never heard of the name.
-        // Restarting an existing session earns a Stop, because this phone is
-        // now why it is running, and never a Delete: the layout it would throw
-        // away is whoever set it up's. See `PairedPeer.startedSessions`.
+        // Restarting an existing session never earns a Delete: the layout it
+        // would throw away is whoever set it up's. Stop needs no claim — it is
+        // offered for anything running — so what `startedSessions` buys is the
+        // shorter confirmation on a session this phone really did bring up.
+        // See `PairedPeer.startedSessions`.
         if before == nil { peers?.recordCreatedSession(name.text, for: peer) }
         peers?.recordStartedSession(name.text, for: peer)
         return .started

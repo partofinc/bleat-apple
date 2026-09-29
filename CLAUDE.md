@@ -330,6 +330,25 @@ became of the claims, which still gate **Delete**.
     `work` session from the phone would leave a permanent claim on the name, and
     the confirmation would then describe whatever the person at the Mac started
     next under it as this phone's own doing.
+    - **A stop this phone did not perform still has to expire the claim, and
+      `forgetStartedSession` cannot see one.** It is called from the stop path
+      only, so a session the phone started and the *Mac* stopped — a reboot, or
+      somebody stopping and re-attaching it at the keyboard — kept the claim, and
+      the person at the Mac was then working in a session the phone called its
+      own. While the claim gated Stop that was an unearned button; now that it
+      words the confirmation it is worse, because the warning is the last guard
+      and it would go missing in exactly the case it exists for.
+      `PeerStore.reconcileStartedSessions(with:forHostKey:)` drops the claim for
+      every claimed name the host reports as **stopped**, and both screens that
+      read `session list` call it — `PeerDetailView`'s fetch and
+      `SessionStatus.load`, which is the one behind the bar that offers Stop.
+      - **On `running: false`, never on absence from the list**, and never on
+        presence. Reconciling on presence would drop the claim on every refresh;
+        absence means the session was *deleted*, which `forgetCreatedSession`
+        already covers where the phone did it. Keyed by host key and read back
+        from the store, so a caller holding a stale record cannot decide against
+        a stale copy of the field being reconciled. `StartedClaimTests` pins all
+        three halves, including that a still-running session keeps its claim.
   - **`createdSessions` — "this phone made it from nothing"** — is what
     **Delete** is offered on, and that one is still a gate. Deleting removes the
     session *directory*; for a session somebody else set up, that is their
@@ -426,12 +445,16 @@ question.
   **Agents are not restarted**: `herdr agent start` is a separate step herdr
   does not replay, so a pane that held one comes back as a plain shell. The
   stopped empty state says so.
-- A running session offers **Stop** (if the phone started it); a stopped one
-  offers **Start**, then **Delete** if the phone created it — Start first, so a
-  full swipe reaches the harmless one. Never a pair herdr would refuse.
+- A running session offers **Stop**, whoever started it; a stopped one offers
+  **Start**, then **Delete** if the phone created it — Start first, so a full
+  swipe reaches the harmless one. Never a pair herdr would refuse, and **nothing
+  at all for a name `SessionName` will not accept**: herdr takes `-x` and this
+  app cannot address it, so a row created at the Mac under such a name would
+  otherwise offer an action that fails by construction.
 - **The session screen has a bottom bar too**, the same shape as the peer
   screen's: the action on the left, prominent, and Delete to the right when
-  there is one. Empty for a session this phone did not start.
+  there is one. Empty while a session runs, since Stop is already the one on the
+  right.
 - **`SessionStatus` fetches whether the session is running**, because the route
   cannot carry it: a route's identity would then change the moment the session
   stopped, which is exactly when the screen has to stay put. `nil` means "not

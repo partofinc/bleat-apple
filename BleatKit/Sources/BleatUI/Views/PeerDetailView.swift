@@ -28,9 +28,9 @@ struct PeerDetailView: View {
     /// Whether this screen has been on screen before, so a return to it can be
     /// told from the first arrival.
     @State private var hasAppeared = false
-    /// Stopping and deleting, for the sessions this phone started. Owned by the
-    /// screen rather than the row, so one confirmation and one failure alert
-    /// serve the whole list.
+    /// Starting, stopping and deleting the host's sessions. Owned by the screen
+    /// rather than the row, so one confirmation and one failure alert serve the
+    /// whole list.
     @State private var control: SessionControlModel
 
     /// Takes the store rather than reading `AppContext`, so the model exists
@@ -39,8 +39,16 @@ struct PeerDetailView: View {
         self.peer = peer
         // No session prefix: `session list` is a client-side command that
         // reports every session regardless of which one is selected.
-        _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) {
-            try await $0.sessions()
+        _sessions = State(wrappedValue: RemoteList(connections: connections, session: nil) { client in
+            let sessions = try await client.sessions()
+            // **The one read that can tell a claim has expired.** A session
+            // this phone started and somebody else stopped is still claimed
+            // until something notices, and what the claim now decides is
+            // whether the stop confirmation warns that a session is not ours —
+            // the last guard in front of `herdr session stop`. Only the host's
+            // own `running` answers that, and here it is.
+            await peers.reconcileStartedSessions(with: sessions, forHostKey: peer.hostKey)
+            return sessions
         })
         _newSession = State(wrappedValue: NewSessionModel(connections: connections, peers: peers))
         _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))

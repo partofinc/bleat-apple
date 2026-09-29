@@ -27,7 +27,9 @@ struct WorkspacesView: View {
         _workspaces = State(wrappedValue: RemoteList(connections: connections, session: session) {
             try await $0.workspaces()
         })
-        _status = State(wrappedValue: SessionStatus(connections: connections, name: session))
+        _status = State(wrappedValue: SessionStatus(
+            connections: connections, name: session, peers: peers
+        ))
         _control = State(wrappedValue: SessionControlModel(connections: connections, peers: peers))
         _newWorkspace = State(wrappedValue: NewWorkspaceModel(connections: connections, session: session))
     }
@@ -267,9 +269,9 @@ struct WorkspacesView: View {
     }
 }
 
-/// **The guard.** A session running for somebody else's reasons: the
-/// workspaces are there and the bar is empty, because ending it is not on
-/// offer.
+/// A session running for somebody else's reasons. The bar offers Stop just as
+/// it does for our own — the claim stopped gating that — and what differs is the
+/// confirmation behind it, which says the phone did not start this one.
 #Preview("Not ours, running", traits: .sampleData) {
     NavigationStack {
         WorkspacesView(

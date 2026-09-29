@@ -110,6 +110,36 @@ public final class PeerStore {
         reload()
     }
 
+    /// Drops "this phone is why it is running" for every claimed session the
+    /// host now reports as **stopped**, whoever stopped it.
+    ///
+    /// **`forgetStartedSession` only hears about a stop this phone performed**,
+    /// and that is one of several ways a session ends: the Mac reboots, or the
+    /// person at the keyboard stops it and attaches it again. The claim then
+    /// stands over a session that is theirs. While the claim gated Stop that
+    /// was an unearned button; now that it only words the confirmation it is
+    /// worse, because the sentence naming somebody else's session is the last
+    /// guard there is — so it would go quietly missing in exactly the case it
+    /// exists for.
+    ///
+    /// Called from wherever `session list` is read, which is the only place the
+    /// host's answer on this is in hand. **Keyed by host key, not by the peer
+    /// value passed in**, because the claim is read back from the store: a
+    /// caller holding a record from before the last write would otherwise
+    /// decide against a stale copy of the very field being reconciled.
+    ///
+    /// Reconciling costs a write and a reload only when something was actually
+    /// stale, so the ordinary refresh does nothing at all.
+    public func reconcileStartedSessions(with sessions: [SessionInfo], forHostKey hostKey: String) {
+        guard let stored = peers.first(where: { $0.hostKey == hostKey }) else { return }
+        let stale = sessions.filter { !$0.running && stored.startedHere($0.name) }
+        guard !stale.isEmpty else { return }
+        for session in stale {
+            try? registry.forgetStartedSession(session.name, forHostKey: hostKey)
+        }
+        reload()
+    }
+
     /// Drops that claim once the session has been deleted from the host.
     public func forgetCreatedSession(_ session: String, for peer: PairedPeer) {
         try? registry.forgetCreatedSession(session, forHostKey: peer.hostKey)

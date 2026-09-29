@@ -116,6 +116,16 @@ final class SessionControlModel {
     /// session, so offering Delete there would be an action that had already
     /// failed before it was taken.
     static func actions(for session: SessionInfo, on peer: PairedPeer) -> [Action] {
+        // **A name this app cannot send earns no actions at all**, and Stop
+        // being ungated is what makes this reachable. herdr accepts `-x` and
+        // `SessionName` refuses it — deliberately, because `herdr session stop
+        // -- -x` parses the name as a flag and cannot address it — so a session
+        // created at the Mac under such a name would now swipe to a Stop that
+        // can only ever fail with "not a name this app can act on". The same
+        // was already true of Start for any stopped session. Offering nothing
+        // is the honest answer, and it keeps "never a pair herdr would refuse"
+        // true of every row.
+        guard SessionName(session.name) != nil else { return [] }
         // **Every running session may be stopped, and the confirmation is what
         // makes that safe** — see the note on this type for what this used to
         // be gated on and why it is not any more. Stop is also the only action
@@ -240,10 +250,10 @@ final class SessionControlModel {
         // guard from the beginning.
         guard !isWorking else { return false }
         guard let connections, let name = SessionName(session.name) else {
-            // Unreachable from a row this phone created — `SessionName` is what
-            // minted it — but a name herdr accepted and this build will not is
-            // better refused than sent as a positional argument it would parse
-            // as a flag.
+            // Unreachable from a row at all now — `actions(for:on:)` offers
+            // nothing for a name this build will not accept — but kept, because
+            // a name herdr took and `SessionName` refuses is better refused
+            // here than sent as a positional argument it would parse as a flag.
             phase = .failed(action, session, "\(session.name) is not a name this app can act on.")
             return false
         }
@@ -300,8 +310,11 @@ final class SessionControlModel {
             case .delete: peers?.forgetCreatedSession(name.text, for: peer)
             // "This phone is why it is running" expires the moment it is not.
             // Without this, starting and stopping the user's own session from
-            // the phone would leave a standing Stop button over whatever they
-            // started next.
+            // the phone would leave a standing claim on the name — and the
+            // confirmation would call whatever the person at the Mac started
+            // next under it this phone's own doing.
+            // `PeerStore.reconcileStartedSessions` covers the stops this phone
+            // did not perform.
             case .stop: peers?.forgetStartedSession(name.text, for: peer)
             case .start: break // recorded by the starter, once the host agreed
             }

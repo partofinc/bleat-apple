@@ -380,8 +380,8 @@ struct PreviewSmokeTests {
     func listScreens() async {
         let context = sampleContext()
         // The session screen with its bar in each state: ours and running,
-        // ours and stopped, and one this install did not start — which is the
-        // guard, and shows no bar at all. These also exercise the screen
+        // ours and stopped, and one this install did not start — which now
+        // carries the same Stop as our own, and a longer confirmation. These also exercise the screen
         // reading `AppContext` for the router it pops with; a version that
         // reached for a `NavigationRouter` in the environment compiled and
         // trapped here.

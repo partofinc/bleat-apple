@@ -100,6 +100,31 @@ struct SessionActionsTests {
         #expect(actions("scratch", running: true) == [.stop])
     }
 
+    /// **A name this app cannot send earns no actions**, and Stop being ungated
+    /// is what made this reachable. herdr accepts `-x`; `SessionName` refuses
+    /// it, because `herdr session stop -- -x` parses the name as a flag and can
+    /// never address it. A row created at the Mac under such a name would
+    /// otherwise swipe to a Stop whose only outcome is "not a name this app can
+    /// act on".
+    @Test("a session herdr accepted and this app cannot address offers nothing")
+    func noActionsForANameWeCannotSend() {
+        #expect(SessionName("-x") == nil, "the premise: this name is one we refuse")
+        #expect(actions("-x", running: true).isEmpty)
+        // Start was already reachable for any stopped session, so it is covered
+        // by the same guard rather than needing its own.
+        #expect(actions("-x", running: false).isEmpty)
+        #expect(actions("-x", running: false, created: ["-x"]).isEmpty)
+    }
+
+    /// The names herdr and this app agree on are unaffected — the guard above
+    /// must not be a filter that quietly eats ordinary rows.
+    @Test("ordinary names are unaffected by the name check")
+    func ordinaryNamesStillOffered() {
+        for name in ["work", "bleat-test", "phone.2", "a_b"] {
+            #expect(actions(name, running: true) == [.stop], "\(name) lost its Stop")
+        }
+    }
+
     // MARK: - What the confirmation says, which is the guard that is left
 
     /// **The sentence in front of `herdr session stop`.** With Stop offered for

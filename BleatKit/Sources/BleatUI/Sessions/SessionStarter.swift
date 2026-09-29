@@ -24,9 +24,12 @@ enum SessionStarter {
     /// that name was running *now* — which is true when the launch did nothing
     /// because it was already up. The poll saw it running on its first try and
     /// the phone recorded "we started this" for a session somebody was working
-    /// in. That is a Stop button over their agents, which is the one thing the
-    /// whole guard exists to prevent, and a stale list is all it takes: the row
-    /// said stopped because it was stopped when the list loaded.
+    /// in. A stale list is all it takes: the row said stopped because it was
+    /// stopped when the list loaded. What that costs is now a **Delete** over
+    /// their layout — `createdSessions` is the claim still gating an action —
+    /// and, on the other claim, a stop confirmation that does not warn them
+    /// the session is not this phone's. It used to be a Stop button over their
+    /// agents, which is what this rule was written for.
     ///
     /// **`session attach` makes this rule matter more than it used to, not
     /// less.** The old `herdr server` at least failed loudly at an already-

@@ -2908,6 +2908,16 @@ stderr. What it did do is visible in the frames that one client received:
 `--cols`, `--rows` and `terminal.resize` are all **one client's viewport** and
 nothing else.
 
+**Something may have moved on 0.9.3, and it is not settled.** While probing
+scrolling on 30 Sept 2026, a `control --takeover` stream opened at 80×30 on a
+94×39 pane made `pane read --source visible` return **30 rows** for as long as
+it was attached, and 39 again after release. `pane layout` reported 94×39
+throughout. So either the program's pty now follows the controlling client, or
+`pane read` reports that client's viewport; only `stty size` inside the pane
+tells them apart, and that was not measured. It matters less than it would
+have — Bleat `stty`s the pty to the phone's grid itself (see **The phone
+session**) — but the heading above is a 0.9.0 measurement until it is re-run.
+
 **The geometry comes from the session's terminal size**, which is the attached
 TUI's window when one is attached and `server.headless_cols` /
 `server.headless_rows` when none is. Proved by restarting the same server under
@@ -3132,7 +3142,9 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     signature as every Claude Code pane. Then two spaces were sent as
     `terminal.input`, and the visible buffer went from rows **1–29 to 59–87**
     while the scrollback stayed 0. The earlier content is in *the program*, and
-    the only way to see it is to ask the program.
+    the only way to see it is to ask the program. (Asking it is
+    `terminal.scroll`, which herdr hands to such a program as a wheel event —
+    see **`terminal.scroll`, not keys and not wheel bytes** below.)
   - **So the phone can have it, at a price: it takes input ownership.** Built
     — see **Scrolling a pane** below. `observe` is read-only and sends nothing,
     which is exactly why the pane looks frozen at the current screen.
@@ -3176,7 +3188,8 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     it.
 ### Scrolling a pane (Phase 3, the first piece of input)
 
-The first thing Bleat sends to a host, and it is deliberately two keys.
+The first thing Bleat sends to a host. It used to be two page keys; it is
+`terminal.scroll` now, which is what a wheel sends through herdr's own TUI.
 
 - **`PaneModel.control` is `.observing` or `.controlling`**, and only
   `takeControl()` crosses. `run()` opens `observe` for the first and
@@ -3190,30 +3203,60 @@ The first thing Bleat sends to a host, and it is deliberately two keys.
   goes away, and `releaseControl()`. `close()` sends `terminal.release`
   **before cancelling the reader**, or there is no live stream left to send it
   on and herdr holds the pane for a phone that has gone in a pocket.
-- **Keys, not `terminal.scroll`.** Herdr's scroll record moves a pane's *host*
-  scrollback, which an agent does not have. The earlier output is inside the
-  program, so the program's own keys are what move it. `TerminalKey` carries
-  the xterm sequences and `TerminalCommand.bytes` puts them on the wire —
-  **`text` cannot**, because a raw ESC inside a JSON string is not legal JSON
-  and the host answers `input ignored`.
-- **Which keys work is the program's business.** `less` and every full-screen
-  pager answer Page Up; whether Claude Code does is **unverified** — a probe
-  that launched it in a scratch pane stalled on a workspace-trust prompt before
-  it could be asked. If it wants something else, `TerminalKey` is where that
-  goes and it is a one-line change.
-- **A drag pages it, and `TerminalView.isScrollEnabled` is off to allow that.**
-  It was on for a while on the theory that a program which did scroll would
-  then work; nothing can, so all it did was consume every vertical swipe on
-  behalf of a buffer that never fills. `PaneScrollGesture` gets the drag
-  instead and quantises it into page keys — half a terminal of travel per page,
-  pulling **down** for earlier output, the direction a scroll view moves
-  content with the finger.
-  - **It will always feel like paging, not scrolling, and that is structural.**
-    There is no buffer under the finger to move: the earlier output is inside
-    the program, which redraws a whole screen per key. A drag can only decide
-    *when* to ask for the next one.
-  - The two buttons stay. A drag is not reachable by VoiceOver or Switch
-    Control, and a gesture nothing advertises is not an affordance.
+
+#### `terminal.scroll`, not keys and not wheel bytes (measured on 0.9.3, 30 Sept 2026)
+
+**The question that started it:** Termius or iTerm2 attached to herdr scroll
+an agent's history with a swipe, so why could the phone not? Not SwiftTerm.
+Inside a multiplexer a terminal's own scrollback is barely used; the swipe
+becomes wheel events, the multiplexer scrolls, and the terminal paints what it
+is sent. Bleat was sending Page Up instead — and from `observe`, nothing.
+
+Measured in a scratch session, over `control --takeover`, one record at a time:
+
+| pane | `terminal.scroll` | raw wheel bytes (`ESC[<64;x;yM`) |
+|---|---|---|
+| shell, 172 rows of host history | **moves herdr's history** by `lines` (rows 172… → 132–161 after 2×20) | **typed at the prompt** as `64;10;10M` |
+| `less --mouse` (alternate screen) | **one wheel event per record**, `lines` ignored | scrolls, one line per event |
+| Claude Code, after printing 1–150 | **scrolls**: 10 records moved it as far as 10 wheel sequences (119–150 → 101–132) | scrolls, the same |
+| shell with nothing to scroll | nothing — no frame, nothing typed | (typed, as above) |
+
+So **herdr decides what a scroll means**, exactly as its TUI does for a wheel,
+and `terminal.scroll` is the one record that is right everywhere.
+
+- **The phone cannot make that decision itself, and both candidate signals
+  were checked.** herdr repaints from its own buffer, so a program's mouse
+  modes (`?1000h`, `?1006h`) **never appear in the frames** — captured from
+  `less --mouse`, only `?2026` and `?25`. And `max_offset_from_bottom` is 0
+  both for a program on the alternate screen and for a fresh shell with less
+  than a screen of output, where wheel bytes would be typed. Sending raw wheel
+  bytes would therefore mean guessing, and guessing wrong types into a shell.
+- **Claude Code answers the wheel, and accelerates.** A burst of ten moves it
+  further than ten separate notches, and the first event after a change of
+  direction is often swallowed. That is the program, not herdr — raw wheel
+  bytes behave the same.
+- **`observe` still ignores the record**, so scrolling still costs control.
+
+What the app does with it:
+
+- **`PaneModel.scroll(_:notches:)`** sends one `.scroll(lines: 3)` per notch
+  through the same ordered queue as keystrokes (`outgoing` holds
+  `TerminalCommand`s now), gated on `.controlling` like everything else.
+  Three lines is what a wheel notch moves a terminal by.
+- **A drag is continuous now, not paged.** `PaneScrollGesture` sends a notch
+  per three rows of finger travel, so a shell's history follows the finger;
+  a full-screen program scrolls by its own amount, so there the match is
+  approximate. At most six notches per callback — a flick is spread over the
+  following callbacks rather than landing as one burst. Pulling **down** is
+  scroll up, the direction a scroll view moves content with the finger.
+  `TerminalView.isScrollEnabled` stays off: its own buffer never fills, and
+  on it would consume the drag.
+- **The two buttons stay**, five notches a tap. A drag is not reachable by
+  VoiceOver or Switch Control, and a gesture nothing advertises is not an
+  affordance.
+- **`TerminalKey.pageUp`/`pageDown` are gone.** Nothing sent them any more;
+  whether Claude Code answered Page Up was never verified and no longer
+  matters.
   - **The gesture is attached always and gated with `including:`.** Branching
     — `if controlling { content.gesture(drag) } else { content }` — builds a
     `_ConditionalContent`, and switching branch changes the structural identity

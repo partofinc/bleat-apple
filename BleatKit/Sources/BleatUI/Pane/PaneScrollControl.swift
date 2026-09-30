@@ -2,37 +2,38 @@
 import BleatKit
 import SwiftUI
 
-/// Pages a pane's program up and down.
+/// Scrolls a pane up and down, a handful of wheel notches a tap.
 ///
 /// **Buttons as well as the drag, not instead of it.** `PaneScrollGesture`
-/// handles the swipe now that `TerminalView`'s own scrolling is off — it was
-/// consuming every vertical drag for a buffer that can never fill. These stay
-/// because a drag is not reachable by VoiceOver or Switch Control, and because
-/// a discoverable control beats a gesture nothing advertises.
+/// handles the swipe; these stay because a drag is not reachable by VoiceOver
+/// or Switch Control, and because a discoverable control beats a gesture
+/// nothing advertises.
 ///
-/// **These are the program's keys, not a scrollbar.** There is no host
-/// scrollback behind an agent's pane to move through — herdr reports
-/// `max_offset_from_bottom: 0` for every one of them. What earlier output
-/// exists is inside the program, which redraws when it is sent Page Up. So
-/// this is a keyboard with two keys on it, and whether it does anything at all
-/// depends on the program: `less` and every full-screen pager answer, and one
-/// that ignores Page Up will simply not move.
+/// They send what the drag sends — `terminal.scroll`, which herdr applies to
+/// its own history for a shell and hands to a full-screen program as wheel
+/// events (see `PaneModel.scroll`). They used to send Page Up and Page Down,
+/// which only a program that binds those keys would answer, and a shell's
+/// history was out of reach entirely.
 struct PaneScrollControl: View {
     let model: PaneModel
 
     var body: some View {
         VStack(spacing: 2) {
-            key(.pageUp, symbol: "chevron.up", label: "Page up")
-            key(.pageDown, symbol: "chevron.down", label: "Page down")
+            button(.up, symbol: "chevron.up", label: "Scroll up")
+            button(.down, symbol: "chevron.down", label: "Scroll down")
         }
         .padding(6)
         .glassEffect(in: .rect(cornerRadius: 14))
         .padding(.trailing, 8)
     }
 
-    private func key(_ key: TerminalKey, symbol: String, label: String) -> some View {
+    /// Five notches: fifteen lines of a shell's history, and about a third of a
+    /// screen of Claude Code's — enough that a tap is visibly a step.
+    private static let notches = 5
+
+    private func button(_ direction: ScrollDirection, symbol: String, label: String) -> some View {
         Button {
-            Task { await model.send(key) }
+            Task { await model.scroll(direction, notches: Self.notches) }
         } label: {
             Image(systemName: symbol)
                 .font(.body.weight(.semibold))

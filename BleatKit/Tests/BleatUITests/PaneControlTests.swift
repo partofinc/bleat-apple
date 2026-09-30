@@ -39,10 +39,21 @@ struct PaneControlTests {
     @Test("keys are not sent while observing")
     func sendingIsInert() async {
         let model = PaneModel(previewing: .live)
-        await model.send(.pageUp)
-        await model.send(.pageDown)
+        await model.send(.up)
+        await model.send(.enter)
         #expect(model.control == .observing)
         #expect(model.phase == .live, "sending disturbed a pane that was only being watched")
+    }
+
+    /// Scrolling is input too: `observe` ignores it, and sending one while
+    /// merely watching would mean the gate had been skipped.
+    @Test("scrolling is not sent while observing")
+    func scrollingIsInert() async {
+        let model = PaneModel(previewing: .live)
+        await model.scroll(.up, notches: 5)
+        await model.scroll(.down)
+        #expect(model.control == .observing)
+        #expect(model.phase == .live, "scrolling disturbed a pane that was only being watched")
     }
 
     /// Typed bytes are gated exactly as the key bar's are. A keystroke that

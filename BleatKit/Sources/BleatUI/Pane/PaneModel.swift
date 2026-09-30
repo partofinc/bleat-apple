@@ -11,11 +11,12 @@ import Observation
 /// indefensible.
 ///
 /// `takeControl()` is the deliberate gesture that changes it, and what it buys
-/// is scrolling. An agent's earlier output is not in herdr's scrollback and
-/// not in the stream; it is inside the program, which redraws its own viewport
-/// when it is sent a key. Reaching it therefore means *sending* — which means
-/// `terminal session control`, and, whenever anyone is attached at the Mac,
-/// `--takeover`.
+/// is scrolling. The stream never carries history — every frame is one
+/// viewport — so earlier output is reached by asking the host to scroll:
+/// herdr's own history for a shell, or the program's, which it scrolls itself
+/// when herdr hands it a wheel event. `observe` ignores the request, so
+/// reaching it means *sending* — which means `terminal session control`, and,
+/// whenever anyone is attached at the Mac, `--takeover`.
 ///
 /// **There is no middle setting.** Measured 8 Sept 2026 against a pane another
 /// client held: a `control` client without `--takeover` received **no frames
@@ -270,6 +271,27 @@ final class PaneModel {
         await send(bytes: key.bytes)
     }
 
+    /// Scrolls the pane by `notches` wheel notches.
+    ///
+    /// **`terminal.scroll`, never wheel bytes, and herdr decides what it
+    /// means.** Measured on 0.9.3, 30 Sept 2026: for a shell it moves herdr's
+    /// own history by `lines`; for a full-screen program — `less --mouse`,
+    /// Claude Code — herdr turns each record into one wheel event and the
+    /// program scrolls itself, ignoring `lines`. Ten records moved Claude Code
+    /// as far as ten raw wheel sequences did. Sending the raw sequence instead
+    /// is worse in exactly the case the phone cannot detect: herdr drops mouse
+    /// modes from the frames, so nothing here knows whether the program asked
+    /// for a mouse, and a shell handed `ESC[<64;…M` types `64;10;10M` at its
+    /// prompt. `max_offset_from_bottom` is no signal either — a fresh shell
+    /// reports 0 exactly as a full-screen program does.
+    ///
+    /// Three lines a notch, which is what a mouse wheel moves a terminal by.
+    /// Gated and queued like a keystroke, so a drag never overtakes typing.
+    func scroll(_ direction: ScrollDirection, notches: Int = 1) async {
+        guard notches > 0 else { return }
+        await send(Array(repeating: .scroll(direction: direction, lines: 3), count: notches))
+    }
+
     /// Input waiting to go out, oldest first, and whether anyone is draining it.
     ///
     /// **Order is the whole point.** Every keystroke used to get its own
@@ -280,7 +302,7 @@ final class PaneModel {
     /// and SwiftTerm's `paste` is worse, calling `send` three times in one
     /// runloop turn (bracketed-paste start, the text, the end), so the markers
     /// could land around or after the payload they are meant to wrap.
-    private var outgoing: [Data] = []
+    private var outgoing: [TerminalCommand] = []
     private var isDraining = false
 
     /// Sends what the keyboard produced, byte for byte.
@@ -296,17 +318,22 @@ final class PaneModel {
     /// this layer's business, and a filter would break exactly the control
     /// sequences an agent's UI is driven by.
     func send(bytes: Data) async {
-        guard control == .controlling, !bytes.isEmpty else { return }
+        guard !bytes.isEmpty else { return }
+        await send([.bytes(bytes)])
+    }
+
+    private func send(_ commands: [TerminalCommand]) async {
+        guard control == .controlling else { return }
         // Enqueued and drained by one caller at a time. Both halves run on the
         // main actor with no suspension between the append and the check, so
         // the queue order is the order the keys were pressed.
-        outgoing.append(bytes)
+        outgoing.append(contentsOf: commands)
         guard !isDraining else { return }
         isDraining = true
         defer { isDraining = false }
         while !outgoing.isEmpty {
             guard let stream else { return outgoing.removeAll() }
-            try? await stream.send(.bytes(outgoing.removeFirst()))
+            try? await stream.send(outgoing.removeFirst())
         }
     }
 

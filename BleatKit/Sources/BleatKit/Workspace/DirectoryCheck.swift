@@ -9,7 +9,10 @@ import Foundation
 ///
 /// - `workspace create --cwd /no/such/dir` exits 0, answers
 ///   `workspace_created`, and opens the pane in the home directory instead.
-/// - the cwd it reports back is **canonical**. Measured against herdr 0.9.0:
+/// - the cwd it reports back is **canonical**. Measured against herdr 0.9.0,
+///   and again on 0.9.3 — where a *symlinked* `--cwd` was resolved to its
+///   real path, and to the same answer `cd … && pwd -P` gives, which is what
+///   this check relies on:
 ///   `/tmp` comes back `/private/tmp`, `/var` comes back `/private/var`,
 ///   `/Users/ravil//Developer` and `/Users/ravil/Developer/../Developer` both
 ///   come back `/Users/ravil/Developer`.

@@ -8,7 +8,8 @@ import Foundation
 ///
 /// Unlike `SessionName`, none of these rules are herdr's. herdr accepts
 /// everything below without complaint, and that is the problem. Measured
-/// against herdr 0.9.0 on the dev Mac, 8 Sept 2026:
+/// against herdr 0.9.0 on the dev Mac, 8 Sept 2026, and each of these
+/// re-measured on 0.9.3 (30 Sept 2026) and still true:
 ///
 /// ```
 /// $ herdr workspace create --cwd /no/such/dir --label ghost
@@ -82,7 +83,8 @@ public struct WorkspaceDirectory: Sendable, Hashable {
 
     /// The last path component, which is the label herdr itself would choose.
     ///
-    /// Measured against herdr 0.9.0 — `workspace create` with no `--label`:
+    /// Measured against herdr 0.9.0 and again on 0.9.3 — `workspace create`
+    /// with no `--label`:
     ///
     /// | cwd | label |
     /// |---|---|

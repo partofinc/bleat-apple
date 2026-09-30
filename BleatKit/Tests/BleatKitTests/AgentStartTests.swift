@@ -54,17 +54,30 @@ struct AgentStartTests {
 
     // MARK: - The kind
 
-    /// herdr 0.9.0 offers twenty-three, and this is its own order.
+    /// herdr 0.9.3 offers twenty-four, and this is its own order.
+    ///
+    /// **It was twenty-three, and the twenty-fourth is `letta`** — read off
+    /// `agent start --help` on a live host, 30 Sept 2026. The count is asserted
+    /// so that falling behind is something a test says rather than something a
+    /// user finds missing from the picker.
     @Test("the kinds are herdr's, in herdr's order")
     func knownKinds() {
-        #expect(AgentKind.known.count == 23)
+        #expect(AgentKind.known.count == 24)
         #expect(AgentKind.known.first == AgentKind("pi"))
         #expect(AgentKind.known.contains(.claude))
+        #expect(AgentKind.known.contains(AgentKind("letta")), "0.9.3 added this one")
+        // herdr's order, not alphabetical: `letta` sits between `qwen` and
+        // `maki` exactly where herdr lists it.
+        #expect(AgentKind.known.map(\.rawValue).suffix(3) == ["letta", "maki", "muse"])
     }
 
     /// **Not a closed enum**, so a herdr that grows a twenty-fourth kind stays
     /// usable rather than making its own reply undecodable — the "unknown
     /// values must decode, never throw" rule applied to a value.
+    ///
+    /// **This is no longer hypothetical.** 0.9.3 did grow one, and the only
+    /// cost of the app not knowing about it was a picker that did not offer it:
+    /// nothing failed to decode, and no agent row broke.
     @Test("a kind this build has not heard of is still a kind")
     func toleratesAnUnknownKind() throws {
         let body = Data(#""somethingnew""#.utf8)

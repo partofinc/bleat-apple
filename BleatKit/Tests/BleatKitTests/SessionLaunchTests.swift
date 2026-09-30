@@ -130,9 +130,9 @@ struct SessionLaunchTests {
     /// **The whole script, because this exact one was run against two hosts.**
     /// The other tests here check a property each; this pins what was actually
     /// executed over a real SSH exec channel to the Linux host and locally on
-    /// the Mac on 30 Sept 2026 — success path, both `script` flavours and the
-    /// poll — so a later edit that looks harmless cannot quietly diverge from
-    /// the thing that was verified.
+    /// the Mac — success, a repeat launch against a running session, and a
+    /// refusal — so a later edit that looks harmless cannot quietly diverge
+    /// from the thing that was verified.
     @Test("the command is the one that was measured")
     func exactCommand() {
         #expect(start("scratch") == """
@@ -142,46 +142,88 @@ struct SessionLaunchTests {
         export bleat_herdr bleat_session
         bleat_attach='stty rows 40 cols 120; exec env -u HERDR_SOCKET_PATH -u HERDR_SESSION "$bleat_herdr" session attach "$bleat_session"'
         bleat_ready() {
-        env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1
+        env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1 &
+        bleat_probe=$!
+        ( sleep 3; kill -TERM $bleat_probe ) >/dev/null 2>&1 &
+        bleat_probe_guard=$!
+        wait $bleat_probe
+        bleat_answered=$?
+        kill $bleat_probe_guard >/dev/null 2>&1
+        return $bleat_answered
         }
-        bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || exit 0
+        bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || bleat_log=/dev/null
         if script -q -c true /dev/null >/dev/null 2>&1; then
         script -q -c "$bleat_attach" /dev/null </dev/null >"$bleat_log" 2>&1 &
         else
         script -q /dev/null /bin/sh -c "$bleat_attach" </dev/null >"$bleat_log" 2>&1 &
         fi
         bleat_launch=$!
-        bleat_tries=0
+        bleat_deadline=$(($(date +%s) + 15))
+        bleat_died=
         until bleat_ready; do
-        bleat_tries=$((bleat_tries + 1))
-        [ "$bleat_tries" -ge 20 ] && break
+        kill -0 "$bleat_launch" 2>/dev/null || { bleat_died=1; break; }
+        [ "$(date +%s)" -ge "$bleat_deadline" ] && break
         sleep 0.5
         done
         kill -TERM "$bleat_launch" >/dev/null 2>&1
-        bleat_ready || cat "$bleat_log"
-        rm -f "$bleat_log"
+        [ -n "$bleat_died" ] && cat "$bleat_log"
+        [ "$bleat_log" = /dev/null ] || rm -f "$bleat_log"
         true
         """)
     }
 
-    /// **The client never exits on its own now, so it is always killed.**
-    ///
-    /// Given a working terminal `attach` *is* the TUI and stays up for as long
-    /// as the channel does — so the bounded poll is not a safety net for a hang
-    /// any more, it is the normal path. A herdr that never comes up holds the
-    /// exec channel open otherwise, and `NewSessionModel` never clears
-    /// `isStarting` while `NewSessionField`'s scrim is deliberately inert, so
-    /// the cover cannot be dismissed and the app needs relaunching.
-    ///
-    /// **The server survives the kill** — verified on both hosts, `session
-    /// list` reporting `running: true` after a `kill -TERM` of the `script`
-    /// that held the client.
-    @Test("the client is killed once the session answers, and the server lives")
+    /// **The client never exits on its own now, so it is always killed** —
+    /// given a working terminal `attach` *is* the TUI and stays up for as long
+    /// as the channel does. **The server survives the kill**: verified on both
+    /// hosts, `session list` reporting `running: true` afterwards.
+    @Test("the client is killed, and the server lives")
     func killsTheClient() {
+        #expect(start("scratch").contains(#"kill -TERM "$bleat_launch""#))
+    }
+
+    /// **A refusal must not cost the whole budget, and it did.** Measured at
+    /// **10.16s** with a herdr that refused instantly — the whole deadline,
+    /// because the loop only ever asked "is it ready yet". The new-session
+    /// cover is locked for all of that: `NewSessionField`'s scrim is
+    /// deliberately inert while a launch is in flight. `kill -0` ends the loop
+    /// the moment the client is gone.
+    @Test("a launch that died is noticed rather than waited out")
+    func noticesADeadClient() {
         let command = start("scratch")
-        #expect(command.contains(#"kill -TERM "$bleat_launch""#))
-        #expect(command.contains("until bleat_ready; do"))
-        #expect(command.contains("[ \"$bleat_tries\" -ge \(SessionLaunch.pollAttempts) ] && break"))
+        #expect(command.contains(#"kill -0 "$bleat_launch" 2>/dev/null || { bleat_died=1; break; }"#))
+    }
+
+    /// **The bound is wall clock, not a count of tries.** A first version
+    /// polled twenty times and called that the limit, but each poll runs a
+    /// `herdr` command with no timeout of its own — so a server whose socket
+    /// exists without answering blocks one iteration indefinitely and holds the
+    /// exec channel open forever, which is the failure the `( sleep N; kill )`
+    /// this replaced was a hard bound against. Both halves are needed: the
+    /// deadline, and a watchdog on each probe so the deadline can be met.
+    @Test("the poll is bounded in seconds, and so is each probe")
+    func boundedInWallClock() {
+        let command = start("scratch")
+        #expect(command.contains("bleat_deadline=$(($(date +%s) + \(SessionLaunch.readyDeadlineSeconds)))"))
+        #expect(command.contains(#"[ "$(date +%s)" -ge "$bleat_deadline" ] && break"#))
+        #expect(
+            command.contains("( sleep \(SessionLaunch.probeTimeoutSeconds); kill -TERM $bleat_probe )"),
+            "an unbounded probe makes the deadline unenforceable"
+        )
+        #expect(!command.contains("-ge 20"), "a number of tries is not a bound")
+    }
+
+    /// **A missing `mktemp` must not swallow the launch.** `|| exit 0` returned
+    /// before `session attach` ran at all, on a host with no `mktemp` or an
+    /// unwritable `TMPDIR` — nothing started, nothing said, and `exec
+    /// 2>/dev/null` above hid the only clue. Losing the *cause* of a failure is
+    /// survivable; losing the launch is not.
+    @Test("no temp file still starts the session")
+    func mktempIsNotRequired() {
+        let command = start("scratch")
+        #expect(command.contains("|| bleat_log=/dev/null"))
+        #expect(!command.contains("|| exit 0"))
+        // And `/dev/null` is never handed to `rm -f`.
+        #expect(command.contains(#"[ "$bleat_log" = /dev/null ] || rm -f "$bleat_log""#))
     }
 
     /// **Readiness is the session's own socket answering, not a grep of
@@ -199,39 +241,30 @@ struct SessionLaunchTests {
         )
     }
 
-    /// **The output is emitted only when the launch failed**, and that is what
-    /// makes widening `diagnosis` safe. On success the client's output is the
-    /// TUI's escape stream — several KB of nothing, and a stripped-of-ANSI
-    /// haystack that could match a cause that is not one.
-    @Test("nothing is reported when the session came up")
-    func onlyFailureIsReported() {
+    /// **The output is emitted only when the client actually died**, which is
+    /// what makes accepting a `herdr: ` prefix honest.
+    ///
+    /// A first version emitted it whenever the readiness probe had not
+    /// answered — and that is not the same claim. A herdr server a protocol
+    /// version behind the client makes `pane list` fail while the session is
+    /// perfectly up (CLAUDE.md records that happening live), and so does simply
+    /// running out of deadline on a slow host. Either would have `cat` the
+    /// whole TUI escape stream into `diagnosis`, which then scans several KB of
+    /// escape-stripped terminal paint for a "cause" and shows the user whatever
+    /// fragment matched. A dead client and an unready session together is a
+    /// real refusal.
+    @Test("nothing is reported unless the client died")
+    func onlyADeadClientIsReported() {
         let command = start("scratch")
-        #expect(command.contains(#"bleat_ready || cat "$bleat_log""#))
-        #expect(command.contains(#"rm -f "$bleat_log""#))
+        #expect(command.contains(#"[ -n "$bleat_died" ] && cat "$bleat_log""#))
+        #expect(
+            !command.contains(#"bleat_ready || cat"#),
+            "an unready probe is not the same claim as a failed launch"
+        )
         // `mktemp` with a template, not a predictable name: the old design's
         // `${TMPDIR:-$HOME}` log was a symlink this redirect would truncate as
         // the SSH user.
         #expect(command.contains(#"mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX""#))
-    }
-
-    /// **Every outcome exits 0, and that is required rather than tidy.**
-    /// The last thing to run is `bleat_ready || cat`, whose status is the
-    /// *readiness probe's* — non-zero on exactly the launches that failed —
-    /// and a `kill`ed client exits on a signal. `ShellRunner.run` throws on a
-    /// non-zero status, so without the trailing `true` a failed start would
-    /// reach the user as "the host rejected a command" in place of herdr's own
-    /// sentence, and the cause this whole path exists to carry would be lost.
-    @Test("a non-zero status is the normal answer, not a failed command")
-    func successExitsNonZero() {
-        #expect(start("scratch").hasSuffix("\ntrue"))
-    }
-
-    /// `SessionName` has already excluded every character that means something
-    /// to a shell, so this is belt and braces — but the path beside it is
-    /// arbitrary, coming from the peer record.
-    @Test("the herdr path is quoted")
-    func quotesThePath() {
-        #expect(start("scratch", herdr: "/opt/my herdr/herdr").contains("'/opt/my herdr/herdr'"))
     }
 
     // MARK: - Reading a failure
@@ -257,6 +290,53 @@ struct SessionLaunchTests {
             SessionLaunch.diagnosis(inLaunchOutput: output)
                 == "cannot attach without a usable terminal: \(reason); run inside a terminal"
         )
+    }
+
+    /// **The pty echoes its own EOF over the top of herdr's first line, and
+    /// that defeated the prefix test.** Found in review of the change that
+    /// introduced it, and these are the captured bytes rather than a
+    /// reconstruction: a real run on the Mac begins
+    /// `5E 44 08 08 68 65 72 64 72 3A 20 …` — `^D`, two backspaces to rub it
+    /// out, then `herdr: cannot attach …`.
+    ///
+    /// `script` writes the EOF character to the pty master (stdin is
+    /// `</dev/null`) and the line discipline echoes it as two *printable*
+    /// characters. So the whole point of widening the prefix was lost: the user
+    /// still got the generic "the host did not report a session".
+    ///
+    /// **Stripping control characters is the wrong fix**, which is the trap:
+    /// `^D` here is `^` and `D`, so removing the backspaces leaves them and the
+    /// prefix still does not match. Doing what the backspaces ask is what
+    /// works.
+    @Test("the pty's own EOF echo does not hide the cause")
+    func backspacesAreApplied() {
+        let output = "^D\u{08}\u{08}herdr: cannot attach without a usable terminal: "
+            + "Not a tty (os error 25); run inside a terminal"
+        #expect(
+            SessionLaunch.diagnosis(inLaunchOutput: output)
+                == "cannot attach without a usable terminal: Not a tty (os error 25); "
+                + "run inside a terminal"
+        )
+    }
+
+    /// The same echo in front of herdr's other prefix, and with the OSC title
+    /// the TUI sets landing on that line too — the shape `stripANSI` was
+    /// written for, now stacked with the echo.
+    @Test("an echo and a title set together still leave the cause readable")
+    func echoAndTitleTogether() {
+        let output = "^D\u{08}\u{08}\u{1B}]0;herdr\u{07}error: nested herdr is disabled by default."
+        #expect(
+            SessionLaunch.diagnosis(inLaunchOutput: output)
+                == "nested herdr is disabled by default."
+        )
+    }
+
+    /// A backspace with nothing in front of it erases nothing — a terminal
+    /// would not move the cursor, and eating the next character instead would
+    /// corrupt the message being read.
+    @Test("a leading backspace erases nothing")
+    func leadingBackspace() {
+        #expect(SessionLaunch.diagnosis(inLaunchOutput: "\u{08}\u{08}herdr: boom") == "boom")
     }
 
     /// **Not everything in a failed launch is herdr explaining itself.** An

@@ -170,31 +170,51 @@ bleat_session='<name>'
 export bleat_herdr bleat_session
 bleat_attach='stty rows 40 cols 120; exec env -u HERDR_SOCKET_PATH -u HERDR_SESSION "$bleat_herdr" session attach "$bleat_session"'
 bleat_ready() {
-env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1
+env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1 &
+bleat_probe=$!
+( sleep 3; kill -TERM $bleat_probe ) >/dev/null 2>&1 &
+bleat_probe_guard=$!
+wait $bleat_probe
+bleat_answered=$?
+kill $bleat_probe_guard >/dev/null 2>&1
+return $bleat_answered
 }
-bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || exit 0
+bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || bleat_log=/dev/null
 if script -q -c true /dev/null >/dev/null 2>&1; then
 script -q -c "$bleat_attach" /dev/null </dev/null >"$bleat_log" 2>&1 &
 else
 script -q /dev/null /bin/sh -c "$bleat_attach" </dev/null >"$bleat_log" 2>&1 &
 fi
 bleat_launch=$!
-bleat_tries=0
+bleat_deadline=$(($(date +%s) + 15))
+bleat_died=
 until bleat_ready; do
-bleat_tries=$((bleat_tries + 1))
-[ "$bleat_tries" -ge 20 ] && break
+kill -0 "$bleat_launch" 2>/dev/null || { bleat_died=1; break; }
+[ "$(date +%s)" -ge "$bleat_deadline" ] && break
 sleep 0.5
 done
 kill -TERM "$bleat_launch" >/dev/null 2>&1
-bleat_ready || cat "$bleat_log"
-rm -f "$bleat_log"
+[ -n "$bleat_died" ] && cat "$bleat_log"
+[ "$bleat_log" = /dev/null ] || rm -f "$bleat_log"
 true
 ```
 
 That whole script is pinned by an exact-string test and was run **verbatim** on
 both hosts — the Linux one over a real exec channel, the Mac locally with
-`env -i`. Measured either way: **exit 0 in about a second**, no output,
-`session list` reporting it running, and `pane layout` reporting **120×40**.
+`env -i`. Measured either way: **exit 0 in about a second**, no output, and
+`session list` reporting it running. `stty size` inside the pty reports
+**40 120** on both, so the size is deterministic.
+
+**The pane's rect settles to 120×40, but a read taken immediately can catch
+94×39, and that is the attached TUI's layout rather than a bug.** While the
+client is up the session's geometry is its window *minus herdr's chrome* — 120
+less a 26-column sidebar, 40 less a tab-bar row — and the session only goes back
+to the headless size once the client is gone. Caught once in three attempts on
+the Mac: `94 x 39` immediately, `120 x 40` three seconds later, reproducible by
+reading in a loop. It is harmless here because nothing reads geometry until a
+pane is opened, screens later — but it is why `pane layout` is not a thing to
+assert on right after a start, and the first version of this section claimed a
+flat 120×40 on the strength of a single well-timed read.
 
 - **A real SSH pty was the alternative and was not taken.** Citadel has
   `withPTY`, and asking sshd for a sized pty is the conceptually honest answer —
@@ -210,10 +230,24 @@ both hosts — the Linux one over a real exec channel, the Mac locally with
   BSD. Measured on both hosts.
 - **The client never exits on its own now, so it is always killed.** Given a
   working terminal `attach` *is* the TUI and stays up for as long as the channel
-  does. The bounded poll replaces the old `( sleep N; kill )` watchdog — same
-  purpose, and now the same loop. **The server survives the kill**: verified on
-  both hosts, `session list` reporting `running: true` after a `kill -TERM` of
-  the `script` holding the client.
+  does. **The server survives the kill**: verified on both hosts, `session list`
+  reporting `running: true` after a `kill -TERM` of the `script` holding the
+  client.
+- **The loop ends on two conditions, and having only one of them was a bug.**
+  Waiting purely on the deadline meant *every refusal cost the whole budget* —
+  measured at **10.16s** against a herdr that refused instantly, with the
+  new-session cover locked for all of it because `NewSessionField`'s scrim is
+  deliberately inert while a launch is in flight. `kill -0 "$bleat_launch"` ends
+  it the moment the client is gone; the same refusal now returns in **0s**.
+- **The bound is wall clock, not a count of tries, and each probe has its own
+  watchdog.** A first version polled twenty times and called that the limit —
+  but `bleat_ready` runs a `herdr` command with no timeout, so a server whose
+  socket exists without answering blocks one iteration indefinitely and holds
+  the exec channel open forever. That is the wedged-daemon case
+  `EndpointDiscovery.tailscaleStatusCommand` already guards, and the
+  `( sleep N; kill )` this replaced *was* a hard wall-clock bound: dropping it
+  put back the failure it existed for. Both halves are needed — a deadline, and
+  a watchdog on each probe so the deadline can be met.
 - **The geometry is ours to choose now, and 120×40 is not arbitrary.** With a
   pty, the pty's size *is* the session's — the hazard the 0.9.0-era design
   feared, and it is unavoidable rather than avoidable now. Those are herdr's own
@@ -236,13 +270,24 @@ both hosts — the Linux one over a real exec channel, the Mac locally with
   `script -c "… '<herdrPath>' …"` — a double quote anywhere in the path escapes
   the inner string, and that path is whatever `command -v herdr` answered on
   somebody else's machine.
-- **The output is emitted only when the launch failed**, which is what makes
-  widening `diagnosis` safe — see below. On success the client's output is the
-  TUI's escape stream: several KB of nothing, and a stripped-of-ANSI haystack
-  that could match a cause that is not one. `mktemp` with an `XXXXXX` template
-  holds it, which is also what retires the old log's `${TMPDIR:-$HOME}` symlink
-  hazard: unpredictable name, created `O_EXCL`, mode 600, removed at the end.
-  Verified no stray files on either host.
+- **The output is emitted only when the client actually died**, which is what
+  makes widening `diagnosis` safe — see below. The first version emitted it
+  whenever the readiness probe had not answered, and that is **not the same
+  claim**: a herdr server a protocol version behind the client fails `pane list`
+  while the session is perfectly up (this file records that happening live on
+  the `phone` session), and so does running out of deadline on a slow host.
+  Either would `cat` the whole TUI escape stream into `diagnosis`, which then
+  scans several KB of escape-stripped terminal paint for a "cause" and shows the
+  user whatever fragment matched.
+- **`mktemp` holds that output, and its failure must not swallow the launch.**
+  An `XXXXXX` template is what retires the old log's `${TMPDIR:-$HOME}` symlink
+  hazard — unpredictable name, `O_EXCL`, mode 600, removed at the end, verified
+  no stray files on either host. But `mktemp` is not POSIX-mandated, and the
+  first version's `|| exit 0` returned *before* `session attach` ran: on a host
+  without it, nothing started, nothing was said, and `exec 2>/dev/null` hid the
+  only clue. It falls back to `/dev/null` instead — losing the cause of a
+  failure is survivable, losing the launch is not. `/dev/null` is then kept away
+  from `rm -f`, for the obvious reason.
 - **Every outcome still exits 0**, hence the trailing `true`: the last thing to
   run is `bleat_ready || cat`, whose status is the readiness probe's.
 - **The `session list` read-back stays, and it is not redundant with the
@@ -266,6 +311,24 @@ rejection.
   Widening the prefix *without* emitting only on failure would re-introduce
   exactly the bug the old rule defended against, and the test that used to pin
   it now pins the reversal and says so.
+- **The pty echoes its own EOF over the top of herdr's first line, and that
+  defeated the prefix test — the fix shipped with the bug inside it.** Found in
+  review. `script` writes the EOF character to the master (stdin is
+  `</dev/null`) and the line discipline echoes it as the two **printable**
+  characters `^D` plus two backspaces to rub them out, so a refusal arrives as
+  `5E 44 08 08 68 65 72 64 72 3A 20 …` — captured bytes, from a real run on the
+  Mac. `trimmingCharacters(in: .whitespacesAndNewlines)` touches neither piece,
+  so `hasPrefix("herdr: ")` was false and the user got the generic message that
+  widening the prefix was meant to replace.
+  - **Stripping control characters is the wrong fix**, which is the trap: `^D`
+    is `^` and `D`, two ordinary printable bytes, so removing the `\b`s leaves
+    them and the prefix still does not match. `applyBackspaces` does what the
+    backspaces ask, which is also the general answer — anything else a pty
+    echoes over its own output arrives the same way.
+  - **Searching *within* the line was the alternative and is not taken.** It is
+    what `HerdrLookup.path(inOutput:)` does for profile banners, but this scans
+    whatever the TUI painted before it died, and a substring match over that is
+    far likelier to find a "cause" that is a fragment of somebody's prompt.
 - **Anything else is still nil rather than guessed.** A shell's own complaint
   about an unresolvable `herdrPath` reads as `env: '/no/such/herdr': No such file
   or directory` — measured on the Linux host — which is true but is not herdr

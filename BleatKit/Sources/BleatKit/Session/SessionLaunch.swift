@@ -69,37 +69,50 @@ public enum SessionLaunch {
     public static let sessionColumns = 120
     public static let sessionRows = 40
 
-    /// How long the host is given to bring the session up before the client is
-    /// killed anyway: `pollAttempts` × half a second.
+    /// Wall clock, not a number of tries, and that distinction is the whole
+    /// point.
     ///
-    /// Measured at under a second on both hosts, so this is an order of
-    /// magnitude of headroom rather than a guess. It is also the bound that
-    /// stops a launch holding the exec channel open forever —
-    /// `NewSessionModel` never clears `isStarting` then, and `NewSessionField`'s
-    /// scrim is deliberately inert while a launch is in flight, so the cover
-    /// cannot be dismissed and the app needs relaunching.
-    public static let pollAttempts = 20
+    /// **A count of iterations is not a bound.** A first version polled twenty
+    /// times and called that the limit — but each poll runs a `herdr` command
+    /// with no timeout of its own, and a server whose socket exists without
+    /// answering blocks one iteration indefinitely. That is the wedged-daemon
+    /// case `EndpointDiscovery.tailscaleStatusCommand` already carries a
+    /// watchdog for, and the `( sleep N; kill )` this replaced *was* a hard
+    /// wall-clock bound. Losing it put back the failure it existed for: the
+    /// exec channel held open forever, `NewSessionModel` never clearing
+    /// `isStarting`, `NewSessionField`'s scrim inert, and the app needing a
+    /// relaunch.
+    public static let readyDeadlineSeconds = 15
 
-    /// Starts `name` on the host and returns once its socket answers.
+    /// How long any one readiness probe may take before it is killed, so the
+    /// deadline above can actually be met.
+    public static let probeTimeoutSeconds = 3
+
+    /// Starts `name` on the host and returns once its socket answers — or as
+    /// soon as the client dies, which is what a refusal looks like now.
     ///
     /// - Parameter herdrPath: Absolute, from the `PairedPeer`. A non-login
     ///   shell usually has no `herdr` on `PATH`.
     public static func startCommand(name: SessionName, herdrPath: String) -> String {
         // **Nothing is interpolated into a nested quoting level.** The two
         // values go into exported variables and the command `script` runs is a
-        // *literal* single-quoted string that expands them itself. Built the
-        // obvious way instead — `script -c "… '\(herdrPath)' …"` — a double
-        // quote anywhere in the path escapes the inner string, and the path is
-        // whatever `command -v herdr` answered on someone else's machine.
+        // literal single-quoted string that expands them itself. Built the
+        // obvious way instead, a double quote anywhere in the path escapes the
+        // inner string — and the path is whatever `command -v herdr` answered on
+        // someone else's machine.
         //
         // `-u HERDR_SOCKET_PATH` for the reason `SSHTransport.command` clears
-        // it: a socket path leaking in from the environment pins the command to
-        // a different session. That is not hypothetical — it caught the probe
-        // that measured this change, where `HERDR_SESSION=<probe> herdr pane
-        // list` answered about `work`, because the socket path was still set
-        // and wins. `-u HERDR_SESSION` belongs with it: the name is a
-        // positional argument, and an inherited one would let a login profile
-        // decide which session starts.
+        // it, and it is cleared in the *probe* as well as the launch: a socket
+        // path leaking in from the environment wins over the name. That is not
+        // hypothetical — it caught the probe that measured this change, where
+        // `HERDR_SESSION=<probe> herdr pane list` answered about `work`.
+        //
+        // **The client is killed on two conditions, not one.** Waiting only on
+        // the deadline meant every refusal cost the whole budget: measured at
+        // 10.16s for a herdr that refused instantly, with the new-session cover
+        // locked for all of it because its scrim is inert while a launch is in
+        // flight. `kill -0` ends the loop the moment the client is gone, which
+        // is also what makes emitting the log honest — see below.
         """
         exec 2>/dev/null
         bleat_herdr=\(quote(herdrPath))
@@ -107,28 +120,35 @@ public enum SessionLaunch {
         export bleat_herdr bleat_session
         bleat_attach='stty rows \(sessionRows) cols \(sessionColumns); exec env -u HERDR_SOCKET_PATH -u HERDR_SESSION "$bleat_herdr" session attach "$bleat_session"'
         bleat_ready() {
-        env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1
+        env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1 &
+        bleat_probe=$!
+        ( sleep \(probeTimeoutSeconds); kill -TERM $bleat_probe ) >/dev/null 2>&1 &
+        bleat_probe_guard=$!
+        wait $bleat_probe
+        bleat_answered=$?
+        kill $bleat_probe_guard >/dev/null 2>&1
+        return $bleat_answered
         }
-        bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || exit 0
+        bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || bleat_log=/dev/null
         if script -q -c true /dev/null >/dev/null 2>&1; then
         script -q -c "$bleat_attach" /dev/null </dev/null >"$bleat_log" 2>&1 &
         else
         script -q /dev/null /bin/sh -c "$bleat_attach" </dev/null >"$bleat_log" 2>&1 &
         fi
         bleat_launch=$!
-        bleat_tries=0
+        bleat_deadline=$(($(date +%s) + \(readyDeadlineSeconds)))
+        bleat_died=
         until bleat_ready; do
-        bleat_tries=$((bleat_tries + 1))
-        [ "$bleat_tries" -ge \(pollAttempts) ] && break
+        kill -0 "$bleat_launch" 2>/dev/null || { bleat_died=1; break; }
+        [ "$(date +%s)" -ge "$bleat_deadline" ] && break
         sleep 0.5
         done
         kill -TERM "$bleat_launch" >/dev/null 2>&1
-        bleat_ready || cat "$bleat_log"
-        rm -f "$bleat_log"
+        [ -n "$bleat_died" ] && cat "$bleat_log"
+        [ "$bleat_log" = /dev/null ] || rm -f "$bleat_log"
         true
         """
     }
-
     /// herdr's own account of why a launch produced no session, or nil.
     ///
     /// **Two prefixes, and the second one is the bug that was reported.** herdr
@@ -165,7 +185,8 @@ public enum SessionLaunch {
         output
             .split(separator: "\n", omittingEmptySubsequences: false)
             .lazy
-            .map { stripANSI(String($0)).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { applyBackspaces(stripANSI(String($0))) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .compactMap { line in
                 causePrefixes.lazy
                     .filter { line.hasPrefix($0) }
@@ -178,6 +199,51 @@ public enum SessionLaunch {
     /// The two ways herdr introduces a refusal of its own. Order matters only
     /// in that a line can match one of them.
     private static let causePrefixes = ["error: ", "herdr: "]
+
+    /// Applies backspaces, because the pty echoes its own EOF over the top of
+    /// herdr's first line.
+    ///
+    /// **This is the bug that shipped inside the fix for the bug.** `script`
+    /// writes the EOF character to the pty master — stdin is `</dev/null` — and
+    /// the line discipline echoes it as the two *printable* characters `^D`
+    /// followed by two backspaces to rub them out. So a refusal arrives as
+    /// `5E 44 08 08 68 65 72 64 72 3A …`: `^D`, erased, then `herdr: cannot
+    /// attach without a usable terminal: …`. Captured from a real run on the
+    /// Mac.
+    ///
+    /// `trimmingCharacters(in: .whitespacesAndNewlines)` does not touch either
+    /// piece, so `hasPrefix("herdr: ")` was false and `diagnosis` returned nil
+    /// — handing the user the generic "the host did not report a session" that
+    /// widening the prefix was meant to replace.
+    ///
+    /// **Stripping control characters would not have fixed it**, which is the
+    /// trap here: `^D` is `^` and `D`, two ordinary printable bytes, so
+    /// removing the `\u{08}`s leaves them behind and the prefix still does not
+    /// match. What removes them is doing what the backspaces ask — which is
+    /// also the general answer, since anything else a pty echoes over its own
+    /// output arrives the same way.
+    ///
+    /// Searching *within* the line for the prefix, the way
+    /// `HerdrLookup.path(inOutput:)` does for profile banners, was the
+    /// alternative. It is not taken: this scans whatever the TUI painted before
+    /// it died, and a substring match over that is far likelier to find a
+    /// "cause" that is a fragment of somebody's prompt.
+    private static func applyBackspaces(_ text: String) -> String {
+        guard text.contains(backspace) else { return text }
+        var out = ""
+        for character in text {
+            if character == backspace {
+                // A backspace at the start of a line has nothing to erase; a
+                // terminal would simply not move, so neither does this.
+                if !out.isEmpty { out.removeLast() }
+            } else {
+                out.append(character)
+            }
+        }
+        return out
+    }
+
+    private static let backspace: Character = "\u{08}"
 
     /// Drops the escape sequences a terminal program writes, so the text
     /// underneath can be matched.

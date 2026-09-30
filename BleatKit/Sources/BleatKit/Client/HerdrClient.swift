@@ -166,8 +166,8 @@ public struct HerdrClient: Sendable {
     /// SSH from a phone.
     ///
     /// Everything that can be refused is refused **instantly**, which is what
-    /// makes the long one bearable. Measured against herdr 0.9.0, all under
-    /// 30ms: `agent_pane_not_found` for a pane that is not there,
+    /// makes the long one bearable. Measured against herdr 0.9.0 all under
+    /// 30ms, and re-measured on 0.9.3 (30 Sept 2026) at **3ms each**: `agent_pane_not_found` for a pane that is not there,
     /// `agent_pane_busy` for one already holding an agent *or* merely running
     /// an ordinary command, `invalid_agent_name`, `agent_name_taken`, and
     /// `invalid_agent_timeout`.

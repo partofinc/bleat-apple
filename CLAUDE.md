@@ -3826,6 +3826,22 @@ behaviour when it moves across the seam.
     app). That is tolerable where the build directories were not, but it is
     worth knowing when something in Xcode behaves oddly.
 
+- **`git add -A` can silently strip `Support/Info.plist`'s comments, because
+  Xcode rewrites that file.** Caught in review, 30 Sept 2026: a commit that
+  touched only doc comments also deleted the 25-line XML comment explaining why
+  that plist exists at all — the two keys that cannot be build settings, the
+  `PairingPayload.urlScheme` coupling no test can assert, and why
+  `NSBonjourServices` is not optional. The keys themselves survived; only the
+  reasoning went, which is the worse loss in a file nobody reads twice.
+  - **`xcodebuild build` is not the culprit** — reproduced with a scratch
+    `-derivedDataPath` and the file's md5 was unchanged. It is the **open
+    Xcode**, which normalises a plist it manages, and plist serialisation drops
+    comments. Same family as the DerivedData note below: the GUI and the command
+    line both think they own things in here.
+  - So **stage paths deliberately in this repo rather than `-A`**, and if the
+    plist does appear in `git status` unexpectedly, diff it before staging:
+    `PlistBuddy -c Print` on both versions says whether any *key* really moved.
+
 - **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
   Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
   open Xcode is using. Interleaving configurations and destinations there —

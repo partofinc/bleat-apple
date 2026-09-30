@@ -1,7 +1,8 @@
 /// What `herdr workspace create` answers with.
 ///
 /// Three objects, because the command makes three things at once — captured
-/// live from herdr 0.9.0 into `Fixtures/workspace-create.json`:
+/// live from herdr 0.9.0 into `Fixtures/workspace-create.json`, and the shape
+/// re-verified against 0.9.3 on 30 Sept 2026 — identical key set:
 ///
 /// ```
 /// {"type":"workspace_created",

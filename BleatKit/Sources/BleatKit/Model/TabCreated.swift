@@ -1,6 +1,7 @@
 /// What `herdr tab create` answers with.
 ///
-/// Captured live from herdr 0.9.0 into `Fixtures/tab-create.json`:
+/// Captured live from herdr 0.9.0 into `Fixtures/tab-create.json`, and the
+/// shape re-verified against 0.9.3 on 30 Sept 2026 — identical key set:
 ///
 /// ```
 /// {"type":"tab_created",

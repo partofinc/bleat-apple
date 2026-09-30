@@ -20,8 +20,14 @@ public enum AgentStart {
     /// refusal comes back in under 30ms.
     public static let defaultTimeoutMs = 30_000
 
-    /// herdr's bounds, which its `--help` does not print. Below the lower one
-    /// it answers `invalid_agent_timeout`.
+    /// herdr's bounds. Its `--help` prints the default and the maximum on
+    /// 0.9.3 — it printed neither on 0.9.0 — but **the floor is still only in
+    /// the refusal**, which is the half that matters here.
+    ///
+    /// Both ends measured on a live host, 30 Sept 2026: `3000` is refused and
+    /// `300000` accepted, so the floor is exclusive and the ceiling is not —
+    /// hence `3_001`. Outside either, `invalid_agent_timeout`, in 3ms, with
+    /// nothing started.
     public static let minimumTimeoutMs = 3_001
     public static let maximumTimeoutMs = 300_000
 

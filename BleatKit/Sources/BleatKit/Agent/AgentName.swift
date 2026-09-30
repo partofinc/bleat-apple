@@ -4,7 +4,8 @@
 /// `WorkspaceDirectory` rule.
 ///
 /// Unlike `WorkspaceDirectory`, every rule here is herdr's own, and it states
-/// them itself. Read off its refusal (herdr 0.9.0, 9 Sept 2026):
+/// them itself. Read off its refusal (herdr 0.9.0, 9 Sept 2026; word for word
+/// the same on 0.9.3, 30 Sept 2026):
 ///
 /// ```
 /// $ herdr agent start 'my agent' --kind claude --pane w1:p2

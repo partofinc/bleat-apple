@@ -24,16 +24,24 @@ public struct AgentKind: Sendable, Hashable, Codable, RawRepresentable {
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(_ rawValue: String) { self.rawValue = rawValue }
 
-    /// The kinds herdr 0.9.0 accepts, in the order it lists them.
+    /// The kinds herdr 0.9.3 accepts, in the order it lists them.
     ///
     /// The order is herdr's own rather than alphabetical, for the reason
     /// `HerdrClient.agents()` does not re-sort: two orderings of one list is a
     /// way for the app and the host to disagree about something neither of them
     /// decides.
+    ///
+    /// **`letta` arrived with 0.9.3**, read off `agent start --help` on a live
+    /// host — twenty-four now, where 0.9.0 offered twenty-three. Nothing broke
+    /// in the meantime, and that is the point of this type being a string with
+    /// a known list rather than a closed enum: a kind the app has not heard of
+    /// still decodes, and the only cost of being behind is that the picker does
+    /// not offer it. Which is exactly what had happened.
     public static let known: [AgentKind] = [
         "pi", "claude", "codex", "gemini", "cursor", "devin", "agy", "cline",
         "omp", "mastracode", "opencode", "copilot", "kimi", "kiro", "droid",
-        "amp", "grok", "hermes", "kilo", "qodercli", "qwen", "maki", "muse",
+        "amp", "grok", "hermes", "kilo", "qodercli", "qwen", "letta", "maki",
+        "muse",
     ].map { AgentKind($0) }
 
     /// The one this app is named after, and the sensible default on a host that

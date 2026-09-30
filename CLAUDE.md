@@ -102,12 +102,60 @@ push notifications, watchOS, Live Activities, multi-account badges.
 
 ## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026; `session attach` re-measured on 0.9.3, 30 Sept 2026)
 
-**Both the Mac and the Linux host run 0.9.3 now.** Only `session attach`
-has been re-measured against it, and it had changed in a way that broke
-starting a session from the phone outright — see below. Everything else in
-this section is still 0.9.0-era measurement: **treat it as unverified on
-0.9.3 and re-measure before relying on it**, because this is the second
-time a herdr update has moved something this file called settled.
+**Both the Mac and the Linux host run 0.9.3, and this section has now been
+re-measured against it** — `session attach` because it broke outright (below),
+then `workspace create`, `tab create` and `agent start` on 30 Sept 2026, in an
+isolated session on the Linux host.
+
+**Everything held except two things, and neither is a behaviour change.**
+
+| re-measured on 0.9.3 | verdict |
+|---|---|
+| `workspace create` reply shape, and `tab create`'s | **identical key set** to `Fixtures/workspace-create.json` and `tab-create.json` |
+| herdr accepting a `--cwd` that does not exist, silently | **still true** — exit 0, `workspace_created`, pane in `$HOME` |
+| canonical cwd (symlink, `//`, `..` all collapsed) | still true, and still equal to what `cd … && pwd -P` answers |
+| label defaults: basename, and `~` for the home directory | both still true |
+| relative `--cwd` resolved against the *server's* cwd | still true |
+| duplicate labels allowed | still true |
+| a new tab's pane inherits the **workspace's** cwd | still true |
+| the five instant `agent start` refusals | all five, all at **3ms** |
+| `invalid_agent_timeout` bounds | still `> 3000` and `<= 300000`, exclusive floor measured (3000 refused, 300000 accepted) |
+| `agent_not_ready` at a trust dialog | still exactly this, at **3.7s**, `launch_pending: true`, `❯ No, exit` still the default |
+| a missing binary → `timeout`, pane holds the shell's complaint | still true, and `agent list` is left **empty** for that pane |
+| `agent send-keys` without a takeover | still works; `invalid_key` still refused before any byte |
+| `agent-list` key set | exactly the union of the four committed `agent-list*.json` fixtures — nothing added, nothing gone |
+
+The two that moved:
+
+- **There are twenty-four agent kinds now, not twenty-three.** `letta` joined,
+  between `qwen` and `maki` in herdr's own order. Nothing broke — which is the
+  whole point of `AgentKind` being a string with a known list rather than a
+  closed enum — and the only cost of being behind was a picker that did not
+  offer it. `AgentKind.known` and its test carry the count so that falling
+  behind is something a test says rather than something a user finds missing.
+- **`agent start --help` now states the timeout bounds** (`default: 30000;
+  max: 300000`), which this file recorded as undocumented. The floor is still
+  only in the refusal.
+
+Two smaller corrections to what was written here before:
+
+- **A `timeout` costs whatever `--timeout` asked for, not a flat 30s.**
+  Measured at 4017ms for `--timeout 4000`. The app sends herdr's own default of
+  30000, so "the full 30 seconds" was true of the app rather than of the
+  command.
+- **`agent_name_taken` now names the holder** —
+  `candidates: terminal_id=… pane_id=… workspace_id=…` — where it used to be
+  the bare sentence. Nothing reads past the code, so this costs nothing.
+
+**One probe of my own was wrong twice before it was right, and it is worth
+saying why**: `pane run` takes its pane *positionally* (`pane run <PANE_ID>
+<COMMAND>…`, no `--`), and two attempts to build a busy pane silently ran
+nothing, so `agent start` went into an *idle* pane and answered
+`agent_not_ready` rather than `agent_pane_busy`. Read as a finding that would
+have been "0.9.3 no longer refuses a busy pane", which is false: with a pane
+genuinely running `sleep`, the refusal is `agent_pane_busy` in **3ms**, exactly
+as before. `pane read` is the same shape — the pane is positional, which is what
+`HerdrClient.paneText` already sends.
 
 Read off the live CLI, so this does not have to be rediscovered. **Starting a
 session, creating a workspace, adding a tab and starting an agent are built** —
@@ -719,10 +767,12 @@ best effort: a host that will not answer leaves a form that still works.
 herdr agent start <name> --kind <KIND> --pane <ID> --timeout 30000
 ```
 
-Twenty-three kinds on 0.9.0, and the value is both the kind and the executable:
-`--kind claude` runs `claude`. `AgentKind` is a string with a known list rather
-than a closed enum, so a herdr that grows a twenty-fourth stays usable — the
-"unknown values must decode, never throw" rule applied to a value.
+**Twenty-four kinds on 0.9.3** (twenty-three on 0.9.0 — `letta` joined), and the
+value is both the kind and the executable: `--kind claude` runs `claude`.
+`AgentKind` is a string with a known list rather than a closed enum, so a herdr
+that grows another stays usable — the "unknown values must decode, never throw"
+rule applied to a value, and **it has now been exercised for real**: the app
+went a version behind and the only symptom was a picker missing one row.
 
 **The pane must already be at a shell prompt**, and herdr means it: a pane
 running an ordinary `sleep` is refused exactly like one holding an agent, and a
@@ -856,9 +906,11 @@ reported as a character problem rather than a first-character one, since being
 told to start with a lowercase letter about a name that *does* start with a
 letter reads as a contradiction.
 
-**`--timeout` must be greater than 3000ms and at most 300000ms**, which its
-`--help` does not say; below the floor it answers `invalid_agent_timeout` and
-starts nothing. Bleat sends herdr's own default of 30000 explicitly. Shortening
+**`--timeout` must be greater than 3000ms and at most 300000ms** — 0.9.3's
+`--help` states the default and the maximum, where 0.9.0's said neither, and the
+floor is still only in the refusal. Both ends measured: 3000 is refused and
+300000 accepted, so the floor is exclusive and the ceiling is not. Below the
+floor it answers `invalid_agent_timeout` and starts nothing. Bleat sends herdr's own default of 30000 explicitly. Shortening
 it is the tempting mistake: it would buy a faster answer to the rare missing
 binary by turning ordinary slow successes into "it may or may not have started",
 which is the worst thing this screen can say.

@@ -2,116 +2,156 @@ import Foundation
 
 /// Starting a named Herdr session on a host.
 ///
-/// **`herdr session attach <name>`, run with no pty.** There is still no
-/// `session create` on 0.9.0 — `herdr session` offers only `list`, `attach`,
-/// `stop`, `delete` — and `attach` is the one that brings a session into being.
+/// **`herdr session attach <name>`, under a sized pty.** There is still no
+/// `session create` on 0.9.3 — `herdr session` offers only `list`, `attach`,
+/// `stop`, `delete` — so `attach` is the only thing that brings a session into
+/// being, and since 0.9.x it will not do it without a terminal.
 ///
-/// This file used to say the opposite, and used `herdr server` behind a
-/// `nohup … &` with a log file, because `attach` "is the TUI, so it wants a pty,
-/// and the pty it gets becomes the session's geometry". The second half is true
-/// **only when there is a pty**. Over an SSH exec channel there is none, so the
-/// hazard cannot arise, and the reasoning that built the old command was never
-/// measured. It has been now.
+/// ### What changed under this file, and how it was found
 ///
-/// Measured against herdr 0.9.0, 9 Sept 2026, over a real SSH exec channel
-/// (throwaway sshd on 127.0.0.1:2222, no pty, no `HERDR_*` in the environment,
-/// login shell `zsh`):
+/// Reported from a device, 30 Sept 2026: starting a session on the Linux host
+/// was "rejected". It was not a Linux problem and not a host problem — **it was
+/// broken on every host**, and had been since herdr updated. Both machines run
+/// **0.9.3**; every measurement this file used to rest on was taken against
+/// **0.9.0**.
 ///
-/// | | |
-/// |---|---|
-/// | session created, server reparented to pid 1 | yes |
-/// | the server's stdin/stdout/stderr | **all `/dev/null`** |
-/// | channel returned in | 0.14s |
-/// | pane geometry | **120×40**, the headless default |
-/// | second launch while running | same pid, no error, no second server |
-/// | on a stopped session | resumes it, with the workspaces it had |
+/// On 0.9.0, `attach` with no pty **started the server and then failed to
+/// draw**: exit 1, `Inappropriate ioctl for device`, server up and reparented
+/// to pid 1. That ordering was the whole premise of the old command, which
+/// therefore swallowed the status and read the session back.
 ///
-/// So herdr daemonises the server itself. `nohup`, `&`, the stdout redirect and
-/// the log file it wrote to were all defending against something herdr had
-/// already done — and the log brought a `${TMPDIR:-$HOME}` fallback with it,
-/// which existed only because a predictable name under a world-writable `/tmp`
-/// is a symlink that this redirect would truncate as the SSH user. All of it is
-/// gone.
+/// On 0.9.3 the terminal is checked **first** and nothing is created. Measured
+/// over a real SSH exec channel to the Linux host, and locally with a stripped
+/// environment on the Mac:
 ///
-/// Three things the caller still has to live with:
+/// | host | given | herdr says |
+/// |---|---|---|
+/// | Linux | no pty | `cannot attach without a usable terminal: Not a tty (os error 25); run inside a terminal` |
+/// | macOS | no pty | `cannot attach without a usable terminal: Inappropriate ioctl for device (os error 25); run inside a terminal` |
+/// | Linux | a pty with no size (`script` alone) | `cannot attach without a usable terminal: terminal reported a zero-sized grid; run inside a terminal` |
 ///
-/// - **Success exits 1.** The TUI cannot draw without a pty, so it prints
-///   `herdr: Inappropriate ioctl for device (os error 25)` and exits 1 *after*
-///   the server is up. That is the ordinary headless path, which is why the
-///   script ends in a bare `true` — without it `ShellRunner.run` throws on
-///   every successful start. **Never show that text to the user.**
-/// - **A refusal exits 2** and says why, on stderr, synchronously — a real
-///   improvement on the old command, whose status was the shell's and therefore
-///   meant nothing at all. `diagnosis(inLaunchOutput:)` reads it.
-/// - **The launch is still checked, not trusted.** Exit 1 cannot tell "server
-///   up, TUI could not draw" from "TUI could not draw for another reason", so
-///   `SessionStarter` still reads `session list` back. That rule was never
-///   about `herdr server` specifically.
+/// The third row is the one that would have cost another round: a pty is not
+/// enough, it has to have been **sized**. So the launch runs under `script`
+/// with an explicit `stty`.
+///
+/// ### Consequences the caller lives with
+///
+/// - **The client no longer exits, so it is killed.** Given a working terminal
+///   `attach` is the TUI and stays up for as long as the channel does. The
+///   script polls until the session's own socket answers, then kills the
+///   client; herdr daemonises the server, so it **survives** — verified on both
+///   hosts, `session list` reporting `running: true` after a `kill -TERM`. The
+///   bounded poll replaces the old `( sleep N; kill )` watchdog, which existed
+///   for the same reason and can now be the same loop.
+/// - **The geometry is ours to choose, and 120×40 is not arbitrary.** With a
+///   pty, the pty's size *is* the session's — the hazard the 0.9.0-era design
+///   feared, now unavoidable. `sessionColumns`/`sessionRows` are herdr's own
+///   headless defaults, so a session started from the phone comes up at exactly
+///   the grid it used to. Measured on the Linux host: `pane layout` reported
+///   `120×40`.
+/// - **The output is emitted only when the launch failed**, which is what makes
+///   `diagnosis` safe to widen — see there. On success the client's output is
+///   the TUI's escape stream, which is worth nothing and would be several KB on
+///   every start.
+/// - **The launch is still checked, not trusted.** `SessionStarter` reads
+///   `session list` back, as it always did. The script's own readiness poll is
+///   inside the thing being checked and is no substitute for it.
 public enum SessionLaunch {
 
-    /// How long the host is given to run the launch before it is killed.
+    /// The pty's grid, and therefore the session's.
     ///
-    /// Measured at 0.14s over a real exec channel, so this is two orders of
-    /// magnitude of headroom rather than a guess at a duration.
-    public static let watchdogSeconds = 10
+    /// **herdr's own headless defaults**, chosen so that a session started from
+    /// the phone comes up at the same size it did when the launch had no pty at
+    /// all. The phone's own screen would be the wrong answer: the grid belongs
+    /// to the session and every pane in it shares it, so a phone-shaped session
+    /// is a decision for the host's `config.toml` rather than for whichever
+    /// device happened to start it.
+    public static let sessionColumns = 120
+    public static let sessionRows = 40
 
-    /// Starts `name` on the host and returns as soon as the server is up.
+    /// How long the host is given to bring the session up before the client is
+    /// killed anyway: `pollAttempts` × half a second.
     ///
-    /// **Bounded, because this command is now synchronous.** The old
-    /// `nohup … &` could not hang — the shell returned whatever herdr did — and
-    /// giving that up for a foreground command means a herdr that does not exit
-    /// holds the exec channel open forever. `NewSessionModel` never clears
-    /// `isStarting` then, and `NewSessionField`'s scrim is deliberately inert
-    /// while a launch is in flight, so the cover cannot be dismissed and the
-    /// app needs relaunching. That is a worse failure than any this rewrite
-    /// removed, and it is not hypothetical: it is exactly what the *deleted*
-    /// redirect was guarding against one layer down, and a herdr that tolerated
-    /// a non-tty rather than erroring on the ioctl would produce it.
-    ///
-    /// The `( sleep N; kill )` shape is `EndpointDiscovery.tailscaleStatusCommand`'s,
-    /// for the same reason and with the same two details: the watchdog's own
-    /// output goes to `/dev/null` so it is not a second writer holding the
-    /// channel open, and the shell's `Terminated: 15` notice is suppressed.
+    /// Measured at under a second on both hosts, so this is an order of
+    /// magnitude of headroom rather than a guess. It is also the bound that
+    /// stops a launch holding the exec channel open forever —
+    /// `NewSessionModel` never clears `isStarting` then, and `NewSessionField`'s
+    /// scrim is deliberately inert while a launch is in flight, so the cover
+    /// cannot be dismissed and the app needs relaunching.
+    public static let pollAttempts = 20
+
+    /// Starts `name` on the host and returns once its socket answers.
     ///
     /// - Parameter herdrPath: Absolute, from the `PairedPeer`. A non-login
     ///   shell usually has no `herdr` on `PATH`.
     public static func startCommand(name: SessionName, herdrPath: String) -> String {
+        // **Nothing is interpolated into a nested quoting level.** The two
+        // values go into exported variables and the command `script` runs is a
+        // *literal* single-quoted string that expands them itself. Built the
+        // obvious way instead — `script -c "… '\(herdrPath)' …"` — a double
+        // quote anywhere in the path escapes the inner string, and the path is
+        // whatever `command -v herdr` answered on someone else's machine.
+        //
         // `-u HERDR_SOCKET_PATH` for the reason `SSHTransport.command` clears
         // it: a socket path leaking in from the environment pins the command to
-        // a different session. `-u HERDR_SESSION` is new and belongs with it —
-        // the name is a positional argument now rather than an environment
-        // variable, and an inherited one would make which session gets started
-        // depend on the login profile. Measured clean over SSH; this is for the
-        // host whose profile exports them.
-        //
-        // `</dev/null` because the TUI reads stdin, and `2>&1` because herdr's
-        // refusal goes to stderr and is the only account of it there will be.
-        //
-        // The trailing `true` is `HerdrLookup.command`'s `|| true` in another
-        // shape, and it is required rather than tidy: `wait` yields the
-        // launch's own status, the ordinary success is exit 1, and a watchdog
-        // kill exits on a signal. `ShellRunner.run` throws on any of them.
+        // a different session. That is not hypothetical — it caught the probe
+        // that measured this change, where `HERDR_SESSION=<probe> herdr pane
+        // list` answered about `work`, because the socket path was still set
+        // and wins. `-u HERDR_SESSION` belongs with it: the name is a
+        // positional argument, and an inherited one would let a login profile
+        // decide which session starts.
         """
         exec 2>/dev/null
-        env -u HERDR_SOCKET_PATH -u HERDR_SESSION \(quote(herdrPath)) \
-        session attach \(quote(name.text)) </dev/null 2>&1 &
-        launch=$!
-        ( sleep \(watchdogSeconds); kill -TERM $launch ) >/dev/null 2>&1 &
-        watchdog=$!
-        wait $launch
-        kill $watchdog >/dev/null 2>&1
+        bleat_herdr=\(quote(herdrPath))
+        bleat_session=\(quote(name.text))
+        export bleat_herdr bleat_session
+        bleat_attach='stty rows \(sessionRows) cols \(sessionColumns); exec env -u HERDR_SOCKET_PATH -u HERDR_SESSION "$bleat_herdr" session attach "$bleat_session"'
+        bleat_ready() {
+        env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1
+        }
+        bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || exit 0
+        if script -q -c true /dev/null >/dev/null 2>&1; then
+        script -q -c "$bleat_attach" /dev/null </dev/null >"$bleat_log" 2>&1 &
+        else
+        script -q /dev/null /bin/sh -c "$bleat_attach" </dev/null >"$bleat_log" 2>&1 &
+        fi
+        bleat_launch=$!
+        bleat_tries=0
+        until bleat_ready; do
+        bleat_tries=$((bleat_tries + 1))
+        [ "$bleat_tries" -ge \(pollAttempts) ] && break
+        sleep 0.5
+        done
+        kill -TERM "$bleat_launch" >/dev/null 2>&1
+        bleat_ready || cat "$bleat_log"
+        rm -f "$bleat_log"
         true
         """
     }
 
     /// herdr's own account of why a launch produced no session, or nil.
     ///
-    /// The same rule `AgentStart.diagnosis` follows and for the same reason:
-    /// **never guess**. A launch that worked writes
-    /// `herdr: Inappropriate ioctl for device` and nothing else, and offering
-    /// that to a user under the heading "that did not happen" would be herdr
-    /// reporting a success as the reason for a failure. Only a line herdr
-    /// prefixes `error: ` is a cause.
+    /// **Two prefixes, and the second one is the bug that was reported.** herdr
+    /// writes its refusals both ways — `error: nested herdr is disabled by
+    /// default` and `herdr: cannot attach without a usable terminal: …` — and
+    /// this used to accept only the first. So the one failure a user actually
+    /// met arrived as the generic "the host did not report a session", throwing
+    /// away a sentence that named the cause *and* the remedy.
+    ///
+    /// **Accepting `herdr: ` is safe only because of when this is called.** The
+    /// rule here used to be "only `error: `, because a launch that *worked*
+    /// printed `herdr: Inappropriate ioctl for device`" — and that was right at
+    /// the time: the output was the launch's, merged, on every run. It is not
+    /// any more. `startCommand` emits the client's output **only when the
+    /// session did not come up**, so everything reaching this function is from
+    /// a failure by construction, and a `herdr: ` line in it is a cause rather
+    /// than success noise.
+    ///
+    /// Anything else is still nil rather than guessed — a shell's own
+    /// complaint about an unresolvable `herdrPath` reads as
+    /// `env: '/no/such/herdr': No such file or directory`, which is true but is
+    /// not herdr explaining itself, and the generic message is the honest
+    /// answer there. Measured on the Linux host.
     ///
     /// **The ANSI is stripped first, and that is measured rather than
     /// defensive.** herdr styles some of its own errors even when stderr is not
@@ -126,11 +166,18 @@ public enum SessionLaunch {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .lazy
             .map { stripANSI(String($0)).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { $0.hasPrefix(errorPrefix) }
-            .map { String($0.dropFirst(errorPrefix.count)) }
+            .compactMap { line in
+                causePrefixes.lazy
+                    .filter { line.hasPrefix($0) }
+                    .map { String(line.dropFirst($0.count)) }
+                    .first { !$0.isEmpty }
+            }
+            .first
     }
 
-    private static let errorPrefix = "error: "
+    /// The two ways herdr introduces a refusal of its own. Order matters only
+    /// in that a line can match one of them.
+    private static let causePrefixes = ["error: ", "herdr: "]
 
     /// Drops the escape sequences a terminal program writes, so the text
     /// underneath can be matched.

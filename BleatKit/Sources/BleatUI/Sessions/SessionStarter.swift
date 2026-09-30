@@ -73,10 +73,12 @@ enum SessionStarter {
         // is what keeps the list on screen reading the session it was already
         // reading.
         let shell = try await connections.shell(for: peer)
-        // **Kept, and it is the whole of the failure report now.** The launch
-        // is synchronous and herdr's refusal arrives on its stderr, so this
-        // string is the only account there will be — there is no log file to
-        // fetch afterwards any more.
+        // **Kept, and it is the whole of the failure report.** The launch emits
+        // the client's output only when the session did not come up, so this
+        // string is empty on every start that worked and is the only account
+        // there will be of one that did not. `SessionLaunch.diagnosis` reads
+        // it, and reads herdr's `herdr: ` refusals as well as its `error: `
+        // ones for that reason.
         let launchOutput = try await shell.run(shell: SessionLaunch.startCommand(
             name: name, herdrPath: peer.herdrPath ?? "herdr"
         ))
@@ -105,12 +107,14 @@ enum SessionStarter {
     /// Polls `session list` until the name reports running, or the budget runs
     /// out.
     ///
-    /// **The launch cannot confirm its own success.** It reports a *refusal*
-    /// well enough — exit 2, with herdr's sentence on stderr — but the
-    /// headless success path exits 1 with `Inappropriate ioctl for device`,
-    /// which cannot be told apart from a TUI that failed to draw for some
-    /// other reason. So the answer still comes from reading `session list`
-    /// back, exactly as it does for a revocation.
+    /// **The launch cannot confirm its own success, and this read is not
+    /// redundant with the one inside it.** `SessionLaunch.startCommand` polls
+    /// the session's own socket so it knows when to kill the client — but that
+    /// poll is *inside* the thing being checked, and it runs on the host with
+    /// nothing above it to disagree. A launch that fell through its budget, or
+    /// a `script` the host does not have, both leave a command that exited 0.
+    /// So the answer still comes from reading `session list` back, exactly as
+    /// it does for a revocation.
     ///
     /// Measured locally at 0.05s, on the very first poll, but that was a warm
     /// binary over a unix socket; this runs over SSH with an exec channel per

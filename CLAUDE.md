@@ -100,7 +100,14 @@ push notifications, watchOS, Live Activities, multi-account badges.
   throwaway sshd on 5 Sept 2026, including that the revoked key stops
   authenticating.
 
-## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026)
+## Creating panes and sessions from the phone (herdr 0.9.0, 8 Sept 2026; `session attach` re-measured on 0.9.3, 30 Sept 2026)
+
+**Both the Mac and the Linux host run 0.9.3 now.** Only `session attach`
+has been re-measured against it, and it had changed in a way that broke
+starting a session from the phone outright — see below. Everything else in
+this section is still 0.9.0-era measurement: **treat it as unverified on
+0.9.3 and re-measure before relying on it**, because this is the second
+time a herdr update has moved something this file called settled.
 
 Read off the live CLI, so this does not have to be rediscovered. **Starting a
 session, creating a workspace, adding a tab and starting an agent are built** —
@@ -124,139 +131,174 @@ mode — it is the default, and an agent is opt-in afterwards. Mechanically this
 costs nothing new: they are ordinary `herdr` commands over the exec channel the
 transport already opens.
 
-### Starting a session: `herdr session attach`, headless (built, 9 Sept 2026)
+### Starting a session: `herdr session attach`, under a sized pty (rebuilt 30 Sept 2026)
 
-**There is still no `session create`** on 0.9.0 — `herdr session` offers only
-`list`, `attach`, `stop`, `delete`. `attach` is the one that brings a session
-into being, and run with no pty it is the whole of the launch:
+**There is still no `session create`** on 0.9.3 — `herdr session` offers only
+`list`, `attach`, `stop`, `delete` — so `attach` is the only thing that brings a
+session into being.
+
+**It needs a terminal now, and until 30 Sept 2026 the app did not give it one.**
+Reported from a device as "starting a session on adam gets rejected". It was
+neither adam's fault nor Linux's: **it was broken on every host**, and had been
+since herdr updated. Both machines run **0.9.3**; every measurement this section
+used to rest on was taken against **0.9.0**.
+
+| herdr | `attach` with no pty |
+|---|---|
+| 0.9.0 | **starts the server**, then the TUI fails to draw — exit 1, `Inappropriate ioctl for device`, server reparented to pid 1 |
+| 0.9.3 | checks the terminal **first** and creates nothing |
+
+That ordering was the entire premise of the old command, which therefore
+swallowed the status and read `session list` back. Three refusals measured,
+30 Sept 2026 — over a real SSH exec channel to the Linux host, and locally with
+a stripped environment on the Mac:
+
+| host | given | herdr says |
+|---|---|---|
+| Linux | no pty | `cannot attach without a usable terminal: Not a tty (os error 25); run inside a terminal` |
+| macOS | no pty | `cannot attach without a usable terminal: Inappropriate ioctl for device (os error 25); run inside a terminal` |
+| Linux | a pty with **no size** (`script` alone) | `cannot attach without a usable terminal: terminal reported a zero-sized grid; run inside a terminal` |
+
+**The third row is the one that would have cost another round trip**: a pty is
+not enough, it has to have been sized. So the launch runs under `script` with an
+explicit `stty`:
 
 ```sh
 exec 2>/dev/null
-env -u HERDR_SOCKET_PATH -u HERDR_SESSION '<herdrPath>' session attach '<name>' </dev/null 2>&1 &
-launch=$!
-( sleep 10; kill -TERM $launch ) >/dev/null 2>&1 &
-watchdog=$!
-wait $launch
-kill $watchdog >/dev/null 2>&1
+bleat_herdr='<herdrPath>'
+bleat_session='<name>'
+export bleat_herdr bleat_session
+bleat_attach='stty rows 40 cols 120; exec env -u HERDR_SOCKET_PATH -u HERDR_SESSION "$bleat_herdr" session attach "$bleat_session"'
+bleat_ready() {
+env -u HERDR_SOCKET_PATH HERDR_SESSION="$bleat_session" "$bleat_herdr" pane list >/dev/null 2>&1
+}
+bleat_log=$(mktemp "${TMPDIR:-/tmp}/bleat-session.XXXXXX") || exit 0
+if script -q -c true /dev/null >/dev/null 2>&1; then
+script -q -c "$bleat_attach" /dev/null </dev/null >"$bleat_log" 2>&1 &
+else
+script -q /dev/null /bin/sh -c "$bleat_attach" </dev/null >"$bleat_log" 2>&1 &
+fi
+bleat_launch=$!
+bleat_tries=0
+until bleat_ready; do
+bleat_tries=$((bleat_tries + 1))
+[ "$bleat_tries" -ge 20 ] && break
+sleep 0.5
+done
+kill -TERM "$bleat_launch" >/dev/null 2>&1
+bleat_ready || cat "$bleat_log"
+rm -f "$bleat_log"
 true
 ```
 
-That whole script is pinned by an exact-string test and was run **verbatim**
-over a real exec channel — success path, refusal path and watchdog — which is
-the rule this file applies to every other command.
+That whole script is pinned by an exact-string test and was run **verbatim** on
+both hosts — the Linux one over a real exec channel, the Mac locally with
+`env -i`. Measured either way: **exit 0 in about a second**, no output,
+`session list` reporting it running, and `pane layout` reporting **120×40**.
 
-**This file used to say the opposite, at length, and the reasoning was never
-measured.** It claimed `attach` "wants a pty, and the pty it gets becomes the
-session's geometry", and built a `nohup env … herdr server </dev/null >LOG 2>&1
-&` around avoiding that. The geometry half is true **only when there is a pty**.
-Over an SSH exec channel there is none. Measured 9 Sept 2026 against a throwaway
-sshd on 127.0.0.1:2222 — no tty, no `HERDR_*` in the environment, login shell
-`zsh`:
+- **A real SSH pty was the alternative and was not taken.** Citadel has
+  `withPTY`, and asking sshd for a sized pty is the conceptually honest answer —
+  but it changes `HerdrTransport`, which this file says to ask before doing, and
+  `script` keeps the whole fix inside the exec channel the transport already
+  opens. The cost is the dependency: **a host without `script` cannot start a
+  session**, and the failure is the generic one.
+- **Both `script` flavours, chosen by a probe rather than by falling through.**
+  BSD has no `-c`; util-linux refuses the BSD form outright (`unexpected number
+  of arguments`). So neither spelling works on both, and an `||` chain could not
+  tell "this flavour does not exist" from "the launch failed".
+  `script -q -c true /dev/null` is the probe — exit 0 on util-linux, non-zero on
+  BSD. Measured on both hosts.
+- **The client never exits on its own now, so it is always killed.** Given a
+  working terminal `attach` *is* the TUI and stays up for as long as the channel
+  does. The bounded poll replaces the old `( sleep N; kill )` watchdog — same
+  purpose, and now the same loop. **The server survives the kill**: verified on
+  both hosts, `session list` reporting `running: true` after a `kill -TERM` of
+  the `script` holding the client.
+- **The geometry is ours to choose now, and 120×40 is not arbitrary.** With a
+  pty, the pty's size *is* the session's — the hazard the 0.9.0-era design
+  feared, and it is unavoidable rather than avoidable now. Those are herdr's own
+  headless defaults, so a session started from the phone comes up at exactly the
+  grid it used to. The phone's own screen would be the wrong answer for the
+  reason this file argues elsewhere: the grid belongs to the session and every
+  pane shares it, so a phone-shaped session is a host `config.toml` decision.
+- **Readiness is the session's own socket answering, not a grep of `session
+  list`.** A socket-API command against the session exits 0 only when its server
+  is up, which is the question — and it does not depend on two JSON keys
+  staying adjacent in herdr's output.
+- **`HERDR_SOCKET_PATH` must be cleared in the probe as well as the launch, and
+  this is not theoretical.** It caught the probe that measured this change:
+  `HERDR_SESSION=<probe> herdr pane list` answered about **`work`**, because the
+  socket path was still set in the environment and wins over the name. That is
+  the hazard `SSHTransport.command` documents, met in the flesh.
+- **Nothing is interpolated into a nested quoting level.** The two values go
+  into exported shell variables and the command `script` runs is a *literal*
+  single-quoted string that expands them itself. Built the obvious way —
+  `script -c "… '<herdrPath>' …"` — a double quote anywhere in the path escapes
+  the inner string, and that path is whatever `command -v herdr` answered on
+  somebody else's machine.
+- **The output is emitted only when the launch failed**, which is what makes
+  widening `diagnosis` safe — see below. On success the client's output is the
+  TUI's escape stream: several KB of nothing, and a stripped-of-ANSI haystack
+  that could match a cause that is not one. `mktemp` with an `XXXXXX` template
+  holds it, which is also what retires the old log's `${TMPDIR:-$HOME}` symlink
+  hazard: unpredictable name, created `O_EXCL`, mode 600, removed at the end.
+  Verified no stray files on either host.
+- **Every outcome still exits 0**, hence the trailing `true`: the last thing to
+  run is `bleat_ready || cat`, whose status is the readiness probe's.
+- **The `session list` read-back stays, and it is not redundant with the
+  script's own poll.** That poll is *inside* the thing being checked and runs on
+  the host with nothing above it to disagree; a launch that fell through its
+  budget, or a host without `script`, both leave a command that exited 0.
+  `SessionStarter` polls, as before.
 
-| | |
-|---|---|
-| session created, server reparented to pid 1 | yes |
-| the server's stdin/stdout/stderr | **all `/dev/null`** |
-| channel returned in | 0.14s |
-| pane geometry | **120×40**, the headless default |
-| second launch while running | same pid, no error, no second server |
-| on a stopped session | resumes it, with the workspaces it had |
-| invalid name | **exit 2**, herdr's sentence on stderr, nothing created |
-| headless success | **exit 1**, `Inappropriate ioctl for device` |
+**`SessionLaunch.diagnosis` reads two prefixes now, and the second one *is* the
+reported bug.** herdr writes refusals both ways — `error: nested herdr is
+disabled by default` and `herdr: cannot attach without a usable terminal: …` —
+and this used to accept only the first. So the failure a user actually met
+arrived as the generic "the host did not report a session", throwing away a
+sentence that named the cause *and* the remedy. That is why it read as a bare
+rejection.
 
-**The command this replaces never worked over SSH at all**, and that was found
-while reviewing the replacement. `nohup` on macOS refuses an exec channel —
-`nohup: can't detach from console: Inappropriate ioctl for device` — and bails
-*before* exec'ing herdr, so no server started and no session was created.
-Measured three ways:
+- **Accepting `herdr: ` is safe only because of the change above.** The old rule
+  — "only `error: `, because a launch that *worked* printed `herdr: Inappropriate
+  ioctl for device`" — was right when the output was the launch's, merged, on
+  every run. It is not any more: there is no success path through `diagnosis`.
+  Widening the prefix *without* emitting only on failure would re-introduce
+  exactly the bug the old rule defended against, and the test that used to pin
+  it now pins the reversal and says so.
+- **Anything else is still nil rather than guessed.** A shell's own complaint
+  about an unresolvable `herdrPath` reads as `env: '/no/such/herdr': No such file
+  or directory` — measured on the Linux host — which is true but is not herdr
+  explaining itself, so the generic message is the honest answer.
+- **It still strips ANSI before matching**, for the reason it always did: herdr
+  styles some of its own errors even to a non-tty.
 
-| | |
-|---|---|
-| old command, local non-pty shell | **works** (this is how it was "verified", 8 Sept) |
-| old command, real SSH exec channel | **fails** — nohup refuses, nothing starts |
-| same command without `nohup`, over SSH | works |
+Everything below was measured against 0.9.0 and re-confirmed on 0.9.3 unless
+noted:
 
-So starting a session from the phone had never worked on a real device, and the
-8 Sept verification was done over a local shell — precisely the gap **Testing
-against a live host** warns about. A local non-pty shell is not an exec channel.
-Verify over one.
-
-**herdr daemonises the server itself**, so `nohup`, `&` and the stdout redirect
-were each defending against something already done — and the first of them was
-actively breaking it. All three are gone, and with
-them the log file — and the `${TMPDIR:-$HOME}` fallback that existed only
-because a predictable name under a world-writable `/tmp` is a symlink this
-redirect would have truncated as the SSH user. `SessionLaunch.logCommand` and
-`SessionStarter`'s log-fetching `diagnosis` are deleted.
-
-- **Exit 1 is the success path**, which is the sharp edge. The TUI cannot draw
-  without a pty, so it complains and exits 1 *after* the server is up — the
-  reason the script swallows its own status, as `HerdrLookup.command` does with
-  `|| true`. `ShellRunner.run` throws on a non-zero status, so otherwise every
-  successful start would reach the user as "the host rejected a command (exit
-  1)". **Never show that stderr**: `Inappropriate ioctl for device` appears on
-  every start that worked.
-- **A refusal is now reported synchronously, in herdr's own words**, off the
-  command's merged stderr rather than out of a file fetched afterwards. That is
-  strictly better than the old command, whose status was the shell's and
-  therefore meant nothing at all.
-- **The launch is synchronous now, so it is bounded.** `nohup … &` could not
-  hang; a foreground command can, and a herdr that never exits would hold the
-  exec channel open forever — `NewSessionModel` never clears `isStarting`, and
-  `NewSessionField`'s scrim is deliberately inert while a launch is in flight,
-  so the cover could not be dismissed and the app would need relaunching. A
-  `( sleep 10; kill -TERM )` watchdog bounds it, the same shape
-  `EndpointDiscovery.tailscaleStatusCommand` uses and with the same two
-  details: the watchdog's output goes to `/dev/null` so it is not a second
-  writer holding the channel open, and `exec 2>/dev/null` suppresses the
-  shell's `Terminated: 15`. Verified with a `sleep 600` in herdr's place and a
-  3s budget — the channel returned in 3.12s, the hung process was gone, and the
-  command still exited 0.
-- **Every outcome exits 0**, hence the trailing `true`: the success path exits
-  1 and a killed launch exits on a signal, and `ShellRunner.run` throws on
-  either.
-- **The `session list` read-back stays.** Exit 1 cannot tell "server up, TUI
-  could not draw" from "TUI could not draw for another reason", so the launch is
-  still a write that must be *checked*. `SessionStarter` polls, as before.
-- **`SessionLaunch.diagnosis` strips ANSI before matching `error: `, and that is
-  measured.** herdr styles some of its own errors even to a non-tty: captured to
-  a file, the nested-herdr refusal arrives as `ESC[1merror:ESC[0m nested herdr
-  is disabled by default`, which no prefix test on the raw bytes can match. The
-  old code tested the raw line. **CSI alone is not enough either**: stdout and
-  stderr are merged, so a title set (`ESC]0;…BEL`) sharing a line with the
-  complaint would leave `]0;…error: …` and hide the prefix behind its own
-  payload. OSC and the two-byte forms are handled; anything unrecognised is
-  skipped rather than consumed, because losing half of herdr's sentence is
-  worse than leaving a stray byte in it.
+- **A refusal is reported synchronously, in herdr's own words**, off the
+  command's merged stderr rather than out of a file fetched afterwards.
 - **Both `HERDR_SESSION` and `HERDR_SOCKET_PATH` are unset.** The name is a
-  positional argument now, so an inherited `HERDR_SESSION` would let a login
-  profile decide which session starts. Measured clean over SSH; this is for the
-  host whose profile exports them.
+  positional argument, so an inherited `HERDR_SESSION` would let a login profile
+  decide which session starts.
 - **`attach` being idempotent makes the look-before-launch rule matter *more*.**
   The old `herdr server` at least failed loudly against an already-running
-  session (`error: herdr server is already running`, into a log nobody read).
-  `attach` succeeds silently — same pid, no second server — so the launch is
-  indistinguishable from starting a fresh one, and `SessionStarter`'s read of
-  `session list` *before* the write is now the only thing standing between that
-  and the phone claiming somebody's live session. See **Stopping and deleting**
-  for what that claim buys.
-- **A new session is *not* empty**, and this file claimed the opposite until it
-  was measured. `attach` brings one up holding a single workspace — labelled
-  `~`, one tab, one pane, in the SSH user's home directory. The old text ("no
-  workspaces, no panes") was carried over from the `herdr server` era and never
-  re-checked. Nothing in the UI depended on it, but the workspaces list is not
-  empty on a session the phone has just started.
+  session. `attach` succeeds silently — measured again on 0.9.3: a second launch
+  against a running session exits 0 in a second with no output and no second
+  server — so `SessionStarter`'s read of `session list` *before* the write is
+  the only thing standing between that and the phone claiming somebody's live
+  session. See **Stopping and deleting** for what that claim buys.
+- **A new session is *not* empty.** `attach` brings one up holding a single
+  workspace — labelled `~`, one tab, one pane, in the SSH user's home
+  directory. Confirmed on the Linux host: `w1:p1`, cwd `/home/pi`.
 - **A *stopped* session of that name is resumed, not recreated**, with its
-  workspaces — measured again here.
-- **Resuming does not disturb the geometry either.** This is the case where the
-  old design's fear would actually bite, since a resumed session has a real
-  layout to lose, so it was measured rather than assumed: a session stopped and
-  re-attached came back with both workspaces and **both panes still 120×40**.
-- **Its geometry comes from the default config**, not from `phone.toml` — that
-  file is reached only via `HERDR_CONFIG_PATH`. So a session started from the
-  phone is `headless_cols`/`headless_rows`, 120x40 unless the host's own
-  `config.toml` says otherwise, and is **not** phone-shaped. That stays a host
-  config question, as this file already argues.
+  workspaces.
+- **The command this all replaced never worked over SSH at all**, and that was
+  found while reviewing its replacement in Sept. `nohup` on macOS refuses an
+  exec channel — `nohup: can't detach from console: Inappropriate ioctl for
+  device` — and bails *before* exec'ing herdr. It was "verified" over a local
+  non-pty shell. **A local non-pty shell is not an exec channel**; that lesson
+  is why the Linux half of this change was measured over one.
 
 **Session names: validated on the phone, never sanitised** — the `Marker(text:)`
 rule. herdr states its own set in its refusals: ASCII letters, numbers, `.`, `_`

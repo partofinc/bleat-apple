@@ -68,6 +68,10 @@ let package = Package(
                 "BleatKit",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
+            // The custom symbols, drawn by `Design/symbols.swift`. In the
+            // package rather than the app's catalog so previews and the render
+            // tests find them: both load `BleatUI` without the app.
+            resources: [.process("Resources")],
             swiftSettings: sharedSwiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         .executableTarget(

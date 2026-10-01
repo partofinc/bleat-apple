@@ -11,6 +11,10 @@ public final class AppContext {
     public let peers: PeerStore
     public let reachability: Reachability
     public let connections: ConnectionStore
+    /// How busy the connected host is. Here rather than in a screen's `@State`
+    /// because the bar that shows it is carried down the drill-down — host,
+    /// session, workspace — and those are three screens reading one answer.
+    public let hostLoad: HostLoadStore
     /// The unpair flow. Here rather than in a screen's `@State` because it
     /// spans two of them — the peer list and a peer's detail — and because
     /// removing a device's access is not something a screen going away should
@@ -38,6 +42,7 @@ public final class AppContext {
         self.reachability = reachability
         let connections = ConnectionStore(peers: peers, reachability: reachability)
         self.connections = connections
+        self.hostLoad = HostLoadStore(connections: connections, peers: peers)
         self.unpair = UnpairModel(peers: peers, connections: connections, navigation: navigation)
     }
 }

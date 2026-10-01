@@ -240,6 +240,91 @@ struct PreviewSmokeTests {
         await settle(context)
     }
 
+    /// The bar is carried down the drill-down, and it is drawn from a reading
+    /// somebody else took: no screen here may open a connection to get one.
+    @Test("the host's load rides under the host, a session and a workspace")
+    func hostLoadBar() async {
+        let context = sampleContext()
+        // Nothing read, nothing connected: no bar, and asking for a reading
+        // must not be what dials.
+        #expect(context.hostLoad.load(for: .preview) == nil)
+        await context.hostLoad.refresh(for: .preview, force: true)
+        #expect(context.hostLoad.load(for: .preview) == nil)
+
+        context.hostLoad.preview(.sampleLinux, for: .preview)
+        #expect(context.hostLoad.load(for: .preview) == .sampleLinux)
+        // One host's reading is not another's.
+        #expect(context.hostLoad.load(for: .previewSparse) == nil)
+        render(context, NavigationStack {
+            PeerDetailView(peer: .preview, previewing: .loaded(SessionInfo.samples))
+        })
+        render(context, NavigationStack {
+            WorkspacesView(peer: .preview, session: "work", previewing: .loaded(Workspace.samples))
+        })
+        render(context, NavigationStack {
+            WorkspacesView(
+                peer: .preview, session: "bleat-test", previewing: .loaded([]),
+                status: SessionInfo(name: "bleat-test", running: false, isDefault: false)
+            )
+        })
+        // Each half of the bar on its own, and neither.
+        for load in [
+            HostLoad.sampleMac, .sampleLinux, HostLoad(loadAverage: 0.4),
+            HostLoad(disk: .init(used: 9, total: 10)), HostLoad(),
+        ] {
+            render(context, List { Text("Row") }.safeAreaBar(edge: .bottom) { HostLoadBar(load: load) })
+        }
+        render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
+        await settle(context)
+    }
+
+    /// Only what the host said is drawn, so each line has to be able to be
+    /// absent. The values themselves are the system's formatters.
+    @Test("the bar's processor line is whatever of it the host said")
+    func hostLoadText() {
+        #expect(HostLoadBar(load: HostLoad()).cpuText == nil)
+        #expect(HostLoadBar(load: HostLoad()).temperatureText == nil)
+        #expect(HostLoadBar(load: HostLoad(loadAverage: 0.4)).cpuText?.hasPrefix("load ") == true)
+        #expect(HostLoadBar(load: .sampleMac).cpuText?.contains(" · load ") == true)
+        #expect(HostLoadBar(load: .sampleMac).temperatureText == nil)
+        #expect(HostLoadBar(load: .sampleLinux).temperatureText != nil)
+        for symbol in ["cpu", "thermometer.medium", "memorychip", "internaldrive"] {
+            #expect(UIImage(systemName: symbol) != nil, "\(symbol)")
+        }
+    }
+
+    /// `Image(_:bundle:)` draws nothing at all for a name it cannot find, so a
+    /// catalog that did not compile, or a template Xcode refused, would show
+    /// as a gap beside every Pi and fail no build.
+    @Test("the Pi's mark is in the package's catalog, as a symbol")
+    func berrySymbol() throws {
+        let berry = try #require(
+            UIImage(named: HostInfo.Platform.berry, in: .module, with: nil),
+            "the custom symbol is not in BleatUI's bundle"
+        )
+        #expect(berry.isSymbolImage, "it loaded as a bitmap, so it will not follow the font")
+        // And it takes a size from a font, which is what being a symbol is for.
+        let small = berry.applyingSymbolConfiguration(.init(pointSize: 12))
+        let large = berry.applyingSymbolConfiguration(.init(pointSize: 48))
+        #expect((small?.size.height ?? 0) < (large?.size.height ?? 0))
+        if let path = ProcessInfo.processInfo.environment["BLEAT_SYMBOL_PNG"] {
+            let row = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 80)).image { _ in
+                UIColor.white.setFill()
+                UIRectFill(CGRect(x: 0, y: 0, width: 300, height: 80))
+                var x = 10.0
+                for size in [17.0, 22, 34, 56] {
+                    for image in [berry, UIImage(systemName: "apple.logo")!] {
+                        let drawn = image.applyingSymbolConfiguration(.init(pointSize: size))!
+                            .withTintColor(.black, renderingMode: .alwaysOriginal)
+                        drawn.draw(at: CGPoint(x: x, y: 70 - drawn.size.height))
+                        x += drawn.size.width + 4
+                    }
+                }
+            }
+            try row.pngData()?.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
     @Test("the peer screens render")
     func peerScreens() async {
         let context = sampleContext()

@@ -21,6 +21,48 @@ extension SessionInfo {
     }
 }
 
+extension HostInfo {
+    /// As captured from the dev Mac — `Fixtures/host-status-macos.txt`.
+    static var sampleMac: HostInfo {
+        HostInfo(
+            system: "macOS 27.0.1", kernel: "Darwin 27.0.0", architecture: "arm64",
+            model: "MacBookAir10,1", herdrVersion: "0.9.3"
+        )
+    }
+
+    /// As captured from the Pi — `Fixtures/host-status-linux.txt`.
+    static var sampleLinux: HostInfo {
+        HostInfo(
+            system: "Debian GNU/Linux 13 (trixie)", kernel: "Linux 6.18.50+rpt-rpi-2712",
+            architecture: "aarch64", model: "Raspberry Pi Compute Module 5 Rev 1.0",
+            herdrVersion: "0.9.3"
+        )
+    }
+}
+
+extension HostLoad {
+    /// A Mac with its memory mostly spoken for. No temperature: a Mac does not
+    /// say.
+    static var sampleMac: HostLoad {
+        HostLoad(
+            cores: 8, cpuUsage: 0.34, loadAverage: 2.61,
+            memory: Usage(used: 14_080_163_840, total: 17_179_869_184),
+            disk: Usage(used: 410_624_946_176, total: 494_353_338_368),
+            uptime: .seconds(192_518)
+        )
+    }
+
+    /// An idle Pi, which does say how warm it is.
+    static var sampleLinux: HostLoad {
+        HostLoad(
+            cores: 4, cpuUsage: 0.02, loadAverage: 0.08,
+            memory: Usage(used: 794_132_480, total: 8_453_963_776),
+            disk: Usage(used: 7_897_923_584, total: 30_172_868_608),
+            temperature: 48.5, uptime: .seconds(439_391)
+        )
+    }
+}
+
 extension Workspace {
     /// In the order `HerdrClient.workspaces()` returns them — blocked, done,
     /// working, idle, unknown — so a preview cannot disagree with the app about

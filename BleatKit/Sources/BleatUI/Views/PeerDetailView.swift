@@ -4,11 +4,15 @@ import SwiftUI
 /// One paired host: the sessions running on it.
 ///
 /// Only the sessions. Everything *about* the host — who it logs in as, its host
-/// key, where it answers, and whether this phone is still paired with it — is
-/// in `PeerSettingsView` behind the gear. None of it changes between visits and
-/// none of it is what the user came for; keeping it under the list pushed the
-/// sessions up against the top of the screen and made a two-item list look like
-/// a header for a page of settings.
+/// key, where it answers, what it runs, and whether this phone is still paired
+/// with it — is in `PeerSettingsView` behind the gear. None of it changes
+/// between visits and none of it is what the user came for; keeping it under
+/// the list pushed the sessions up against the top of the screen and made a
+/// two-item list look like a header for a page of settings.
+///
+/// What does change by the minute — how busy the machine is — rides in a bar
+/// under the list, here and on the two screens below this one. See
+/// `HostLoadBarModifier`.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
     /// Published by `PeerSettingsFlow`, which presents the sheet at the root.
@@ -75,7 +79,7 @@ struct PeerDetailView: View {
         RemoteListView(
             state: sessions.state,
             empty: "No sessions yet. Start one with the button below.",
-            retry: { await sessions.load(for: peer) }
+            retry: { await load() }
         ) { list in
             // Only over rows, as on the agents screen: a heading above the
             // empty state reads as a list that failed to load.
@@ -113,9 +117,10 @@ struct PeerDetailView: View {
             }
         }
         #endif
+        .hostLoadBar(for: peer)
         .sessionControl(control, on: peer) { _ in await sessions.load(for: peer) }
-        .refreshable { await sessions.load(for: peer) }
-        .task { await sessions.load(for: peer) }
+        .refreshable { await load(force: true) }
+        .task { await load() }
         // **A pop does not re-run `.task`.** A session stopped or deleted from
         // inside it would still be listed here as it was — and tapping a
         // deleted one pushes a screen that can only error. The first appearance
@@ -123,8 +128,21 @@ struct PeerDetailView: View {
         .onAppear {
             defer { hasAppeared = true }
             guard hasAppeared else { return }
-            Task { await sessions.load(for: peer) }
+            Task { await load() }
         }
+    }
+
+    /// The sessions, then how busy the host is.
+    ///
+    /// **In that order, and the order is the point.** The load is read only
+    /// over a connection that is already up — see `HostLoadStore` — and the
+    /// sessions' load is what brings it up.
+    ///
+    /// - Parameter force: a pull-to-refresh, which reads the load again even
+    ///   if the last reading is seconds old.
+    private func load(force: Bool = false) async {
+        await sessions.load(for: peer)
+        await context.hostLoad.refresh(for: peer, force: force)
     }
 
     #if os(iOS)

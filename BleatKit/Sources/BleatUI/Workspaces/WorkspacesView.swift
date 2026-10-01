@@ -102,13 +102,18 @@ struct WorkspacesView: View {
             if action == .delete { context.navigation.pop(); return }
             await reload()
         }
-        .refreshable { await reload() }
+        .hostLoadBar(for: peer)
+        .refreshable { await reload(force: true) }
         .task { await reload() }
     }
 
-    private func reload() async {
+    /// - Parameter force: a pull-to-refresh, which reads the host's load again
+    ///   even if the last reading is seconds old. Last, because it is read
+    ///   only over a connection the lists above have already brought up.
+    private func reload(force: Bool = false) async {
         await workspaces.load(for: peer)
         await status.load(for: peer)
+        await context.hostLoad.refresh(for: peer, force: force)
     }
 
     /// Only for a session known to be stopped — `nil` is "not asked yet", and

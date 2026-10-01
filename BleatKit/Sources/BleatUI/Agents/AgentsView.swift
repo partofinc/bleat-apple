@@ -239,8 +239,19 @@ struct AgentsView: View {
         .yieldsToPairing(whileBusy: newAgent.isStarting || newAgent.isAddingPane,
                          presenting: $isStarting)
         #endif
-        .refreshable { await entries.load(for: peer) }
-        .task { await entries.load(for: peer) }
+        .hostLoadBar(for: peer)
+        .refreshable { await load(force: true) }
+        .task { await load() }
+    }
+
+    /// The rows, then how busy the host is — last, because that is read only
+    /// over a connection the rows have already brought up.
+    ///
+    /// - Parameter force: a pull-to-refresh, which reads the load again even
+    ///   if the last reading is seconds old.
+    private func load(force: Bool = false) async {
+        await entries.load(for: peer)
+        await context.hostLoad.refresh(for: peer, force: force)
     }
 
     #if os(iOS)

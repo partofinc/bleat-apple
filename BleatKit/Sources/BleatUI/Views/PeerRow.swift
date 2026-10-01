@@ -6,13 +6,27 @@ struct PeerRow: View {
     let peer: PairedPeer
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(peer.name)
-                .font(.headline)
-            Text("\(peer.username)@\(address)")
-                .font(.caption)
+        HStack(spacing: 12) {
+            // A fixed width, so names line up whichever mark is beside them.
+            (peer.hostInfo?.platform ?? .unknown).mark
+                .font(.title2)
                 .foregroundStyle(.secondary)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading) {
+                Text(peer.name)
+                    .font(.headline)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    /// What the host last said it runs. Until it has said — a peer paired and
+    /// never connected to — where it is, which is all that is known.
+    private var detail: String {
+        peer.hostInfo?.system ?? "\(peer.username)@\(address)"
     }
 
     /// The address it last answered on, falling back to the first it knows.
@@ -27,9 +41,8 @@ struct PeerRow: View {
 #if DEBUG
 #Preview("Peer rows", traits: .sampleData) {
     List {
-        // The three cover the address line's fallbacks: one with a last-good
-        // endpoint, one with none — where the first stored address is the best
-        // guess — and a non-default port, which has to be visible.
+        // A Mac, a Pi, and one that has never been connected to — which has no
+        // mark of its own and still says where it is.
         ForEach(PairedPeer.samples) { peer in
             PeerRow(peer: peer)
         }

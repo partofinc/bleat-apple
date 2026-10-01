@@ -1,0 +1,23 @@
+bleat-host:uname:Linux 6.18.50+rpt-rpi-2712 aarch64
+bleat-host:herdr:herdr 0.9.3
+bleat-host:cores:4
+bleat-host:df:Filesystem     1024-blocks    Used Available Capacity Mounted on
+bleat-host:df:/dev/mmcblk0p2    29465692 6473068  21752876      23% /
+bleat-host:os-release:PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+bleat-host:os-release:NAME="Debian GNU/Linux"
+bleat-host:os-release:VERSION_ID="13"
+bleat-host:os-release:VERSION="13 (trixie)"
+bleat-host:os-release:VERSION_CODENAME=trixie
+bleat-host:os-release:DEBIAN_VERSION_FULL=13.7
+bleat-host:os-release:ID=debian
+bleat-host:os-release:HOME_URL="https://www.debian.org/"
+bleat-host:os-release:SUPPORT_URL="https://www.debian.org/support"
+bleat-host:os-release:BUG_REPORT_URL="https://bugs.debian.org/"
+bleat-host:model:Raspberry Pi Compute Module 5 Rev 1.0
+bleat-host:meminfo:MemTotal:        8255824 kB
+bleat-host:meminfo:MemAvailable:    7480304 kB
+bleat-host:uptime:439391.32 1750887.37
+bleat-host:loadavg:0.08 0.04 0.01 3/279 870328
+bleat-host:thermal:cpu-thermal 48500
+bleat-host:stat:cpu  325872 34374 139678 175088738 5825 0 7064 0 0 0
+bleat-host:stat:cpu  325872 34374 139678 175089136 5825 0 7064 0 0 0

@@ -192,4 +192,42 @@ struct PeerRegistryTests {
         #expect(loaded.lastGoodEndpoint == winner)
         #expect(loaded.herdrPath == "/opt/homebrew/bin/herdr")
     }
+
+    /// Runs after every status read, and nearly every one says what the last
+    /// one did — so it has to be able to say "nothing changed" without a write.
+    @Test("what a host says it is is laid over what was known, and only written when it changed")
+    func hostInfoIsLaidOver() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var paired = peer(endpoints: ["mac.local", "10.0.0.5"])
+        paired.lastGoodEndpoint = Endpoint(string: "10.0.0.5")
+        try store.save(paired)
+        #expect(try store.peer(hostKey: paired.hostKey)?.hostInfo == nil)
+
+        let first = HostInfo(system: "macOS 27.0.1", kernel: "Darwin 27.0.0", model: "Mac14,2")
+        #expect(try store.recordHostInfo(first, forHostKey: paired.hostKey))
+        #expect(try !store.recordHostInfo(first, forHostKey: paired.hostKey))
+        // A reply that had nothing in it, and one missing what the last had.
+        #expect(try !store.recordHostInfo(HostInfo(), forHostKey: paired.hostKey))
+        #expect(try store.recordHostInfo(
+            HostInfo(system: "macOS 27.1", herdrVersion: "0.9.3"), forHostKey: paired.hostKey
+        ))
+
+        let loaded = try #require(try store.peer(hostKey: paired.hostKey))
+        #expect(loaded.hostInfo == HostInfo(
+            system: "macOS 27.1", kernel: "Darwin 27.0.0", model: "Mac14,2", herdrVersion: "0.9.3"
+        ))
+        #expect(loaded.lastGoodEndpoint == paired.lastGoodEndpoint)
+        #expect(try !store.recordHostInfo(first, forHostKey: "ssh-ed25519 nobody"))
+    }
+
+    /// A re-pair is built from a QR, which says nothing about the machine.
+    @Test("pairing again keeps what the host said it is")
+    func repairKeepsHostInfo() throws {
+        var known = peer(endpoints: ["mac.local"])
+        known.hostInfo = HostInfo(system: "macOS 27.0.1")
+        let merged = try known.merging(peer(endpoints: ["10.0.0.5"]))
+        #expect(merged.hostInfo == known.hostInfo)
+    }
 }

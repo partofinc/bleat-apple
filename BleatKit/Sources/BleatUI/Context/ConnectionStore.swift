@@ -61,6 +61,16 @@ public final class ConnectionStore {
         self.reachability = reachability
     }
 
+    /// Whether the live connection is to this peer. Observed, so a view that
+    /// reads it redraws when the connection goes.
+    ///
+    /// For work that is only worth doing over a connection somebody else
+    /// already wanted — reading the host's load — and must never be the reason
+    /// one is dialled.
+    public func isConnected(to peer: PairedPeer) -> Bool {
+        current?.hostKey == peer.hostKey
+    }
+
     /// A client for this peer, connecting if there is not one already.
     ///
     /// - Parameter session: The Herdr session to select. Applied to the live

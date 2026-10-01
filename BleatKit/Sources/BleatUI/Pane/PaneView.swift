@@ -16,6 +16,7 @@ import SwiftUI
 /// gesture, and there is no second one behind it. Whoever is typing at the Mac
 /// loses input until the phone goes back to the chat or leaves.
 struct PaneView: View {
+    @Environment(AppContext.self) private var context
     let title: String
     private let peer: PairedPeer
 
@@ -108,7 +109,7 @@ struct PaneView: View {
                     step: transcript.step,
                     capturedAt: transcript.capturedAt,
                     reload: { await transcript.load(for: peer) },
-                    showTerminal: { mode = .terminal }
+                    showTerminal: context.isRelayed ? nil : { mode = .terminal }
                 )
             }
         }
@@ -118,18 +119,24 @@ struct PaneView: View {
         .toolbarBackground(.clear, for: .navigationBar)
         #endif
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                // Icons rather than words: two labelled segments crowd an
-                // inline title off an iPhone.
-                Picker("How to read this pane", selection: $mode) {
-                    ForEach(PaneMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.symbol)
-                            .labelStyle(.iconOnly)
-                            .tag(mode)
-                            .accessibilityLabel(mode.label)
+            // **No picker through a relay, because there is no second mode.**
+            // The terminal is a stream held open in both directions, and the
+            // watch reaches the host one request at a time; the conversation
+            // is a file, which is why this screen exists there at all.
+            if !context.isRelayed {
+                ToolbarItem(placement: .primaryAction) {
+                    // Icons rather than words: two labelled segments crowd an
+                    // inline title off an iPhone.
+                    Picker("How to read this pane", selection: $mode) {
+                        ForEach(PaneMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.symbol)
+                                .labelStyle(.iconOnly)
+                                .tag(mode)
+                                .accessibilityLabel(mode.label)
+                        }
                     }
+                    .labelsHidden()
                 }
-                .labelsHidden()
             }
         }
         // Keyed on the mode: the transcript is a whole exec channel and most

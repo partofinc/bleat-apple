@@ -78,6 +78,18 @@ struct RemoteCommandTests {
         #expect(command == "env -u HERDR_SOCKET_PATH HERDR_SESSION='work' 'herdr' 'agent' 'list'")
     }
 
+    @Test("a command can name its own session without changing the selected one")
+    func explicitSession() throws {
+        // What the phone does for a watch: each relayed command says which
+        // session it is for, and the prefix the phone's own screens share is
+        // not touched.
+        let transport = try transport(session: "work")
+        #expect(transport.command(for: ["agent", "list"], session: "scratch")
+            == "env -u HERDR_SOCKET_PATH HERDR_SESSION='scratch' 'herdr' 'agent' 'list'")
+        #expect(!transport.command(for: ["session", "list"], session: nil).contains("HERDR_SESSION"))
+        #expect(transport.command(for: ["agent", "list"]).contains("HERDR_SESSION='work'"))
+    }
+
     @Test("an inherited HERDR_SOCKET_PATH is always cleared")
     func clearsSocketPath() throws {
         // Left set, it pins the command to the wrong session and silently

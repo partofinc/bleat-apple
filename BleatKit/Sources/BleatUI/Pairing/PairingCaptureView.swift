@@ -28,7 +28,7 @@ struct PairingCaptureView: View {
 
     var body: some View {
         Form {
-            #if canImport(UIKit)
+            #if canImport(UIKit) && !os(watchOS)
             Section {
                 CameraSection(authorised: cameraAuthorised, model: model)
             } header: {
@@ -60,7 +60,7 @@ struct PairingCaptureView: View {
             }
         }
         .task {
-            #if canImport(UIKit)
+            #if canImport(UIKit) && !os(watchOS)
             #if DEBUG
             if let previewCamera {
                 cameraAuthorised = previewCamera

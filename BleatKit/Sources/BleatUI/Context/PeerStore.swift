@@ -21,6 +21,11 @@ public final class PeerStore {
     private let registry: PeerRegistry
     private let keys: KeychainKeyStore
 
+    /// Where a change that started here is also sent. Set on the watch, whose
+    /// peer file is a copy of the phone's: anything recorded only in the copy
+    /// is gone the next time the phone sends a new one. See `PeerNote`.
+    public var upstream: (@MainActor (_ hostKey: String, PeerNote) -> Void)?
+
     /// - Parameter registry: Defaults to the **app's** location, not the
     ///   console tool's. `PeerRegistry.standard()` is `~/.bleat`, which on iOS
     ///   resolves inside the app container's read-only root and cannot be
@@ -91,6 +96,7 @@ public final class PeerStore {
     /// after every status read, and a reload redraws every list of hosts.
     public func recordHostInfo(_ info: HostInfo, for peer: PairedPeer) {
         guard (try? registry.recordHostInfo(info, forHostKey: peer.hostKey)) == true else { return }
+        upstream?(peer.hostKey, .hostInfo(info))
         reload()
     }
 
@@ -101,20 +107,23 @@ public final class PeerStore {
     /// either way, and the only cost is that the phone will treat it as
     /// somebody else's — the safe direction.
     public func recordCreatedSession(_ session: String, for peer: PairedPeer) {
-        try? registry.recordCreatedSession(session, forHostKey: peer.hostKey)
+        _ = try? registry.recordCreatedSession(session, forHostKey: peer.hostKey)
+        upstream?(peer.hostKey, .createdSession(session))
         reload()
     }
 
     /// Records that this phone is why a session is running, which is what the
     /// stop confirmation reads. See `PairedPeer.startedSessions`.
     public func recordStartedSession(_ session: String, for peer: PairedPeer) {
-        try? registry.recordStartedSession(session, forHostKey: peer.hostKey)
+        _ = try? registry.recordStartedSession(session, forHostKey: peer.hostKey)
+        upstream?(peer.hostKey, .startedSession(session))
         reload()
     }
 
     /// Drops that claim once the session is down again.
     public func forgetStartedSession(_ session: String, for peer: PairedPeer) {
-        try? registry.forgetStartedSession(session, forHostKey: peer.hostKey)
+        _ = try? registry.forgetStartedSession(session, forHostKey: peer.hostKey)
+        upstream?(peer.hostKey, .forgotStartedSession(session))
         reload()
     }
 
@@ -143,15 +152,54 @@ public final class PeerStore {
         let stale = sessions.filter { !$0.running && stored.startedHere($0.name) }
         guard !stale.isEmpty else { return }
         for session in stale {
-            try? registry.forgetStartedSession(session.name, forHostKey: hostKey)
+            _ = try? registry.forgetStartedSession(session.name, forHostKey: hostKey)
+            upstream?(hostKey, .forgotStartedSession(session.name))
         }
         reload()
     }
 
     /// Drops that claim once the session has been deleted from the host.
     public func forgetCreatedSession(_ session: String, for peer: PairedPeer) {
-        try? registry.forgetCreatedSession(session, forHostKey: peer.hostKey)
+        _ = try? registry.forgetCreatedSession(session, forHostKey: peer.hostKey)
+        upstream?(peer.hostKey, .forgotCreatedSession(session))
         reload()
+    }
+
+    // MARK: - The watch's copy
+
+    /// Applies something the watch did to this phone's record of the host.
+    ///
+    /// Through the registry rather than the `record…` methods above, which
+    /// would send it upstream again on a device that had one.
+    public func apply(_ note: PeerNote, forHostKey hostKey: String) {
+        switch note {
+        case .createdSession(let session):
+            _ = try? registry.recordCreatedSession(session, forHostKey: hostKey)
+        case .startedSession(let session):
+            _ = try? registry.recordStartedSession(session, forHostKey: hostKey)
+        case .forgotStartedSession(let session):
+            _ = try? registry.forgetStartedSession(session, forHostKey: hostKey)
+        case .forgotCreatedSession(let session):
+            _ = try? registry.forgetCreatedSession(session, forHostKey: hostKey)
+        case .hostInfo(let info):
+            _ = try? registry.recordHostInfo(info, forHostKey: hostKey)
+        }
+        reload()
+    }
+
+    /// Replaces every record with the phone's, which is the one that lasts.
+    ///
+    /// Nothing of the old copy survives: a host unpaired on the phone goes
+    /// from the watch with it, and whatever the watch recorded was sent
+    /// upstream when it happened, so the phone's records already hold it.
+    public func mirror(_ incoming: [PairedPeer]) {
+        guard incoming != peers || failure != nil else { return }
+        do {
+            try registry.replaceAll(with: incoming)
+            reload()
+        } catch {
+            failure = String(describing: error)
+        }
     }
 
     /// Asks the host what its addresses are now, and folds the answer in.

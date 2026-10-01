@@ -26,7 +26,12 @@ Read the phase gates before proposing work outside them.
 | **3 — Control** | Input + release | Keyboard with accessory row (Esc, Ctrl, Tab, arrows, y/n), prompt composer via `agent prompt`, takeover indicator, reconnect on foreground. TestFlight, then App Store. |
 
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
-push notifications, watchOS, Live Activities, multi-account badges.
+push notifications, Live Activities, multi-account badges.
+
+**The watch app was started early, 1 Oct 2026, because it was asked for.** It
+is the phone's screens over a relay through the phone — watchOS allows an app
+no direct connection, so there is no SSH on the watch. See
+[`docs/watch.md`](docs/watch.md).
 
 **Must ship before any release** — both done: revoking a phone's key from the
 host (`bleat keys`) and from the phone (unpairing). See
@@ -46,6 +51,7 @@ shipped once, written down so it does not ship twice.
 | [`docs/ssh-transport.md`](docs/ssh-transport.md) | Citadel, host keys, session selection by command prefix, clean detach |
 | [`docs/pairing.md`](docs/pairing.md) | the enrollment-key swap, peer identity, the QR, endpoint discovery and refresh, Tailscale, addresses by hand, local network permission, unpairing, endpoint selection |
 | [`docs/app-screens.md`](docs/app-screens.md) | `ConnectionStore`, the list screens, the iPad split view, the host screen, what a host says about itself (stored info, the live load bar), previews, the pairing UI |
+| [`docs/watch.md`](docs/watch.md) | the watch app: why it relays through the phone, `RelayTransport`, the phone's `WatchRelayHost`, the mirrored host list, what is and is not on the watch, driving a simulator with `DebugLaunch` |
 | [`docs/creating-from-the-phone.md`](docs/creating-from-the-phone.md) | starting, stopping and deleting sessions; workspaces; agents (including `agent_not_ready`); tabs; terminal rows — with the 0.9.3 re-measurement |
 | [`docs/pane-view.md`](docs/pane-view.md) | pane sizing (`--cols` crops), the phone session, scrolling, the terminal always holding the pane, the key bar, typing, the keychain dead end, the repaint investigation |
 | [`docs/console-tool.md`](docs/console-tool.md) | `bleat` commands: `pair`, `redeem`, `keys`, and the `authorized_keys` anchoring rules |
@@ -57,13 +63,14 @@ shipped once, written down so it does not ship twice.
 ## Repository layout
 
 ```
-Bleat.xcodeproj             # one app target; sources join via a synchronized group
-App/                        # @main App struct and little else
+Bleat.xcodeproj             # two app targets; sources join via synchronized groups
+App/                        # @main App struct and little else; icon and assets shared with the watch
+Watch/                      # the watch app's @main, and nothing else
 Design/icon.swift           # generates the icon's layers — run it, never edit the PNGs
 Design/symbols.swift        # generates the custom SF Symbols — run it, never edit the SVGs
 BleatKit/                   # the local Swift package
   Sources/
-    BleatKit/               # domain + transport. No SwiftUI. Builds for iOS.
+    BleatKit/               # domain + transport. No SwiftUI. Builds for iOS and watchOS.
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
     BleatProcess/           # macOS and Linux only: LocalProcessTransport, QR encoder
     bleat/                  # executable target, the console tool
@@ -99,6 +106,10 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
 - **Layout is the stream's size.** The terminal derives its grid from its
   bounds and the pane's pty is `stty`'d to match, so anything in a safe area
   that varies with state reopens the stream on someone's Mac.
+- **The watch cannot open a socket, and the simulator lets it.** Anything
+  the watch needs from a host goes through the phone as a `RelayRequest`; a
+  direct connection works on every simulator and on no watch.
+  ([watch](docs/watch.md))
 - **`swift build` does not compile `BleatUI/Pane/`** — it is UIKit-only. Use
   `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`
   from `BleatKit/`, or the simulator test run.
@@ -127,7 +138,8 @@ the rest, in [`docs/concurrency.md`](docs/concurrency.md).
   }
   ```
   `HerdrStream` exposes `AsyncThrowingStream<Data, Error>` for stdout lines and
-  `send(Data)` for stdin. Phase 4 adds a second transport without touching callers.
+  `send(Data)` for stdin. The second transport exists: `RelayTransport`, the
+  watch asking the phone. It was added without touching `HerdrClient`.
 - **Herdr JSON is the contract.** Models are generated/derived from
   `BleatKit/Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
   re-capture the fixture and update the model. Unknown keys are ignored, never

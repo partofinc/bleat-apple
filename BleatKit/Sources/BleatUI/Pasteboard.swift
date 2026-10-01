@@ -1,4 +1,4 @@
-#if canImport(UIKit)
+#if canImport(UIKit) && !os(watchOS)
 import UIKit
 #endif
 #if canImport(AppKit)
@@ -13,7 +13,7 @@ import AppKit
 /// silently does nothing on one platform.
 enum Pasteboard {
     static func copy(_ text: String) {
-        #if canImport(UIKit)
+        #if canImport(UIKit) && !os(watchOS)
         UIPasteboard.general.string = text
         #elseif canImport(AppKit)
         NSPasteboard.general.clearContents()

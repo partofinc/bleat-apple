@@ -7,21 +7,36 @@ import SwiftUI
 /// Icons and values rather than labelled rows, because it rides along under
 /// three screens whose lists are what the user came for. Each part is drawn
 /// only if the host said it — a Mac has no temperature.
+///
+/// **On a watch it keeps the icons and drops the words**: the busy share
+/// without the load average beside it, and each gauge's percentage without the
+/// amount. The whole bar is a fifth of that screen as it is.
 struct HostLoadBar: View {
     let load: HostLoad
+    /// Whether to leave out everything but one number per icon. Follows the
+    /// platform; a parameter so both forms can be laid out anywhere.
+    var isCompact = HostLoadBar.isCompactHere
+
+    static var isCompactHere: Bool {
+        #if os(watchOS)
+        true
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: isCompact ? 4 : 8) {
             if cpuText != nil || temperatureText != nil {
                 HStack(spacing: 4) {
-                    if let cpuText {
+                    if let cpuText = isCompact ? compactCPUText : cpuText {
                         Image(systemName: "cpu")
                             .foregroundStyle(.secondary)
                         Text(cpuText)
                             .accessibilityLabel("Processor")
                             .accessibilityValue(cpuText)
                     }
-                    Spacer(minLength: 12)
+                    Spacer(minLength: isCompact ? 4 : 12)
                     if let temperatureText {
                         Image(systemName: "thermometer.medium")
                             .foregroundStyle(.secondary)
@@ -33,27 +48,38 @@ struct HostLoadBar: View {
                 .lineLimit(1)
             }
             if load.memory != nil || load.disk != nil {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: isCompact ? 10 : 16) {
                     if let memory = load.memory {
                         HostUsageGauge(
-                            name: "Memory", symbol: "memorychip", usage: memory, style: .memory
+                            name: "Memory", symbol: "memorychip", usage: memory, style: .memory,
+                            isCompact: isCompact
                         )
                     }
                     if let disk = load.disk {
                         HostUsageGauge(
-                            name: "Disk", symbol: "internaldrive", usage: disk, style: .file
+                            name: "Disk", symbol: "internaldrive", usage: disk, style: .file,
+                            isCompact: isCompact
                         )
                     }
                 }
             }
         }
-        .font(.caption)
+        .font(isCompact ? .caption2 : .caption)
         .monospacedDigit()
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .glassEffect(in: .rect(cornerRadius: 20))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 6)
+        .padding(.horizontal, isCompact ? 10 : 14)
+        .padding(.vertical, isCompact ? 6 : 10)
+        .glassEffect(in: .rect(cornerRadius: isCompact ? 14 : 20))
+        .padding(.horizontal, isCompact ? 4 : 16)
+        .padding(.bottom, isCompact ? 0 : 6)
+    }
+
+    /// One number for the processor: how busy it is, or the load average where
+    /// the host did not say.
+    var compactCPUText: String? {
+        if let busy = load.cpuUsage {
+            return busy.formatted(.percent.precision(.fractionLength(0)))
+        }
+        return load.loadAverage?.formatted(.number.precision(.fractionLength(2)))
     }
 
     /// `34% · load 2.61` — how much of the processor was busy over the last
@@ -87,6 +113,14 @@ struct HostLoadBar: View {
 #Preview("Linux", traits: .sampleData) {
     List { Text("Sessions") }
         .safeAreaBar(edge: .bottom) { HostLoadBar(load: .sampleLinux) }
+}
+
+/// The watch's form, at about a watch's width.
+#Preview("Compact", traits: .sampleData) {
+    List { Text("Sessions") }
+        .safeAreaBar(edge: .bottom) {
+            HostLoadBar(load: .sampleLinux, isCompact: true).frame(width: 190)
+        }
 }
 
 /// A host that answered half the probe gets half the bar.

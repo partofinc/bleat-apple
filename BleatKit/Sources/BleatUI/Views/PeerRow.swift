@@ -16,9 +16,14 @@ struct PeerRow: View {
             VStack(alignment: .leading) {
                 Text(peer.name)
                     .font(.headline)
+                    .lineLimit(1)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    // One line, cut in the middle: on a watch an address
+                    // wraps, and the ends are the parts that tell hosts apart.
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }

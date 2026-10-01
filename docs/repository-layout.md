@@ -7,8 +7,9 @@ local Swift package, the `.xcodeproj` holds only targets, and the app target is
 a thin shell.
 
 ```
-Bleat.xcodeproj             # one app target; sources join via a synchronized group
+Bleat.xcodeproj             # two app targets; sources join via synchronized groups
 App/                        # @main App struct and little else
+Watch/                      # the watch app's @main; shares App/'s icon and assets
   AppIcon.icon/             # layered Icon Composer document; joins the target by existing
 Design/icon.swift           # generates the icon's layers — run it, never edit the PNGs
 BleatKit/                   # the local Swift package
@@ -16,12 +17,14 @@ BleatKit/                   # the local Swift package
   Sources/
     BleatKit/               # domain + transport. No SwiftUI. Builds for iOS.
       Transport/            # HerdrTransport protocol + SSHTransport (Citadel)
+      Relay/                # the second transport: a watch asking the phone
       Protocol/             # NDJSON codec, frame/command types
       Model/                # Codable models for herdr JSON (from schema.json)
       Client/               # HerdrClient: typed API over a transport
       Keys/                 # device ed25519 key + Keychain storage
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
       Context/              # AppContext, routers, stores
+      Watch/                # WatchConnectivity: the watch's link, the phone's relay host
       Pairing/              # the pairing sheet, scanner and its model
       Sessions/             # the sessions on a host
       Workspaces/           # workspaces in a session

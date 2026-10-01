@@ -11,7 +11,7 @@ struct PaneSurface: View {
     let isActive: Bool
 
     var body: some View {
-        #if canImport(UIKit)
+        #if canImport(UIKit) && !os(watchOS)
         // **The safe area is respected, deliberately.** Extending under it
         // looked tidier — the terminal's black reaching the bottom of the glass
         // — but the pane's last row is its input line, and the home indicator

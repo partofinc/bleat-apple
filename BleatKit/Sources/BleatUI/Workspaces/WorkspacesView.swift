@@ -93,7 +93,7 @@ struct WorkspacesView: View {
             )
         }
         .yieldsToPairing(whileBusy: newWorkspace.isCreating, presenting: $isNaming)
-        #else
+        #elseif !os(watchOS)
         .toolbar { ToolbarItemGroup(placement: .primaryAction) { actionButtons } }
         #endif
         // The bar's own buttons ask — see `actionButton` — so the screen does

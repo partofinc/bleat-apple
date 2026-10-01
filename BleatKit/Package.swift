@@ -23,7 +23,7 @@ let sharedSwiftSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "BleatKit",
-    platforms: [.macOS(.v26), .iOS(.v26)],
+    platforms: [.macOS(.v26), .iOS(.v26), .watchOS(.v26)],
     // Language mode is explicit rather than inherited from the tools version:
     // that setting is the one that silently lags (see sharedSwiftSettings).
     products: [
@@ -66,7 +66,12 @@ let package = Package(
             name: "BleatUI",
             dependencies: [
                 "BleatKit",
-                .product(name: "SwiftTerm", package: "SwiftTerm"),
+                // Not on the watch: there is no terminal there, and SwiftTerm
+                // does not build for it.
+                .product(
+                    name: "SwiftTerm", package: "SwiftTerm",
+                    condition: .when(platforms: [.iOS, .macOS])
+                ),
             ],
             // The custom symbols, drawn by `Design/symbols.swift`. In the
             // package rather than the app's catalog so previews and the render

@@ -63,12 +63,12 @@ struct DeviceKeyView: View {
                 // against what the host reports.
                 Text(key.fingerprint)
                     .font(.footnote.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
             }
             Section("Public key") {
                 Text(line)
                     .font(.footnote.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
                 Button {
                     Pasteboard.copy(line)
                 } label: {
@@ -78,7 +78,7 @@ struct DeviceKeyView: View {
             Section {
                 Text("On the host:\n\necho '\(line)' >> ~/.ssh/authorized_keys")
                     .font(.caption.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
             }
         }
     }

@@ -2,7 +2,7 @@ import Foundation
 
 /// The network / channel layer failed. Distinct from `HerdrError`, which means
 /// the host was reached and said no.
-public enum TransportError: Error, Sendable, Equatable {
+public enum TransportError: Error, Sendable, Equatable, Codable {
     case notConnected
     case connectionFailed(String)
     /// Nothing answered, and every address that could have been tried was a
@@ -47,7 +47,7 @@ extension TransportError: CustomStringConvertible {
 }
 
 /// The `herdr` process ran and reported failure. `stderr` is never discarded.
-public struct HerdrError: Error, Sendable, Equatable {
+public struct HerdrError: Error, Sendable, Equatable, Codable {
     public let command: [String]
     public let exitCode: Int32
     public let stderr: String

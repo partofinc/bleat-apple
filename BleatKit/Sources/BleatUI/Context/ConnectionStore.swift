@@ -24,6 +24,19 @@ public final class ConnectionStore {
 
     private let peers: PeerStore
     private let reachability: Reachability
+    /// Set on a device that cannot connect for itself — the watch. Every host
+    /// is then reached by asking the phone, and nothing here dials.
+    private let relay: RelayTransport.Channel?
+
+    /// What a dial produced, whichever kind it was.
+    private struct Connection: Sendable {
+        let client: HerdrClient
+        let link: any PeerLink
+        /// The address that won. Nil through a relay, where the phone did the
+        /// racing and keeps the answer.
+        let endpoint: Endpoint?
+        let discoveredHerdrPath: String?
+    }
 
     private struct Live {
         /// Which connection this is, counted from launch. See `connectionID`.
@@ -36,7 +49,7 @@ public final class ConnectionStore {
         /// too: it widens the candidate list, and this one was raced without
         /// it.
         let link: LinkState
-        let connected: PeerConnection.Connected
+        let connected: Connection
     }
 
     private var current: Live?
@@ -44,7 +57,7 @@ public final class ConnectionStore {
     private var installed = 0
     /// A dial in flight, so two screens asking at once do not race every
     /// endpoint twice and leak whichever transport loses the assignment.
-    private var connecting: (hostKey: String, task: Task<PeerConnection.Connected, any Error>)?
+    private var connecting: (hostKey: String, task: Task<Connection, any Error>)?
     /// The background endpoint refresh, held so it can be cancelled *and*
     /// waited for.
     ///
@@ -60,9 +73,12 @@ public final class ConnectionStore {
     /// in flight.
     private var refresh: Task<Void, Never>?
 
-    public init(peers: PeerStore, reachability: Reachability) {
+    /// - Parameter relay: How to ask the phone, on a device that has to. Nil
+    ///   everywhere else, which is what makes this store dial SSH itself.
+    public init(peers: PeerStore, reachability: Reachability, relay: RelayTransport.Channel? = nil) {
         self.peers = peers
         self.reachability = reachability
+        self.relay = relay
     }
 
     /// Whether the live connection is to this peer. Observed, so a view that
@@ -95,7 +111,7 @@ public final class ConnectionStore {
         // while a new one took only `session` — and a screen could not tell
         // which it had got. (`peer.session` is unset today, so this changes
         // nothing yet; it stops the paths disagreeing when it is not.)
-        connected.transport.useSession(session ?? peer.session)
+        connected.link.useSession(session ?? peer.session)
         return connected.client
     }
 
@@ -125,7 +141,14 @@ public final class ConnectionStore {
     /// mutable state on a shared transport, and setting it here would change
     /// which session a list screen behind the sheet is reading.
     public func shell(for peer: PairedPeer) async throws -> any ShellRunner {
-        try await connected(for: peer, session: nil).transport
+        try await connected(for: peer, session: nil).link
+    }
+
+    /// The connection itself, for a caller that names the session on every
+    /// command — the relay answering a watch. Does not touch `useSession`, for
+    /// the reason `shell` does not.
+    public func link(for peer: PairedPeer) async throws -> any PeerLink {
+        try await connected(for: peer, session: nil).link
     }
 
     /// The one dial, shared by both. Everything about joining, cancelling and
@@ -133,7 +156,7 @@ public final class ConnectionStore {
     private func connected(
         for peer: PairedPeer,
         session: String?
-    ) async throws -> PeerConnection.Connected {
+    ) async throws -> Connection {
         let link = reachability.link
         if let live = current,
            ConnectionPolicy.canReuse(
@@ -151,11 +174,29 @@ public final class ConnectionStore {
 
         await release()
 
-        let deviceKey = try peers.deviceKey()
-        let task = Task {
-            try await PeerConnection.connect(
-                to: peer, deviceKey: deviceKey, link: link, session: session
-            )
+        let task: Task<Connection, any Error>
+        if let relay {
+            // Nothing is dialled: the phone connects when the first command
+            // reaches it, and that command is what reports a host that cannot
+            // be reached.
+            let transport = RelayTransport(hostKey: peer.hostKey, session: session, channel: relay)
+            task = Task {
+                Connection(
+                    client: HerdrClient(transport: transport), link: transport,
+                    endpoint: nil, discoveredHerdrPath: nil
+                )
+            }
+        } else {
+            let deviceKey = try peers.deviceKey()
+            task = Task {
+                let connected = try await PeerConnection.connect(
+                    to: peer, deviceKey: deviceKey, link: link, session: session
+                )
+                return Connection(
+                    client: connected.client, link: connected.transport,
+                    endpoint: connected.endpoint, discoveredHerdrPath: connected.discoveredHerdrPath
+                )
+            }
         }
         connecting = (peer.hostKey, task)
         defer { if connecting?.task == task { connecting = nil } }
@@ -167,7 +208,7 @@ public final class ConnectionStore {
         // with nobody on screen to close it — the same hazard
         // `SSHTransport.disconnect` guards for its own dial, one level up.
         guard !task.isCancelled else {
-            await connected.transport.disconnect()
+            await connected.link.disconnect()
             throw CancellationError()
         }
 
@@ -178,7 +219,9 @@ public final class ConnectionStore {
         // Written back so the next connection tries the winner first instead of
         // racing every address again. Failing here would turn a working
         // connection into an error over bookkeeping, so it does not.
-        peers.recordSuccess(endpoint: connected.endpoint, for: peer)
+        if let endpoint = connected.endpoint {
+            peers.recordSuccess(endpoint: endpoint, for: peer)
+        }
         if let path = connected.discoveredHerdrPath {
             peers.recordHerdrPath(path, for: peer)
         }
@@ -193,9 +236,14 @@ public final class ConnectionStore {
         // Only on a fresh dial. A reused connection returns above without
         // reaching here, which is what keeps this to once per screen rather
         // than once per request.
+        //
+        // And never through a relay: the phone refreshes its own record on its
+        // own connection, and the watch's copy of the addresses is not used.
         refresh?.cancel()
-        refresh = Task { [peers] in
-            await peers.refreshEndpoints(for: peer, over: connected.transport)
+        if relay == nil {
+            refresh = Task { [peers] in
+                await peers.refreshEndpoints(for: peer, over: connected.link)
+            }
         }
         return connected
     }
@@ -258,10 +306,10 @@ public final class ConnectionStore {
         // handshake, so the only way to be sure nothing is left open is to see
         // what it produced.
         if let connected = try? await pending?.task.value {
-            await connected.transport.disconnect()
+            await connected.link.disconnect()
         }
 
         guard let live else { return }
-        await live.connected.transport.disconnect()
+        await live.connected.link.disconnect()
     }
 }

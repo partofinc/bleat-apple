@@ -107,15 +107,14 @@ final class PaneTerminalController: UIViewController {
         terminalView.terminalDelegate = self
         // **There is no scrollback here, and there cannot be.** Left on
         // because it costs nothing and a program that does scroll would then
-        // work — but an `observe` frame never scrolls the terminal, so nothing
+        // work — but a stream frame never scrolls the terminal, so nothing
         // is ever pushed into `TerminalView`'s buffer. Measured 6 Sept 2026: a
         // frame is 3.6KB of absolute cursor positioning (`ESC[19;3H`) and SGR
         // colour, with **zero newlines and zero carriage returns**. Lines are
         // painted in place; none scroll off.
         //
-        // Asking the host to scroll instead does not work either: `observe`
-        // ignores `terminal.scroll` — sent one, got a single frame and nothing
-        // on stderr, not even an "input ignored".
+        // What does work is asking the host: `terminal.scroll` makes herdr
+        // repaint the pane scrolled, which is what `PaneScrollGesture` sends.
         //
         // **And no setting here can change that**, which is worth stating
         // because it is the obvious place to look. Measured 8 Sept 2026 on a
@@ -299,8 +298,8 @@ extension PaneTerminalController: TerminalViewDelegate {
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
         // Straight through, unexamined. These are the bytes a terminal would
-        // have sent, escape sequences and all, and `PaneModel` refuses them
-        // unless this screen holds the pane — which is the only gate that
+        // have sent, escape sequences and all, and `PaneModel` drops them when
+        // there is no stream to carry them — which is the only gate that
         // belongs on them. Filtering here would break the very sequences an
         // agent's UI is driven by.
         onInput?(Data(data))

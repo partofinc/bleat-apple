@@ -200,9 +200,8 @@ struct NewAgentForm: View {
             // was no branch left for `pane == nil`, which left Start disabled
             // forever with Cancel the only way out.
             //
-            // Labelled for what it does rather than what the user wants: it
-            // opens the pane in terminal mode, and answering still needs control
-            // of it, which the note explains.
+            // Labelled for what it does: it opens the pane in terminal mode,
+            // which takes the pane, and the dialog is answered from there.
             Button("Open the pane") { answer(blocked.pane) }
         } else if model.warning != nil {
             // Something may be running in that pane. Starting again would land
@@ -225,7 +224,7 @@ struct NewAgentForm: View {
         if let blocked = model.blocked {
             return (
                 blocked.message
-                    + "\n\nOpening the pane shows the dialog. Take control to answer it.",
+                    + "\n\nOpen the pane to answer it.",
                 false
             )
         }

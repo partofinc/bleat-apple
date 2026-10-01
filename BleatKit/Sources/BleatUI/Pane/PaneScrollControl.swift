@@ -49,7 +49,7 @@ struct PaneScrollControl: View {
 /// Over a live pane, which is the only place it appears.
 #Preview("Scroll control", traits: .sampleData) {
     PaneSurface(
-        model: PaneModel(previewing: .live, control: .controlling),
+        model: PaneModel(previewing: .live),
         isActive: true
     )
 }

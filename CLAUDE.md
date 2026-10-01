@@ -885,8 +885,8 @@ herdr said, not whether it said one particular thing.**
   trust prompt is an empty transcript — the opposite of what was asked for. So
   `NavigationRouter.Route.pane` takes a `PaneMode` (defaulted to `.chat`, which
   keeps every agent row as it was) and `PaneMode` is public for it. The button is
-  labelled **"Open the pane"** rather than "Answer it": it shows the dialog, and
-  answering still needs control, which the note says.
+  labelled **"Open the pane"** rather than "Answer it": it shows the dialog,
+  and the terminal takes the pane on opening, so it can be answered there.
 - `AgentStartTests` pins the classification and was **checked against the bug**:
   with the old one-liner restored, "an agent blocked at a dialog is not a
   refusal" fails.
@@ -1053,11 +1053,10 @@ so a shell had no row and no route; and the only button on it was Start Agent.
   their window for as long as the phone is on that screen. Kept, because a
   terminal row has nothing else to show and the tap is the ask — but it is why
   the list only lists, and why nothing here opens a pane the user did not name.
-- **Typing in a shell still takes control, with the same confirmation.** herdr
-  allows one input owner and a `control` attach that is not a takeover is
-  silently inert, so nothing changes here — though for a shell the phone made
-  seconds ago the confirmation's "you are taking it from someone" is more
-  caution than the case needs, and the phone has no way to know that.
+- **Opening a terminal row takes the pane**, as every terminal does since 1 Oct
+  2026 — see **The terminal always holds the pane**. herdr allows one input
+  owner and a `control` attach that is not a takeover is silently inert, so
+  there is no way to type into a shell without becoming it.
 
 ## Repository layout
 
@@ -2853,11 +2852,12 @@ entire non-TTY path useless exactly where it is needed.
 
 ## The pane view (Phase 2, verified 5 Sept 2026)
 
-- **Read-only, by `terminal session observe`.** It cannot disturb whoever holds
-  input on the pane, which is the whole of the Phase 2 gate and the right
-  default besides: Herdr allows one input owner, and taking it from a running
-  agent because someone glanced at their phone would be indefensible. `control`
-  and `--takeover` are Phase 3, behind a deliberate gesture.
+- **Read-only, by `terminal session observe` — superseded on 1 Oct 2026.**
+  That was the whole of the Phase 2 gate, and Phase 3 put `control
+  --takeover` behind a deliberate gesture. The terminal now always takes the
+  pane; see **The terminal always holds the pane**. Measurements below that
+  say `observe` describe the stream either command opens: both take
+  `--cols`/`--rows` and send the same frames.
 - **The host is asked to render at the phone's size, and this is a known
   problem — see below.** `observe --cols --rows` is honoured in the sense that
   the frame reports the size asked for. The size is only knowable after a layout
@@ -3106,7 +3106,9 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
     pane on their Mac every time an agent screen was opened to read the chat.
     Once asked for it stays mounted — hidden by `opacity`, with `isActive`
     false alongside, since a hidden view still lays out and a size reported
-    from one is that same write on behalf of nothing.
+    from one is that same write on behalf of nothing. Hidden, the view keeps
+    its buffer but **not its stream**: `PaneModel.setActive(false)` releases
+    the pane, so reading the chat does not hold the Mac's input.
 - **Scrollback: measured properly, 8 Sept 2026, in a disposable session.** An
   earlier note here said "a pane's history is reachable only through
   `pane read`", and a later one over-corrected to "an agent pane has no
@@ -3191,18 +3193,49 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
 The first thing Bleat sends to a host. It used to be two page keys; it is
 `terminal.scroll` now, which is what a wheel sends through herdr's own TUI.
 
-- **`PaneModel.control` is `.observing` or `.controlling`**, and only
-  `takeControl()` crosses. `run()` opens `observe` for the first and
-  `attach(takeover: true)` for the second; nothing else differs.
-- **The confirmation is not politeness, it is the whole safety story.** Taking
-  the pane takes it *from someone*, and per the measurement above there is no
-  way to send a key without doing so. `PaneView` says that in a
-  `confirmationDialog` before it happens rather than leaving it to be
-  discovered by the person at the Mac.
-- **Release is on three paths**: the toolbar button, `close()` when the screen
-  goes away, and `releaseControl()`. `close()` sends `terminal.release`
-  **before cancelling the reader**, or there is no live stream left to send it
-  on and herdr holds the pane for a phone that has gone in a pocket.
+#### The terminal always holds the pane (1 Oct 2026)
+
+**There is no observe mode any more.** `PaneModel` opens `control --takeover`
+whenever the terminal is on screen, and the "Take control" button and its
+confirmation are gone. Everything the terminal is for sends — scrolling,
+answering a dialog, typing — and a read-only terminal with a confirmation in
+front of each of those was a step on every visit for the one screen whose job
+is to act. Decided by the user; the cost is stated here so it is not
+rediscovered as a surprise.
+
+- **Whoever is typing at the Mac loses input** the moment the terminal is
+  chosen, with nothing on the phone asking first. The confirmation used to be
+  the whole safety story; now choosing the terminal *is* the gesture. The chat
+  remains the default mode, and it touches nothing.
+- **Held only while on screen.** The terminal stays mounted under the chat so
+  switching back is instant, and holding the pane through that would take it
+  from the Mac for a whole visit spent reading. `PaneModel.setActive(false)`
+  sends `terminal.release` and closes the stream; `setActive(true)` takes it
+  back, and the takeover's first frame repaints in full. `PaneView` calls it
+  from `.task(id: mode)`, before anything there suspends.
+  - **`start()` refuses while hidden**, because a hidden view still lays out
+    and a layout pass reaching `show()` would otherwise take the pane for
+    nobody. `PaneControlTests` pins it against a peer with no endpoints —
+    a model that tries to open fails instead of sitting in `.opening` — and
+    was **checked against the bug**: with the guard removed, "a hidden
+    terminal does not take the pane" fails.
+  - **The release goes out before the next takeover.** `suspend()` keeps the
+    task sending it in `letGo` and `run()` awaits it first, so a quick flip
+    back cannot have the old stream's release land after the new stream has
+    taken the pane.
+  - `setActive(true)` calls `start()` itself rather than waiting for a layout
+    pass: an unchanged grid is de-duplicated in `report`, so nothing else would
+    reopen.
+- **Release on leaving**: `close()` sends `terminal.release` **before
+  cancelling the reader**, or there is no live stream left to send it on and
+  herdr holds the pane for a phone that has gone in a pocket.
+- **`PaneKeyBar` is unconditional now**, which settles the cost its section
+  records: taking and releasing used to add and remove the bar, reopening the
+  stream twice per gesture. With no toggle, the bar's 3 rows are a constant.
+- **Input with no stream is dropped**, not queued — opening, hidden or ended.
+  That replaced the old "not while observing" gate.
+- `HerdrClient.observe` stays, for `bleat attach` without `--takeover`; the app
+  no longer calls it.
 
 #### `terminal.scroll`, not keys and not wheel bytes (measured on 0.9.3, 30 Sept 2026)
 
@@ -3235,13 +3268,15 @@ and `terminal.scroll` is the one record that is right everywhere.
   further than ten separate notches, and the first event after a change of
   direction is often swallowed. That is the program, not herdr — raw wheel
   bytes behave the same.
-- **`observe` still ignores the record**, so scrolling still costs control.
+- **`observe` still ignores the record**, so scrolling costs control — which
+  the terminal now always holds.
 
 What the app does with it:
 
 - **`PaneModel.scroll(_:notches:)`** sends one `.scroll(lines: 3)` per notch
   through the same ordered queue as keystrokes (`outgoing` holds
-  `TerminalCommand`s now), gated on `.controlling` like everything else.
+  `TerminalCommand`s now), and dropped like everything else when there is
+  no stream.
   Three lines is what a wheel notch moves a terminal by.
 - **A drag is continuous now, not paged.** `PaneScrollGesture` sends a notch
   per three rows of finger travel, so a shell's history follows the finger;
@@ -3257,18 +3292,11 @@ What the app does with it:
 - **`TerminalKey.pageUp`/`pageDown` are gone.** Nothing sent them any more;
   whether Claude Code answered Page Up was never verified and no longer
   matters.
-  - **The gesture is attached always and gated with `including:`.** Branching
-    — `if controlling { content.gesture(drag) } else { content }` — builds a
+  - **The gesture must never be behind an `if`.** Branching builds a
     `_ConditionalContent`, and switching branch changes the structural identity
-    of what it wraps. What it wraps is `TerminalHost`, a representable: every
-    take and every release would tear the controller down, lose the rendered
-    buffer and blank the pane until the next full frame.
-  - **The take/release button is shown whenever the pane is held**, not only in
-    terminal mode. Gated on the mode alone, switching to chat hid both the one
-    thing saying the pane was seized and the only way to give it back.
-- `PaneControlTests` guards every path into `.controlling`, including the one
-  that matters most: a pane with no viewport cannot be seized, because nothing
-  is on screen yet to release it.
+    of what it wraps — `TerminalHost`, a representable — so the controller would
+    be torn down, losing the rendered buffer. It is unconditional now; if it
+    ever needs a gate, `.gesture(_:including:)` is the way.
 
 - **The reader mode is gone.** `PaneView` offered a third reading — a
   `pane read` snapshot reflowed to the phone — and it is removed: view,
@@ -3380,15 +3408,14 @@ has one.
   claimed it was, on the strength of a design that no longer exists: the
   terminal is `terminalView.frame = view.bounds` with the pty resized to match,
   not a pane-sized grid inside a scroll view. So the bar changes the grid in the
-  *ordinary* case — 46 rows without it, 43 with — and taking or releasing
-  control reopens the stream and `stty`s the pane. Correct, since the terminal
-  really did get shorter, but each gesture costs two `start()`s: its own, and
-  the one the layout pass triggers when the bar appears. Reserving the bar's
-  height in both modes is how to collapse that if it ever matters.
+  *ordinary* case — 46 rows without it, 43 with. While control was a toggle,
+  each take and release therefore reopened the stream twice; the bar is
+  unconditional now, so its height is simply part of the grid.
 - **No text entry, deliberately.** Typing is `agent prompt`'s job — it handles
   bracketed paste and ordered submission — and what the phone lacked was only the
   *navigation* of a dialog already on screen.
-- **Its visibility is gated on `control` and must never be gated on `phase`.**
+- **It must never be gated on `phase`.** (It was gated on control while that
+  was a toggle; it is unconditional now.)
   This is the sharpest edge on the screen and it reached a device. The terminal
   derives its grid from its own bounds (`terminalView.frame = view.bounds`), so
   anything occupying the safe area makes it shorter, which reports a new grid,
@@ -3516,7 +3543,7 @@ prompt and the input line, which is what is being typed into.
   - **The keys are disabled between stream opens; the toggle is not.** A
     keyboard that cannot be dismissed because the stream is reopening is half a
     screen gone with no way back.
-- **The keyboard comes down with the pane.** `releaseControl()` and `close()`
+- **The keyboard comes down with the pane.** Hiding the terminal and `close()`
   both clear it, and so do a stream that ends or fails: one left up over a pane
   this screen no longer holds would drop every keystroke in silence.
   - **And with the *mode*.** Switching to chat leaves `PaneSurface` mounted at

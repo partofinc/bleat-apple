@@ -10,12 +10,11 @@ import SwiftUI
 /// contrast. So a mode is a mode: the chat has the system's own background and
 /// the terminal is on screen only when it is chosen.
 ///
-/// Read-only until asked otherwise: the chat is a transcript file and the
-/// terminal opens as `terminal session observe`, neither of which can disturb
-/// whoever holds input on the pane. Taking control is a deliberate gesture
-/// behind a confirmation, and it is what puts `PaneKeyBar` under the terminal —
-/// the arrows, Esc and Enter that answer an agent's dialog. Text entry is still
-/// Phase 3: that belongs to `agent prompt`, not to a row of keys.
+/// The chat is a transcript file and disturbs nobody. **The terminal takes the
+/// pane** — `PaneModel` holds its input for as long as the terminal is on
+/// screen and lets go when the chat is — so choosing the terminal is the
+/// gesture, and there is no second one behind it. Whoever is typing at the Mac
+/// loses input until the phone goes back to the chat or leaves.
 struct PaneView: View {
     let title: String
     private let peer: PairedPeer
@@ -26,13 +25,11 @@ struct PaneView: View {
     /// Whether the terminal has ever been asked for on this screen.
     ///
     /// It gates *mounting* the terminal, not showing it. Chat is the default,
-    /// and mounting the terminal regardless would open an `observe` stream — a
-    /// live exec channel on someone's Mac, and an `stty` that reflows their
+    /// and mounting the terminal regardless would take the pane — a live exec
+    /// channel on someone's Mac, their input, and an `stty` that reflows their
     /// pane — for every agent screen that is opened and read. Once asked for it
     /// stays mounted, for the reasons in the body.
     @State private var terminalWasAskedFor = false
-    /// Taking the pane is a seizure, so it is asked for rather than done.
-    @State private var askingForControl = false
 
     init(
         peer: PairedPeer,
@@ -88,13 +85,11 @@ struct PaneView: View {
     var body: some View {
         ZStack {
             // **Once mounted, kept mounted rather than swapped out.** Tearing
-            // the terminal down on every toggle would close the stream, and
-            // reopening it costs a dial plus the second `SSHStream.close()`
-            // spends draining — but worse, `close()` is async and a quick flip
-            // back would race the reopen and tear down the fresh stream.
-            // Hidden, the buffer and the stream both survive, so switching back
-            // is instant and shows the screen as it stands rather than waiting
-            // for a redraw the host only sends when a stream opens.
+            // the view down on every toggle would throw away the rendered
+            // buffer, and `close()` is async — a quick flip back would race
+            // the reopen. Hidden, the buffer survives; the *stream* does not,
+            // because `PaneModel.setActive(false)` releases the pane, and the
+            // takeover on the way back repaints in full.
             //
             // Hidden by `opacity`, and `isActive` false with it: the view still
             // lays out, and a size reported from one nobody is looking at
@@ -124,8 +119,8 @@ struct PaneView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                // Icons rather than words: two labelled segments plus the
-                // read-only marker crowd an inline title off an iPhone.
+                // Icons rather than words: two labelled segments crowd an
+                // inline title off an iPhone.
                 Picker("How to read this pane", selection: $mode) {
                     ForEach(PaneMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol)
@@ -136,42 +131,14 @@ struct PaneView: View {
                 }
                 .labelsHidden()
             }
-            // Offered in the terminal, which is the only mode input means
-            // anything in — but shown in **either** mode once the pane is
-            // actually held. Gated on the mode alone, switching to chat hid the
-            // one thing saying the pane was seized *and* the only way to give
-            // it back, leaving release to `onDisappear`. That is the state
-            // `controlButton` itself calls expensive.
-            if model.control == .controlling || (mode == .terminal && terminalWasAskedFor) {
-                ToolbarItem(placement: .primaryAction) { controlButton }
-            }
-        }
-        // **Asked, not done.** Herdr allows one input owner per pane, and there
-        // is no way to send a key **on this stream** without becoming it:
-        // measured, a `control` client without `--takeover` gets no frames and
-        // lands no input while anyone else holds the pane, silently. So the
-        // person at the Mac loses input the moment this is tapped, and the
-        // dialog is where that is said rather than discovered.
-        //
-        // `herdr agent send-keys` *can* reach an agent without a takeover, and
-        // is the right answer for answering a blocked agent from the list
-        // without opening the pane — but it is a different path with different
-        // ownership semantics, and this screen is the stream. See CLAUDE.md,
-        // **Answering an agent's dialog**.
-        .confirmationDialog(
-            "Take control of this pane?",
-            isPresented: $askingForControl,
-            titleVisibility: .visible
-        ) {
-            Button("Take control") { model.takeControl() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Scrolling and answering a dialog both send the program keys, so Bleat has to hold the pane's input. Whoever is using it at the Mac loses control until you release it.")
         }
         // Keyed on the mode: the transcript is a whole exec channel and most
         // of a visit to this screen is spent in one mode, so neither is loaded
         // until it is asked for.
         .task(id: mode) {
+            // Before anything suspends: the pane is let go of the moment the
+            // chat is chosen, not when the transcript has loaded.
+            model.setActive(mode == .terminal)
             switch mode {
             case .terminal:
                 terminalWasAskedFor = true
@@ -206,22 +173,6 @@ struct PaneView: View {
         .preferredColorScheme(mode == .terminal ? .dark : nil)
         .animation(.easeInOut, value: mode)
     }
-
-    /// Says which of the two states the pane is in, because they are not
-    /// cosmetically different and the wrong assumption is expensive: believing
-    /// you are watching while you actually hold someone's agent is how a pane
-    /// stays seized after the phone goes back in a pocket.
-    @ViewBuilder
-    private var controlButton: some View {
-        if model.control == .controlling {
-            Button("Release the pane", systemImage: "hand.raised.fill") {
-                Task { await model.releaseControl() }
-            }
-            .tint(.orange)
-        } else {
-            Button("Take control", systemImage: "hand.tap") { askingForControl = true }
-        }
-    }
 }
 
 #if DEBUG
@@ -236,22 +187,10 @@ struct PaneView: View {
 
 /// The terminal mounts SwiftTerm and, in a canvas, has no stream feeding it —
 /// so what this shows is the chrome around an empty grid: the badge, the
-/// read-only marker, and the mode picker.
+/// scroll keys, the key bar and the mode picker.
 #Preview("Terminal", traits: .sampleData) {
     NavigationStack {
         PaneView(peer: .preview, title: "w2:p1", mode: .terminal)
-    }
-}
-
-/// Holding the pane: the toolbar says so and offers the way back, and the two
-/// keys appear over the terminal. Only reachable through a confirmation on a
-/// real host, which is exactly why it wants a canvas.
-#Preview("Controlling", traits: .sampleData) {
-    NavigationStack {
-        PaneView(
-            peer: .preview, title: "w2:p1", mode: .terminal,
-            pane: PaneModel(previewing: .live, control: .controlling)
-        )
     }
 }
 #endif

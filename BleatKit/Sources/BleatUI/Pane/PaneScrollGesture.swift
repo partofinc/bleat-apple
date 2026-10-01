@@ -17,10 +17,6 @@ import SwiftUI
 /// which is scrolling up — the same way a scroll view moves content with the
 /// finger rather than against it.
 ///
-/// Only while this screen owns the pane. Observing, `observe` ignores scroll
-/// requests, and a gesture that silently does nothing is worse than no gesture
-/// — so the drag is not installed at all and the terminal keeps its ordinary
-/// tap behaviour.
 struct PaneScrollGesture: ViewModifier {
     let model: PaneModel
 
@@ -44,16 +40,12 @@ struct PaneScrollGesture: ViewModifier {
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
             } action: { height = $0 }
-            // **Always attached, gated by `including:`.** Branching on the mode
-            // instead — `if controlling { content.gesture(drag) } else
-            // { content }` — builds a `_ConditionalContent`, and switching
-            // branch changes the structural identity of what it wraps. What it
-            // wraps here is `TerminalHost`, a `UIViewControllerRepresentable`:
-            // every Take control and every Release would tear the
-            // `PaneTerminalController` down and build a new one, losing the
-            // rendered buffer and blanking the pane until the reopened stream's
-            // first full frame arrived.
-            .gesture(drag, including: model.control == .controlling ? .all : .subviews)
+            // **Never behind an `if`.** A branch builds a `_ConditionalContent`,
+            // and switching branch changes the structural identity of what it
+            // wraps — here `TerminalHost`, whose controller would be torn down
+            // and rebuilt, losing the rendered buffer. If this ever needs a
+            // gate, use `.gesture(_:including:)`.
+            .gesture(drag)
             .onChange(of: isDragging) { _, dragging in
                 if !dragging { spent = 0 }
             }
@@ -94,7 +86,7 @@ struct PaneScrollGesture: ViewModifier {
 }
 
 extension View {
-    /// Scrolls the pane when this screen owns its input.
+    /// Scrolls the pane on a drag.
     func paneScrollGesture(_ model: PaneModel) -> some View {
         modifier(PaneScrollGesture(model: model))
     }

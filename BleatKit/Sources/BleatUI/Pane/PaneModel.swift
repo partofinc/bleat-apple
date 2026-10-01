@@ -2,27 +2,20 @@ import BleatKit
 import Foundation
 import Observation
 
-/// Streams one pane's rendered screen.
+/// Streams one pane's rendered screen, holding its input.
 ///
-/// **Read-only by default**, and it stays that way unless the user says
-/// otherwise. `terminal session observe` cannot disturb whoever currently
-/// holds input on the pane — Herdr allows one input owner, and taking it from
-/// an agent mid-run because someone glanced at their phone would be
-/// indefensible.
+/// **The terminal always takes the pane.** It opens `terminal session control
+/// --takeover` and never `observe`: everything the terminal is for — scrolling,
+/// answering a dialog, typing — sends, and a `control` attach that is not a
+/// takeover is silently inert while anyone else holds the pane (measured 8 Sept
+/// 2026). A read-only mode with a "Take control" step in front of every one of
+/// those was removed on 1 Oct 2026; whoever is typing at the Mac loses input
+/// for as long as this terminal is on screen.
 ///
-/// `takeControl()` is the deliberate gesture that changes it, and what it buys
-/// is scrolling. The stream never carries history — every frame is one
-/// viewport — so earlier output is reached by asking the host to scroll:
-/// herdr's own history for a shell, or the program's, which it scrolls itself
-/// when herdr hands it a wheel event. `observe` ignores the request, so
-/// reaching it means *sending* — which means `terminal session control`, and,
-/// whenever anyone is attached at the Mac, `--takeover`.
-///
-/// **There is no middle setting.** Measured 8 Sept 2026 against a pane another
-/// client held: a `control` client without `--takeover` received **no frames
-/// and sent nothing**, silently — no error, the screen simply did not move.
-/// With `--takeover` the same input landed. So this is a seizure or it is
-/// nothing, and the view above must say so before it happens.
+/// **On screen, not merely mounted.** The terminal stays mounted while the chat
+/// is showing, and holding the pane through that would take it from the Mac for
+/// a whole visit spent reading. `setActive(false)` releases it and
+/// `setActive(true)` takes it back.
 ///
 /// The bytes are never inspected. `terminal.frame` payloads carry cursor
 /// positioning and synchronized-output markers inside them, so they go to the
@@ -39,17 +32,6 @@ final class PaneModel {
         case failed(String)
     }
 
-    /// Whether this screen is watching the pane or driving it.
-    enum Control: Equatable {
-        /// `terminal session observe`. Sends nothing, ever.
-        case observing
-        /// `terminal session control --takeover`. This screen is the pane's
-        /// input owner, and whoever held it at the Mac no longer is.
-        case controlling
-    }
-
-    private(set) var control: Control = .observing
-
     /// Whether the user has asked for the system keyboard.
     ///
     /// **Raised by an explicit button, never by tapping the pane.** A tap that
@@ -58,15 +40,15 @@ final class PaneModel {
     /// a surface whose whole job is to be dragged. The button is also the only
     /// version of this that VoiceOver and Switch Control can reach.
     ///
-    /// Only ever true while `.controlling`: there is nowhere for a keystroke to
-    /// go otherwise, and `releaseControl()` puts it back down.
+    /// Put down whenever the pane is let go of — hidden, closed, or a stream
+    /// that ended — since a keystroke would have nowhere to go.
     private(set) var wantsKeyboard = false
     private(set) var phase: Phase = .opening
     /// The grid everything agrees on: what the terminal shows, what the pane's
     /// pty was set to, and what the stream was opened at.
     ///
     /// One number rather than three. The terminal sizes itself to the screen,
-    /// the host is asked to make the pty exactly that, and `observe` is opened
+    /// the host is asked to make the pty exactly that, and the stream is opened
     /// at it — so there is no grid to reconcile against another and no window
     /// in which they differ.
     private(set) var grid: TerminalGrid?
@@ -84,7 +66,7 @@ final class PaneModel {
 
     /// Whether output is being cut off horizontally.
     ///
-    /// Only when the pane could *not* be resized: then `observe --cols` crops
+    /// Only when the pane could *not* be resized: then `--cols` crops
     /// rather than reflows, and asking for fewer columns than the pane holds
     /// loses everything to the right. Rows are not counted — asking for fewer
     /// keeps the bottom, where the prompt and newest output are.
@@ -126,6 +108,13 @@ final class PaneModel {
     /// for, rather than a fallback.
     private var viewport: TerminalGrid?
 
+    /// Whether the terminal is on screen, and so whether the pane is held.
+    private var isActive = true
+    /// The release sent when the terminal was hidden, still on its way out. A
+    /// takeover waits for it, so the old stream's release cannot land after the
+    /// new stream has taken the pane.
+    private var letGo: Task<Void, Never>?
+
     /// Whether `close()` has begun. Once it has, nothing may open a stream —
     /// including a layout pass caused by the close itself.
     private var isClosing = false
@@ -137,7 +126,7 @@ final class PaneModel {
     var viewportForTesting: TerminalGrid? { viewport }
 
     #if DEBUG
-    /// Preview-only: `start()` returns early, so no `observe` stream is opened.
+    /// Preview-only: `start()` returns early, so no stream is opened.
     private var isPreview = false
 
     /// Parked in one phase, for `#Preview`.
@@ -149,8 +138,7 @@ final class PaneModel {
     convenience init(
         previewing phase: Phase,
         grid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
-        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
-        control: Control = .observing
+        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47)
     ) {
         let peers = PeerStore(registry: .sample())
         self.init(
@@ -160,7 +148,6 @@ final class PaneModel {
             target: "w2:p1"
         )
         isPreview = true
-        self.control = control
         self.phase = phase
         self.grid = grid
         self.paneGrid = paneGrid
@@ -183,7 +170,7 @@ final class PaneModel {
     /// The terminal is now this size: match the host to it.
     ///
     /// Called on first layout and on every rotation. Reopening on a change is
-    /// not optional — `observe` sends a full redraw only when it opens, so a
+    /// not optional — the stream sends a full redraw only when it opens, so a
     /// stream left running after the terminal changed shape would keep painting
     /// frames written for the old one, and nothing would ever repair it.
     func show(_ grid: TerminalGrid) {
@@ -205,8 +192,9 @@ final class PaneModel {
     }
 
     private func start() {
-        // A close is in flight and the screen is going: see `close()`.
-        guard !isClosing else { return }
+        // A close is in flight and the screen is going: see `close()`. Or the
+        // terminal is hidden, and opening would take the pane for nobody.
+        guard !isClosing, isActive else { return }
         #if DEBUG
         // A preview: the phase was handed in and there is no stream to open.
         // Before the assignment below, or a seeded `.failed` would be replaced
@@ -229,44 +217,58 @@ final class PaneModel {
         let previous = stream
         stream = nil
         // Closed *alongside* the new dial, not before it. `SSHStream.close()`
-        // waits up to a second for output to drain, and an `observe` stream
+        // waits up to a second for output to drain, and a stream
         // never ends on its own, so that second is always spent — spending it
         // serially would delay every reopen by a full second.
         if let previous { Task { await previous.close() } }
         reader = Task { [weak self] in await self?.run() }
     }
 
-    /// Takes input ownership of the pane, so it can be scrolled.
+    /// Takes the pane while the terminal is on screen and lets go of it while
+    /// it is not.
     ///
-    /// **This takes the pane from whoever holds it**, which on a Mac someone
-    /// is sitting at means them. The view asks first; this does not.
-    func takeControl() {
-        guard control == .observing, viewport != nil else { return }
-        control = .controlling
-        start()
+    /// **Released rather than left held.** Hidden, nothing on this phone can
+    /// send — but holding still takes input from whoever is at the Mac, for as
+    /// long as somebody reads the chat. Coming back costs a reopen, which the
+    /// first frame of a takeover repaints in full.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            if viewport != nil { start() }
+        } else {
+            suspend()
+        }
     }
 
-    /// Gives it back, and returns to watching.
-    ///
-    /// `terminal.release` rather than just closing: it is the clean detach —
-    /// the host closes the stream and the command exits 0 — and it is what
-    /// tells herdr the pane is free again. Closing alone leaves the release to
-    /// be inferred from a dropped channel.
-    func releaseControl() async {
-        guard control == .controlling else { return }
-        // Down first: a keyboard left up over a pane this screen no longer
-        // holds is an invitation to type into nothing, and `send` would drop
-        // every keystroke silently.
+    /// Releases the pane and closes the stream, keeping everything needed to
+    /// take it back — unlike `close()`, which is the screen going away.
+    private func suspend() {
         wantsKeyboard = false
-        try? await stream?.send(.release)
-        control = .observing
-        start()
+        reader?.cancel()
+        reader = nil
+        pending.removeAll()
+        outgoing.removeAll()
+        // Forgotten, so the next `show()` or `setActive(true)` opens rather
+        // than deduplicating itself into a blank terminal.
+        opened = nil
+        phase = .opening
+        let held = stream
+        stream = nil
+        // `terminal.release` rather than just closing, for the reason `close()`
+        // sends it: it is the clean detach, and it is what tells herdr the pane
+        // is free again rather than leaving that to a dropped channel.
+        let previous = letGo
+        letGo = Task {
+            await previous?.value
+            try? await held?.send(.release)
+            await held?.close()
+        }
     }
 
     /// Sends the program one of its own keys.
     ///
-    /// Silently does nothing while observing, which is the safe direction: a
-    /// stray call must never be the thing that seizes a pane.
+    /// Dropped while there is no stream — opening, hidden, or ended.
     func send(_ key: TerminalKey) async {
         await send(bytes: key.bytes)
     }
@@ -286,7 +288,7 @@ final class PaneModel {
     /// reports 0 exactly as a full-screen program does.
     ///
     /// Three lines a notch, which is what a mouse wheel moves a terminal by.
-    /// Gated and queued like a keystroke, so a drag never overtakes typing.
+    /// Queued like a keystroke, so a drag never overtakes typing.
     func scroll(_ direction: ScrollDirection, notches: Int = 1) async {
         guard notches > 0 else { return }
         await send(Array(repeating: .scroll(direction: direction, lines: 3), count: notches))
@@ -323,7 +325,6 @@ final class PaneModel {
     }
 
     private func send(_ commands: [TerminalCommand]) async {
-        guard control == .controlling else { return }
         // Enqueued and drained by one caller at a time. Both halves run on the
         // main actor with no suspension between the append and the check, so
         // the queue order is the order the keys were pressed.
@@ -338,41 +339,24 @@ final class PaneModel {
     }
 
     /// Asks for or dismisses the system keyboard.
-    ///
-    /// Refused while observing, for the reason `send` is: a keyboard over a
-    /// pane this screen does not hold has nowhere to put a keystroke, and
-    /// raising one would say otherwise.
     func setWantsKeyboard(_ wanted: Bool) {
-        guard control == .controlling || !wanted else {
-            wantsKeyboard = false
-            return
-        }
         wantsKeyboard = wanted
     }
 
-    /// Closes the stream, releasing input first if this screen took it.
+    /// Releases the pane and closes the stream: the screen is going away.
     func close() async {
-        // **Set first, because closing changes the layout.** Dropping `control`
-        // to `.observing` below removes `PaneKeyBar` from the safe area, which
-        // makes the terminal taller, which reports a new grid — and this
-        // function suspends twice, so SwiftUI gets a layout pass in the middle
-        // of it. `show()` would then find `opened` already nil and call
-        // `start()`, opening a fresh `observe` channel and `stty`-ing the pane
-        // *after the user has left the screen* — an orphaned stream on their
-        // Mac, which is the one thing `ConnectionStore` promises not to leave.
-        //
-        // The same "layout is the stream's size" hazard `PaneSurface` documents
-        // one level up, reached from the other end. Nothing may reopen once a
-        // close has begun.
+        // **Set first.** This function suspends, so SwiftUI gets a layout pass
+        // in the middle of it, and a layout pass that reports a grid finds
+        // `opened` nil and calls `start()` — taking the pane *after the user
+        // has left the screen*, an orphaned stream on their Mac, which is the
+        // one thing `ConnectionStore` promises not to leave. Nothing may reopen
+        // once a close has begun.
         isClosing = true
         wantsKeyboard = false
         // **Before the reader is cancelled**, or there is no live stream left
         // to send it on and the pane stays owned by a phone that has walked
         // away — herdr would hold it until the channel drops.
-        if control == .controlling {
-            try? await stream?.send(.release)
-            control = .observing
-        }
+        try? await stream?.send(.release)
         reader?.cancel()
         reader = nil
         // **Put the pane back.** Bleat narrowed someone's pty to suit a phone;
@@ -400,6 +384,9 @@ final class PaneModel {
 
     private func run() async {
         phase = .opening
+        // The release from the last time the terminal was hidden goes first;
+        // see `letGo`.
+        await letGo?.value
         do {
             let client = try await connections.client(for: peer, session: session)
             guard let size = viewport, size.isUsable else {
@@ -410,7 +397,7 @@ final class PaneModel {
             let fit = pane.flatMap { PtyResize.target(viewport: size, pane: $0) }
 
             // **Resize, let it settle, then open.** `stty` raises SIGWINCH and
-            // the program repaints on its own schedule, and `observe` sends a
+            // the program repaints on its own schedule, and the stream sends a
             // full redraw only when it opens — so the opening frame is the one
             // chance to capture a settled screen. Opening first and letting the
             // repaint arrive as deltas sounds equivalent and is not: a repaint
@@ -433,18 +420,14 @@ final class PaneModel {
                 resized = await resizePty(to: fit, on: peer, client: client)
                 if resized { try? await Task.sleep(for: .milliseconds(350)) }
             }
-            // The one place the two modes differ. `--takeover` is passed
-            // because there is no other way in: without it a second client
-            // gets no frames and lands no input while anyone else holds the
-            // pane, and says nothing about why.
-            let opened = switch control {
-            case .observing:
-                try await client.observe(target, cols: size.cols, rows: size.rows)
-            case .controlling:
-                try await client.attach(to: target, cols: size.cols, rows: size.rows, takeover: true)
-            }
+            // `--takeover` because there is no other way in: without it a
+            // second client gets no frames and lands no input while anyone else
+            // holds the pane, and says nothing about why.
+            let opened = try await client.attach(
+                to: target, cols: size.cols, rows: size.rows, takeover: true
+            )
             // A reopen cancelled this reader while the channel was opening. It
-            // is a live `herdr terminal session observe` on the host and
+            // is a live `herdr terminal session control` on the host and
             // nothing else holds it, so installing it now would orphan it — or
             // worse, overwrite the stream the replacement reader just installed,
             // leaving the live one running and closing the dead one on exit.
@@ -501,7 +484,7 @@ final class PaneModel {
     /// Makes the pane's pty match this screen, so the program inside wraps to
     /// it.
     ///
-    /// **The only thing that actually reflows a pane.** `observe --cols` crops
+    /// **The only thing that actually reflows a pane.** `--cols` crops
     /// rather than reflows and no stream client can change a pane's grid, but
     /// the program writes at the width of its pty and a pty can be set from
     /// outside. Verified on a clean pane: 53 columns grown to 100 came back

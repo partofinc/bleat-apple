@@ -65,8 +65,8 @@ struct PaneGeometryTests {
     /// reopen → `.live`, forever, `stty`-ing the user's Mac each time round. It
     /// reached a device.
     ///
-    /// The invariant that stops it: **with control held, the layout must be the
-    /// same in every phase.** Anything drawn per-phase has to be an overlay or
+    /// The invariant that stops it: **the layout must be the same in every
+    /// phase.** Anything drawn per-phase has to be an overlay or
     /// `.disabled`, neither of which is layout.
     @Test("the chrome does not resize the terminal between phases")
     func chromeIsStableAcrossPhases() {
@@ -75,7 +75,7 @@ struct PaneGeometryTests {
         // never appears, so the representable's child controller never lays out
         // and reports no grid at all.
         func viewport(inPhase phase: PaneModel.Phase) -> TerminalGrid? {
-            let model = PaneModel(previewing: phase, control: .controlling)
+            let model = PaneModel(previewing: phase)
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
             window.rootViewController = UIHostingController(
                 rootView: PaneSurface(model: model, isActive: true)

@@ -144,7 +144,7 @@ struct PaneKeyBar: View {
 /// Over a live pane it holds, which is the only place it appears.
 #Preview("Key bar", traits: .sampleData) {
     PaneSurface(
-        model: PaneModel(previewing: .live, control: .controlling),
+        model: PaneModel(previewing: .live),
         isActive: true
     )
 }

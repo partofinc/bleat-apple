@@ -33,11 +33,9 @@ struct PaneSurface: View {
             // so the buttons and the overlays keep their own taps.
             .paneScrollGesture(model)
             .overlay(alignment: .trailing) {
-                // Only while this screen owns input, because these are the
-                // only circumstances in which they can do anything: `observe`
-                // ignores a scroll request, so a pane this screen is merely
-                // watching has nowhere to put one.
-                if case .live = model.phase, model.control == .controlling {
+                // Only while a stream is up to carry what they send. Safe to
+                // gate on `phase` because an overlay is not layout; see below.
+                if case .live = model.phase {
                     PaneScrollControl(model: model)
                 }
             }
@@ -80,26 +78,14 @@ struct PaneSurface: View {
             // and a floating pill over the bottom of a terminal would hide
             // exactly the line a dialog's `Enter to confirm` sits on.
             //
-            // **Insetting is not free, and it is worth knowing what it
-            // costs.** `PaneTerminalController` sets `terminalView.frame =
-            // view.bounds` and the pty is resized to match — the outer scroll
-            // view and the pane-grid sizing this comment used to describe were
-            // deleted when that landed. So the bar really does change the grid
-            // (measured: 46 rows without it, 43 with), and taking or releasing
-            // control therefore reopens the stream and writes an `stty` to the
-            // user's Mac. That is correct rather than wasteful: the terminal
-            // genuinely got shorter and the pane must follow.
-            //
-            // It costs a *second* reopen, though: `takeControl()` and
-            // `releaseControl()` each call `start()` themselves, and the layout
-            // pass that follows the bar appearing or disappearing reports a new
-            // grid and calls it again. The first reader is normally cancelled
-            // at the `guard !Task.isCancelled` before `resizePty`, so nothing
-            // is written twice — but the gesture is a beat slower than it
-            // looks, and reserving the bar's height in both modes is the way to
-            // collapse it if that ever matters.
-            // **Gated on `control` alone — never on `phase`, and that is not a
-            // simplification.** This bar takes space, and `PaneTerminalController`
+            // **Insetting is not free.** `PaneTerminalController` sets
+            // `terminalView.frame = view.bounds` and the pty is resized to
+            // match, so the bar really does change the grid (measured: 46 rows
+            // without it, 43 with). It is shown unconditionally now that the
+            // terminal always holds the pane, which is what makes that cost a
+            // constant rather than a reopen on every take and release.
+            // **Never gate it on `phase`, and that is not a simplification.**
+            // This bar takes space, and `PaneTerminalController`
             // derives the grid from its own bounds, so showing it makes the
             // terminal shorter, which reports a new grid, which reopens the
             // stream and `stty`s the pane. Adding `phase == .live` to this
@@ -112,19 +98,14 @@ struct PaneSurface: View {
             // it is an `.overlay`, which draws without changing layout. Anything
             // in a safe area is layout, and layout here is the stream's size.
             .safeAreaBar(edge: .bottom) {
-                // Only while this screen owns input: `PaneModel.send` is a no-op
-                // while observing, and a row of keys that silently does nothing
-                // is worse than no row at all.
-                // Shown whenever the pane is held, keyboard or not. SwiftUI's
+                // Shown always, keyboard or not. SwiftUI's
                 // keyboard avoidance lifts a safe-area bar clear of the
                 // keyboard by itself, so this is also the bar that rides above
                 // the keys — there is no second copy and nothing to keep in
                 // step. It was an `inputAccessoryView` for a day; on a device
                 // that put the keys at the far edge of the screen, a reach away
                 // from the arrows they belong beside.
-                if model.control == .controlling {
-                    PaneKeyBar(model: model)
-                }
+                PaneKeyBar(model: model)
             }
         #else
         ContentUnavailableView(

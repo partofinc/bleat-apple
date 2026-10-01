@@ -8,7 +8,7 @@ import SwiftUI
 /// is, and why the type is that small.
 ///
 /// It still has to say when it is *not* showing everything. A host that will not
-/// report a layout leaves the stream sized to the phone, and `observe --cols`
+/// report a layout leaves the stream sized to the phone, and `--cols`
 /// crops rather than reflows, so that case really does hide output.
 struct GridBadge: View {
     let grid: TerminalGrid
@@ -48,7 +48,7 @@ struct GridBadge: View {
 #if DEBUG
 /// Both readings. The plain one says how big the thing on screen is; the orange
 /// one says output is actually being hidden, which happens only when the host
-/// would not report a layout and `observe --cols` fell back to cropping.
+/// would not report a layout and `--cols` fell back to cropping.
 #Preview("Grid badge", traits: .sampleData) {
     VStack(alignment: .trailing, spacing: 12) {
         GridBadge(grid: TerminalGrid(cols: 142, rows: 47), isCropped: false)

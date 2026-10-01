@@ -28,6 +28,10 @@ final class PaneTerminalController: UIViewController {
     /// the host for" and "what the stream is being rendered at" — they are the
     /// same number now, which is why there is one callback instead of two.
     var onSize: ((TerminalGrid) -> Void)?
+    /// How tall the terminal draws a row, alongside every size report. Not
+    /// part of `onSize` because it is not a size anything is asked for: it is
+    /// only what the scroll gesture measures a finger against.
+    var onRowHeight: ((CGFloat) -> Void)?
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
     /// What the keyboard produced, byte for byte, on its way to the host.
@@ -45,10 +49,11 @@ final class PaneTerminalController: UIViewController {
     /// tapped a key is not a trade worth making.
     ///
     /// So the terminal is **translated, not resized**: it keeps its full frozen
-    /// height, its bottom pinned above the keyboard, and its top clipped by the
-    /// view. The grid never changes, nothing is written to the host, and what
-    /// stays on screen is the bottom of the pane — the prompt and the input
-    /// line, which is exactly what is being typed into.
+    /// height and slides up under the navigation bar, its top clipped by the
+    /// view. The grid never changes and nothing is written to the host. How
+    /// far it slides is `KeyboardAnchor`'s business: far enough to keep the
+    /// last row in use on screen — an agent's input box at the bottom, or a
+    /// shell's prompt wherever it has got to — and no further.
     var wantsKeyboard = false {
         didSet {
             guard wantsKeyboard != oldValue else { return }
@@ -228,13 +233,13 @@ final class PaneTerminalController: UIViewController {
             frozen = nil
         }
         if let frozen {
-            // Bottom-anchored at its frozen size: the keyboard takes the space,
-            // the terminal slides up under the navigation bar, and the rows that
-            // go are the oldest ones at the top rather than the input line at
-            // the bottom. `clipsToBounds` on the view is what hides them.
+            // At its frozen size: the keyboard takes the space and the terminal
+            // slides up under the navigation bar, only as far as it takes to
+            // keep the row being typed into on screen. `clipsToBounds` on the
+            // view is what hides the rows that go.
             terminalView.frame = CGRect(
                 x: 0,
-                y: view.bounds.height - frozen.height,
+                y: anchor(for: frozen),
                 width: frozen.width,
                 height: frozen.height
             )
@@ -249,12 +254,65 @@ final class PaneTerminalController: UIViewController {
 
         let terminal = terminalView.getTerminal()
         if isActive { report(TerminalGrid(cols: terminal.cols, rows: terminal.rows)) }
+        // The terminal's own figure. It was `view.bounds` over the rows, and
+        // under the keyboard the bounds halve while the rows are frozen — which
+        // is what made a drag scroll twice too fast while typing.
+        onRowHeight?(rowHeight)
 
         if !announced {
             announced = true
             onReady?(terminalView)
         }
     }
+
+    /// Where the frozen terminal sits under the keyboard.
+    private func anchor(for frozen: CGSize) -> CGFloat {
+        KeyboardAnchor.offset(
+            visible: view.bounds.height,
+            terminal: frozen.height,
+            rowHeight: rowHeight,
+            lastRow: lastRowInUse
+        )
+    }
+
+    /// The height SwiftTerm draws a row at.
+    ///
+    /// **Recomputed, because SwiftTerm keeps its own internal** — this is
+    /// `computeFontDimensions`, line for line: the font's ascent, descent and
+    /// leading, rounded up. The frame's height over the row count is not the
+    /// same number: SwiftTerm takes `Int(height / cellHeight)` rows and leaves
+    /// the remainder as a strip at the bottom, so that quotient is a fraction
+    /// of a point too large. If SwiftTerm's line spacing is ever changed from
+    /// its default of 1, this has to follow.
+    private var rowHeight: CGFloat {
+        let font = terminalView.font as CTFont
+        return ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))
+    }
+
+    /// The lowest row with anything on it, or the cursor's if that is lower.
+    ///
+    /// **Both, because neither is enough alone.** A shell's prompt is where
+    /// the cursor is, and on an empty line there is nothing else to find. An
+    /// agent may park its cursor in an input box with status lines beneath it,
+    /// or hide it and leave it anywhere; what marks the bottom of its screen
+    /// is the last row it drew.
+    private var lastRowInUse: Int {
+        let terminal = terminalView.getTerminal()
+        let cursor = terminal.getCursorLocation().y
+        for row in stride(from: terminal.rows - 1, to: cursor, by: -1) {
+            guard let line = terminal.getLine(row: row) else { continue }
+            // herdr paints blank cells as spaces as readily as it skips them,
+            // so "has content" has to mean something visible.
+            let drawn = line.translateToString(trimRight: true)
+                .contains { !$0.isWhitespace && $0 != "\0" }
+            if drawn { return row }
+        }
+        return max(cursor, 0)
+    }
+
+    /// Read by `BleatUITests`: where the terminal sits in its view, which is
+    /// what decides whether the prompt is on screen under the keyboard.
+    var terminalOriginForTesting: CGFloat { terminalView.frame.origin.y }
 
     /// Read by `BleatUITests` to check the terminal really fills its view —
     /// the thing that has to be true and was only ever eyeballed.
@@ -328,6 +386,17 @@ extension PaneTerminalController: TerminalViewDelegate {
         // Fires from inside SwiftTerm's `updateDisplay`, so it is the only
         // observable proof from out here that a repaint pass actually ran.
         repaints += 1
+        // Under the keyboard the terminal follows the last row in use, and
+        // output is what moves that: a command that prints ten lines takes the
+        // prompt ten rows down. Only the origin changes, so nothing is reported
+        // and nothing reopens.
+        //
+        // Compared within a pixel: the origin UIKit hands back is not
+        // bit-for-bit the one it was given, and an exact test asked for a
+        // layout pass on every repaint.
+        if let frozen, abs(anchor(for: frozen) - terminalView.frame.origin.y) > 0.5 {
+            view.setNeedsLayout()
+        }
     }
 }
 #endif

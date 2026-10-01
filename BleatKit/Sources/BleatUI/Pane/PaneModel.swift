@@ -52,9 +52,12 @@ final class PaneModel {
     /// at it — so there is no grid to reconcile against another and no window
     /// in which they differ.
     private(set) var grid: TerminalGrid?
-    /// The pane's own grid, when the host would say. Only used to tell whether
-    /// anything is being cut off.
-    private(set) var paneGrid: TerminalGrid?
+    /// How tall one row of the terminal is drawn, in points, once it has laid
+    /// out. What `PaneScrollGesture` sizes a notch by — and deliberately the
+    /// terminal's own figure rather than one worked out from the space the
+    /// surface is given, which shrinks under the keyboard while the grid does
+    /// not.
+    private(set) var rowHeight: CGFloat?
 
     /// Whether Bleat made the pane this size.
     private(set) var didResizePane = false
@@ -63,29 +66,6 @@ final class PaneModel {
     /// Set once, on the first successful resize, and kept across rotations —
     /// the thing to restore is what the Mac had, not the previous orientation.
     private var restoreTo: TerminalGrid?
-
-    /// Whether output is being cut off horizontally.
-    ///
-    /// Only when the pane could *not* be resized: then `--cols` crops
-    /// rather than reflows, and asking for fewer columns than the pane holds
-    /// loses everything to the right. Rows are not counted — asking for fewer
-    /// keeps the bottom, where the prompt and newest output are.
-    ///
-    /// **`scroll.viewport_rows` is not used for this.** It looked like the way
-    /// to detect a pane whose pty had drifted, but it lags: measured at 44
-    /// while the pty was 47 and the rect 48, which made every resized pane
-    /// claim to be cropped.
-    var isCropped: Bool {
-        guard !didResizePane, grid != nil else { return false }
-        // **No layout reported is the cropped case, not the safe one.** Without
-        // a rect there is nothing to resize the pty to, so the stream is opened
-        // at this phone's width against a pane that is very likely wider — the
-        // exact situation the badge exists for. Reading it as "not cropped"
-        // silenced the warning precisely when it was needed.
-        guard let paneGrid else { return true }
-        // The one column herdr reserves of the rect does not count as a crop.
-        return grid!.cols < paneGrid.cols - 1
-    }
 
     private let connections: ConnectionStore
     private let peer: PairedPeer
@@ -137,8 +117,7 @@ final class PaneModel {
     /// unplugging a Mac.
     convenience init(
         previewing phase: Phase,
-        grid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47),
-        paneGrid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47)
+        grid: TerminalGrid? = TerminalGrid(cols: 142, rows: 47)
     ) {
         let peers = PeerStore(registry: .sample())
         self.init(
@@ -150,7 +129,6 @@ final class PaneModel {
         isPreview = true
         self.phase = phase
         self.grid = grid
-        self.paneGrid = paneGrid
     }
     #endif
 
@@ -179,6 +157,13 @@ final class PaneModel {
         viewport = grid
         guard opened != nil else { return start() }
         if previous != grid { start() }
+    }
+
+    /// The terminal draws its rows this tall. Nothing is sent: this is only
+    /// how far a finger travels per row.
+    func setRowHeight(_ height: CGFloat) {
+        guard height > 0, height != rowHeight else { return }
+        rowHeight = height
     }
 
     /// Opens again.
@@ -287,12 +272,26 @@ final class PaneModel {
     /// prompt. `max_offset_from_bottom` is no signal either — a fresh shell
     /// reports 0 exactly as a full-screen program does.
     ///
-    /// Three lines a notch, which is what a mouse wheel moves a terminal by.
-    /// Queued like a keystroke, so a drag never overtakes typing.
+    /// **One record per notch, never one record for the lot.** `lines` could
+    /// carry the whole distance for a shell, but a full-screen program gets one
+    /// wheel event per record whatever it says, and nothing here knows which
+    /// kind of pane this is.
+    ///
+    /// One line a notch, so a shell's history moves a row for a row of finger
+    /// travel. Queued like a keystroke, so a drag never overtakes typing.
+    ///
+    /// **Dropped when the queue is already long.** A scroll is a request about
+    /// now: on a link too slow to keep up, queued notches would go on
+    /// scrolling the pane long after the finger stopped. Keys are never
+    /// dropped this way — only scrolls, which the next drag replaces.
     func scroll(_ direction: ScrollDirection, notches: Int = 1) async {
-        guard notches > 0 else { return }
-        await send(Array(repeating: .scroll(direction: direction, lines: 3), count: notches))
+        guard notches > 0, outgoing.count < Self.scrollBacklog else { return }
+        await send(Array(repeating: .scroll(direction: direction, lines: 1), count: notches))
     }
+
+    /// How much may be waiting to go out before a scroll is not worth adding
+    /// to it: about a fifth of a second of the fastest coast.
+    private static let scrollBacklog = 30
 
     /// Input waiting to go out, oldest first, and whether anyone is draining it.
     ///
@@ -375,7 +374,6 @@ final class PaneModel {
         // deduplicating itself into a permanently blank pane.
         opened = nil
         grid = nil
-        paneGrid = nil
         didResizePane = false
         let open = stream
         stream = nil
@@ -444,7 +442,6 @@ final class PaneModel {
             }
             self.opened = size
             grid = size
-            paneGrid = pane
             didResizePane = resized
             if resized { restoreTo = restoreTo ?? pane }
             stream = opened
@@ -538,14 +535,15 @@ final class PaneModel {
         }
     }
 
-    /// The pane's real grid on the host, for the badge. `nil` when the host
+    /// The pane's real grid on the host, which is what the pty is resized
+    /// from and later put back to. `nil` when the host
     /// will not say, which is not a failure — the stream opens either way now.
     ///
     /// `HerdrError` and `DecodingError` give up; `TransportError` does not.
     ///
     /// The first two are both "this host will not tell me the layout" — a herdr
     /// too old to know `pane layout`, a pane just closed, or a reply whose shape
-    /// has moved — and losing the badge is not worth losing the pane. A
+    /// has moved — and losing the resize is not worth losing the pane. A
     /// `TransportError` is a different thing and is left to propagate:
     /// swallowing it would spend a second opening a stream that cannot open
     /// either, and report the wrong cause when it failed.
@@ -553,7 +551,7 @@ final class PaneModel {
         do {
             let layout = try await client.paneLayout(target: target)
             // A tab that does not contain this pane. A sibling's rect would
-            // make the badge claim a crop that is not happening.
+            // resize this pane's pty to somebody else's width.
             return layout.rect(ofPane: target)
                 .map { TerminalGrid(cols: $0.width, rows: $0.height) }
         } catch is HerdrError {

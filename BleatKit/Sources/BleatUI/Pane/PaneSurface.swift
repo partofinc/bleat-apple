@@ -30,20 +30,8 @@ struct PaneSurface: View {
         )
             .background(.black)
             // Installed on the terminal itself rather than the whole surface,
-            // so the buttons and the overlays keep their own taps.
+            // so the overlays keep their own taps.
             .paneScrollGesture(model)
-            .overlay(alignment: .trailing) {
-                // Only while a stream is up to carry what they send. Safe to
-                // gate on `phase` because an overlay is not layout; see below.
-                if case .live = model.phase {
-                    PaneScrollControl(model: model)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if case .live = model.phase, let grid = model.grid {
-                    GridBadge(grid: grid, isCropped: model.isCropped)
-                }
-            }
             .overlay {
                 switch model.phase {
                 case .opening:
@@ -94,9 +82,9 @@ struct PaneSurface: View {
             // `.live` → bar shows, forever, with a write to the user's Mac on
             // every pass. It reached a device as a spinner that never stopped.
             //
-            // `PaneScrollControl` carries the same `phase` test safely because
-            // it is an `.overlay`, which draws without changing layout. Anything
-            // in a safe area is layout, and layout here is the stream's size.
+            // The state overlays above switch on `phase` safely because an
+            // `.overlay` draws without changing layout. Anything in a safe
+            // area is layout, and layout here is the stream's size.
             .safeAreaBar(edge: .bottom) {
                 // Shown always, keyboard or not. SwiftUI's
                 // keyboard avoidance lifts a safe-area bar clear of the
@@ -138,19 +126,6 @@ struct PaneSurface: View {
 #Preview("Failed", traits: .sampleData) {
     PaneSurface(
         model: PaneModel(previewing: .failed("the connection closed before this finished")),
-        isActive: true
-    )
-}
-
-/// The host would not report a layout, so the stream was opened at the phone's
-/// width against a wider pane — the one case where something really is hidden.
-#Preview("Cropped", traits: .sampleData) {
-    PaneSurface(
-        model: PaneModel(
-            previewing: .live,
-            grid: TerminalGrid(cols: 53, rows: 40),
-            paneGrid: nil
-        ),
         isActive: true
     )
 }

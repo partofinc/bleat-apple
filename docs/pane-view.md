@@ -179,8 +179,8 @@ pan. Nothing is ever hidden; landscape shows ~118 of 142 columns at once.
   a decode failure on a field nothing uses would jump straight over the fallback
   and kill the pane instead of cropping it. A `TransportError` does propagate,
   because swallowing it would spend a second opening a stream that cannot open
-  either and then blame the wrong thing. The fallback crops, so the badge says
-  so.
+  either and then blame the wrong thing. The fallback crops, and since 1 Oct
+  2026 nothing on screen says so — see the size badge's removal below.
 - **Frames are held until the terminal is actually that size.** SwiftUI
   publishes the grid an async hop before the view resizes to it, and the first
   frame lands in that window — a frame written for 142 columns fed to a
@@ -423,22 +423,71 @@ and `terminal.scroll` is the one record that is right everywhere.
 
 What the app does with it:
 
-- **`PaneModel.scroll(_:notches:)`** sends one `.scroll(lines: 3)` per notch
-  through the same ordered queue as keystrokes (`outgoing` holds
+- **`PaneModel.scroll(_:notches:)`** sends one `.scroll` record per
+  notch through the same ordered queue as keystrokes (`outgoing` holds
   `TerminalCommand`s now), and dropped like everything else when there is
-  no stream.
-  Three lines is what a wheel notch moves a terminal by.
-- **A drag is continuous now, not paged.** `PaneScrollGesture` sends a notch
-  per three rows of finger travel, so a shell's history follows the finger;
-  a full-screen program scrolls by its own amount, so there the match is
-  approximate. At most six notches per callback — a flick is spread over the
-  following callbacks rather than landing as one burst. Pulling **down** is
-  scroll up, the direction a scroll view moves content with the finger.
-  `TerminalView.isScrollEnabled` stays off: its own buffer never fills, and
-  on it would consume the drag.
-- **The two buttons stay**, five notches a tap. A drag is not reachable by
-  VoiceOver or Switch Control, and a gesture nothing advertises is not an
-  affordance.
+  no stream. One record per notch rather than one record carrying the whole
+  distance in `lines`, because a full-screen program gets one wheel event per
+  record whatever `lines` says and the phone cannot tell which kind of pane
+  it has. One line a notch.
+- **A drag is continuous, a row for a row (1 Oct 2026).** `PaneScrollGesture`
+  sends a one-line notch per row of finger travel, so a shell's history
+  follows the finger exactly; a full-screen program scrolls by its own amount,
+  so there the match is approximate. It was a three-line notch per three rows,
+  which moved a shell the same distance in visible jumps. At most six notches
+  per callback. Pulling **down** is scroll up, the direction a scroll view
+  moves content with the finger. `TerminalView.isScrollEnabled` stays off: its
+  own buffer never fills, and on it would consume the drag.
+- **A flick coasts (1 Oct 2026).** The question was why Termius feels better
+  attached to herdr than this did. Not a buffer — inside a multiplexer it has
+  none either. A desktop or Termius swipe goes on producing wheel events while
+  it decelerates; this stopped dead when the finger lifted and threw away
+  whatever the burst limit had not sent. `ScrollMomentum` is that tail: the
+  drag's lift-off velocity, decayed at `UIScrollView`'s normal rate (0.998 a
+  millisecond), emitting notches until it falls under 60 points a second. It
+  is a value type with no clock, integrated exactly, so the distance does not
+  depend on the frame rate and `ScrollMomentumTests` needs no waiting.
+  - Held to 150 notches a second. Each one is a record the host repaints for,
+    and a queue that outlives the gesture would go on scrolling after the
+    user stopped. **Not measured against the host** — how many scroll records
+    a second herdr keeps up with over SSH is unknown, and this is a guess to
+    tune on a device.
+  - **Only a vertical flick coasts.** A sideways swipe lifts off with a few
+    hundred points a second of vertical speed, which is over the floor; the
+    coast starts only when the lift-off velocity is more vertical than
+    horizontal.
+  - **The coast does not wait for its writes, and a scroll is dropped when 30
+    commands are already queued.** Awaiting each write stretched a two-second
+    coast over however long a slow link took. Keys are never dropped; a
+    scroll is a request about now. Neither path has been exercised on a slow
+    link.
+  - A finger put down stops it — a second, simultaneous
+    `DragGesture(minimumDistance: 0)`, because the scrolling drag only wakes
+    after sixteen points. So does the pane leaving `.live`.
+  - **Still not a scroll view, and it cannot be.** No rubber band at the ends
+    (`max_offset_from_bottom` is not a usable extent), and nothing moves
+    between rows: every step is a repaint from the host.
+- **The step is the terminal's row height, reported by the terminal.** It was
+  the surface's height over the grid's rows, and with the keyboard up the
+  surface halves while the grid is frozen — so a drag scrolled about twice too
+  fast while typing. `PaneTerminalController.onRowHeight` reports the height
+  SwiftTerm draws a row at, and `PaneModel.rowHeight` holds it.
+  - **That height is recomputed from the font, not divided out of the frame.**
+    SwiftTerm's `cellDimension` is internal. It takes `Int(height /
+    cellHeight)` rows and leaves the remainder as a strip at the bottom, so
+    `frame.height / rows` is a fraction of a point too large — caught in
+    review, where it put the keyboard anchor between rows and between pixels.
+    `PaneTerminalController.rowHeight` repeats `computeFontDimensions`:
+    `ceil(ascent + descent + leading)`. It assumes SwiftTerm's default line
+    spacing of 1.
+- **The two scroll buttons are gone (1 Oct 2026)**, at the user's request
+  once the drag coasted: they sat over the pane's right edge and the drag now
+  does the job better. `PaneScrollControl` is deleted, and `scroll` lost its
+  `lines` parameter with its only other caller — every notch is one line.
+  **What went with them is the only scroll VoiceOver and Switch Control could
+  reach**; a drag is not reachable by either. Nothing replaces that yet. An
+  accessibility scroll action on the terminal is the obvious candidate and is
+  untried.
 - **`TerminalKey.pageUp`/`pageDown` are gone.** Nothing sent them any more;
   whether Claude Code answered Page Up was never verified and no longer
   matters.
@@ -460,11 +509,13 @@ What the app does with it:
     pane's history — the bullet above — and that is a Phase 3 question rather
     than something to delete now. Nothing in the app calls one today, so it is
     library surface with no caller: worth knowing before reading it as live.
-- **A badge in the corner names the grid**, and says "cropped" when the fallback
-  is in use. The pane is deliberately larger than the screen now, and a scroll
-  indicator that appears only once you already know to drag is not an
-  affordance on its own; the indicators are also flashed once when there is
-  something off-screen to find.
+- **The size badge is gone (1 Oct 2026)**, also at the user's request. It
+  named the grid in the corner (`53×40`) and said "cropped" when the pty could
+  not be resized and `--cols` was cutting the pane off. `GridBadge`,
+  `PaneModel.isCropped` and `PaneModel.paneGrid` are deleted with it. **The
+  cropped case still happens and is now silent**: a pane whose host will not
+  report a layout, or whose `stty` fails, renders cut off at the right with
+  nothing to say why.
 - **`BleatUI` has a test target now** (`Tests/BleatUITests`), which is what the
   cell arithmetic above needed: several sizing bugs on this screen shipped past
   a green run because nothing mechanical ever laid the view out. It needs a
@@ -576,8 +627,8 @@ has one.
   spins the loader forever"**.
   - Measured by the regression test: **46 rows without the bar, 43 with it**, so
     the grid alternated 43 ↔ 46 and never settled.
-  - `PaneScrollControl` carries the same `phase` test *safely*, which is what
-    makes this easy to copy wrongly: it is an `.overlay`, and an overlay draws
+  - The state overlays carry the same `phase` test *safely*, which is what
+    makes this easy to copy wrongly: they are `.overlay`s, and an overlay draws
     without changing layout. **Anything in a safe area is layout, and layout
     here is the stream's size.**
   - So per-phase chrome on this screen has to be an `.overlay` or `.disabled` —
@@ -658,10 +709,29 @@ disabling the fix: **one show/hide round trip reports three grids** — three
 stream reopens and three writes to the host.
 
 So the grid is **frozen** and the terminal is **translated, not resized**: it
-keeps its full frozen height with its bottom pinned above the keyboard and its
-top clipped by the view (`clipsToBounds`). The grid never changes, nothing is
-written to the host, and what stays on screen is the bottom of the pane — the
-prompt and the input line, which is what is being typed into.
+keeps its full frozen height, slides up under the navigation bar, and has its
+top clipped by the view (`clipsToBounds`). The grid never changes and nothing
+is written to the host.
+
+- **It slides only as far as the last row in use (1 Oct 2026).** It used to be
+  pinned by its bottom edge, always, on the reasoning that the bottom of a pane
+  is its input line. True of an agent; false of a shell, whose prompt is
+  wherever its output has got to. A shell with three lines in it had its
+  prompt slid off the top of the screen by the keyboard raised to type into
+  it. `KeyboardAnchor.offset` now lifts the terminal just far enough to clear
+  the lowest row that is the cursor's or has something drawn on it, plus one
+  row of margin, in whole rows, and never past the old bottom-pinned position.
+  - **Cursor and content, because neither is enough alone.** An empty prompt
+    has only a cursor; an agent may park or hide its cursor anywhere above
+    its status lines, and what marks the bottom of its screen is the last row
+    it drew. A screen drawn to the bottom therefore behaves exactly as before.
+  - "Drawn" means a visible character: herdr paints blank cells as spaces as
+    readily as it skips them.
+  - It follows output: `rangeChanged` asks for a layout pass when the anchor
+    has moved, so a command that prints ten lines takes the terminal ten rows
+    up with its prompt. Only the origin changes — nothing is reported.
+  - Pinned by `KeyboardAnchorTests` and three cases in `PaneGeometryTests`.
+    **Not yet seen against a real shell on a device.**
 
 - **Frozen before the keyboard animates in, thawed on `keyboardDidHide`.**
   Not `willHide`: unfreezing on the way down reports a grid per frame of the

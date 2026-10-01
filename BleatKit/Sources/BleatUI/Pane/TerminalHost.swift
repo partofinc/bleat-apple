@@ -35,6 +35,9 @@ struct TerminalHost: UIViewControllerRepresentable {
             // host is asked to make the pane, and what the stream is opened at.
             model.show(grid)
         }
+        controller.onRowHeight = { [model] height in
+            model.setRowHeight(height)
+        }
         return controller
     }
 
@@ -46,5 +49,5 @@ struct TerminalHost: UIViewControllerRepresentable {
 #endif
 
 // No `#Preview`: without a stream this is an empty terminal, and everything
-// worth looking at around it — the badge, the overlays, the failure states —
+// worth looking at around it — the overlays, the failure states —
 // previews in `PaneSurface`.

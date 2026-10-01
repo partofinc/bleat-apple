@@ -740,7 +740,8 @@ is written to the host.
 - **`PaneGeometryTests` pins both halves**, and both were checked against the
   bug rather than only the fix — with the freeze removed they fail at 2 and 3
   reports respectively.
-- **Raised by an explicit toolbar button, never by tapping the pane.** A tap on
+- **Raised by an explicit control, never by tapping the pane** — now "Type in
+  the Pane" in the accessory's mode menu. A tap on
   a surface whose whole job is to be dragged is easy to trigger by accident, and
   the cost is keystrokes into a live agent. The button is also the only version
   VoiceOver and Switch Control can reach.
@@ -802,13 +803,10 @@ is written to the host.
   size holds the width, so rotating with the keyboard up drew a 393pt terminal
   in an 852pt view — a strip with black beside it, measured at 53 columns in
   landscape — until the keyboard went down.
-- **Ctrl and Tab are currently unreachable while typing**, and that is a known
-  gap rather than a decision. `dropBuiltInAccessory()` removes SwiftTerm's
-  `TerminalAccessory`, which was the only source of both, and the iOS software
-  keyboard has neither key. So there is no way to send Ctrl-C to interrupt an
-  agent from the phone. Both are named in the Phase 3 gate line;
-  `terminalAccessory?.controlModifier` falls back to `controlModifier`, so a
-  Ctrl toggle in `PaneKeyBar` is a small addition when it is wanted.
+- **Ctrl and Tab were unreachable while typing until 1 Oct 2026.**
+  `dropBuiltInAccessory()` removes SwiftTerm's `TerminalAccessory`, which was
+  the only source of both, and the iOS software keyboard has neither key. The
+  shortcut strip is the answer — see **The accessory** below.
 
 **`swift build` does not compile any of this.** Every file under `Pane/` is
 `#if canImport(UIKit)`, and `swift build` targets macOS — so the whole screen is
@@ -816,6 +814,96 @@ compiled out and a green `swift build` says nothing about it. This was found the
 obvious way: a renamed type left a dangling reference that built clean twice.
 Use `xcodebuild -scheme BleatKit-Package -destination 'generic/platform=iOS'`,
 or the simulator test run, which is what actually compiles it.
+
+## The accessory: a text field, shortcuts, and the dialog keys (1 Oct 2026)
+
+`PaneKeyBar` was one row of six keys and a keyboard button. It is a two-row
+bubble now. The bottom row is those same keys — arrows, `esc`, return — and a
+control that chooses what the top row holds (`PaneAccessoryMode`): a **text
+field** or a **shortcut strip**. The choice is remembered across panes and
+launches.
+
+**Three ways to type, each for something.**
+
+- **The text field** (`PaneInputField`), for a line composed with the system
+  keyboard — autocorrect, dictation, a cursor under the finger — and sent whole
+  with Enter after it. Tapping it raises the keyboard; nothing reaches the pane
+  until it is sent.
+- **Straight into the pane** — "Type in the Pane" in the mode menu — for what
+  only the program can do: zsh or fish completion, `vim`, anything read a key
+  at a time. This is the old keyboard button's behaviour, and the shortcut
+  strip shows above the keyboard while it is up whatever mode is chosen,
+  because Tab is the point of typing there.
+- **The shortcut strip** (`PaneShortcutStrip`), for a key with no text around
+  it.
+
+While either keyboard is up the mode control is a **hide-keyboard** button
+instead of a menu.
+
+**What a sent line is, measured.** On a scratch session on herdr 0.9.3, over a
+real `terminal session control --takeover`:
+
+- zsh ran `echo …` and Claude Code submitted a prompt, both with text and
+  carriage return in **one** record and with them in **two**. Two is what
+  ships (`SubmittedLine`), queued as one batch so nothing lands between them.
+- **One line only.** A newline is Enter to whatever reads it. Bracketed paste
+  carries several lines as one — Claude Code took `ESC[200~a\nb ESC[201~` then
+  CR as a single two-line prompt — but only a program that asked for it
+  understands the markers, and **herdr does not pass `?2004h` through in its
+  frames** (only `?25` and `?2026` appeared, at a zsh prompt that sets it). The
+  phone cannot tell, so line breaks become spaces. A multi-line field would
+  need that signal, or a guess.
+- **An empty field sends nothing.** A bare Enter commits an agent's dialog; it
+  has its own key on the bottom row.
+- The draft is cleared only if there was a live stream to send it on. That
+  is a check, not an acknowledgement: a stream that reopens or dies between
+  the tap and the write still loses the line, or types it without its Enter.
+- **The field is a `UITextField` (`PaneLineField`), because SwiftUI cannot turn
+  Smart Punctuation off.** Caught in review before a device saw it: it is on by
+  default and rewrites `--oneline` to `—oneline` and `"fix"` to curly quotes a
+  shell reads as letters, so the line that ran would not be the line typed.
+  Autocorrect stays — it offers, where smart punctuation substitutes. Return
+  answers false from `textFieldShouldReturn`, so the keyboard never drops
+  between lines; a SwiftUI field gives up focus on Return, and a keyboard that
+  hides posts the `keyboardDidHide` that thaws the grid.
+
+**The shortcuts**, in `PaneShortcut.all`: `⌃C`, `⌃C ⌃C`, `tab`, `⇧tab`, `⌃R`,
+`⌃O`, `⌃U`, `⌃L`, `⌃D`.
+
+- **`⌃C ⌃C` exits Claude Code**, measured: two `0x03`, 300ms apart, took an idle
+  one back to the shell and printed its resume line. One tap, drawn red, no
+  confirmation — being one tap is what it is for. Not measured: two in one
+  write, and a Claude Code that is mid-turn, where the first Ctrl-C may be
+  spent on the turn.
+- `⇧tab` is `ESC [ Z`; in Claude Code it cycles the permission mode. `⌃O`
+  expands folded output there. Neither was put on the wire.
+- **No herdr shortcuts, and that is a guess about where input lands.** herdr's
+  keybindings belong to its terminal UI; this stream's input is believed to go
+  past that to the pane's pty, so a prefix key would arrive at the shell as a
+  control character. Not measured.
+
+**The bubble is one height whatever it holds**, because it is in a safe-area
+bar and its height is therefore the grid (see the `PaneSurface` note on the
+spinner loop). The top row's height is fixed on the container, not on either
+row, and the field is a single line that does not grow.
+`PaneGeometryTests.accessoryHeightIsConstant` pins all three states. The
+bubble is one row taller than the bar it replaced, so a pane on a phone has a
+couple of rows fewer than it did.
+
+**The field's keyboard freezes the grid too.** `wantsKeyboard` was the only
+keyboard on this screen and the freeze hung off it; the field raises one the
+terminal never asked for. `PaneTerminalController` now also freezes on
+`keyboardWillShow` — `will`, so the size is held before the first frame of the
+animation — and counts the keyboard as up from then, so nothing thaws it on the
+way in. `PaneGeometryTests.anotherKeyboardFreezesTheGrid`.
+
+**One keyboard, one owner.** Focusing the field clears `wantsKeyboard`, or the
+terminal takes first responder back on its next update. Switching to chat drops
+the field's focus, for the reason it clears `wantsKeyboard`: the surface stays
+mounted at `opacity(0)`, which resigns nothing.
+
+**Not yet seen on a device**: the look of the bubble, and whether `keyboardWillShow` arrives before SwiftUI lays the
+surface out shorter — the test posts the notification by hand.
 
 ## An agent over SSH cannot read the login keychain — out of scope (settled 12 Sept 2026)
 

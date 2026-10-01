@@ -12,6 +12,10 @@ import Foundation
 /// *before sending any input*. Keys are the only thing that moves such a
 /// dialog.
 ///
+/// And for the things a phone's keyboard has no key for: Tab, and the control
+/// characters a shell and an agent are steered with. Ctrl-C twice is how
+/// Claude Code is told to exit — measured, 1 Oct 2026.
+///
 /// `TerminalCommand.bytes` carries them, because `text` cannot express an
 /// escape sequence — a raw ESC inside a JSON string is not valid JSON, and the
 /// host would ignore the record.
@@ -22,6 +26,22 @@ public enum TerminalKey: Sendable, CaseIterable {
     case right
     case escape
     case enter
+    case tab
+    /// Shift-Tab. Completion backwards in a shell; in Claude Code it cycles
+    /// the permission mode.
+    case backTab
+    /// Interrupt.
+    case controlC
+    /// End of input: closes a shell at an empty prompt.
+    case controlD
+    /// Redraw, or clear the screen.
+    case controlL
+    /// Claude Code's "expand" for the output it has folded away.
+    case controlO
+    /// Search history, in a shell and in Claude Code alike.
+    case controlR
+    /// Discard the line typed so far.
+    case controlU
 
     public var bytes: Data {
         switch self {
@@ -51,6 +71,17 @@ public enum TerminalKey: Sendable, CaseIterable {
         // usually wants CR and an Ink-based one — which Claude Code is — treats
         // LF as a newline in the composer rather than a submit.
         case .enter: Data([0x0D])
+        case .tab: Data([0x09])
+        // The xterm form, `CSI Z`. There is no control character for it: Tab
+        // is 0x09 and Shift does not change that.
+        case .backTab: Data([0x1B, 0x5B, 0x5A])         // ESC [ Z
+        // A control character is its letter with the top three bits cleared.
+        case .controlC: Data([0x03])
+        case .controlD: Data([0x04])
+        case .controlL: Data([0x0C])
+        case .controlO: Data([0x0F])
+        case .controlR: Data([0x12])
+        case .controlU: Data([0x15])
         }
     }
 }

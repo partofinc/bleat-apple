@@ -193,9 +193,32 @@ final class PaneTerminalController: UIViewController {
             name: UIResponder.keyboardDidShowNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillShow),
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
     }
 
     @objc private func keyboardDidShow() { keyboardIsUp = true }
+
+    /// Freezes the grid for a keyboard this terminal did not ask for.
+    ///
+    /// **`wantsKeyboard` is not the only keyboard on this screen any more.**
+    /// The text field in `PaneKeyBar` raises one too, and it takes the same
+    /// half of the screen — so without this, tapping the field would resize
+    /// the pane exactly as typing into the terminal once did. `willShow`
+    /// rather than `didShow`, for the reason `wantsKeyboard` freezes before it
+    /// takes first responder: the size has to be held before the first frame
+    /// of the animation lays this view out shorter.
+    ///
+    /// Counted as up from here, too, so nothing thaws it on the way in.
+    @objc private func keyboardWillShow() {
+        keyboardIsUp = true
+        guard frozen == nil, terminalView.frame.width > 0 else { return }
+        frozen = terminalView.frame.size
+    }
 
     @objc private func keyboardDidHide() {
         keyboardIsUp = false
@@ -217,7 +240,7 @@ final class PaneTerminalController: UIViewController {
         view.setNeedsLayout()
     }
 
-    /// Whether a software keyboard is actually on screen.
+    /// Whether a software keyboard is on screen, or on its way there.
     private var keyboardIsUp = false
 
     override func viewDidLayoutSubviews() {

@@ -258,6 +258,27 @@ final class PaneModel {
         await send(bytes: key.bytes)
     }
 
+    /// Presses several keys in a row, a pause apart.
+    ///
+    /// For a shortcut that is the same key twice — Ctrl-C, Ctrl-C is how
+    /// Claude Code is told to exit. **The pause is what was measured**, not
+    /// known to be needed: 300ms apart exited it, and two in one write was not
+    /// tried.
+    func send(_ keys: [TerminalKey], spacedBy pause: Duration) async {
+        for (index, key) in keys.enumerated() {
+            if index > 0 { try? await Task.sleep(for: pause) }
+            await send(key)
+        }
+    }
+
+    /// Types a composed line into the pane and presses Enter.
+    ///
+    /// Queued as one batch, so nothing else typed can land between the text
+    /// and its Enter. See `SubmittedLine` for what was measured.
+    func submit(_ line: SubmittedLine) async {
+        await send(line.commands)
+    }
+
     /// Scrolls the pane by `notches` wheel notches.
     ///
     /// **`terminal.scroll`, never wheel bytes, and herdr decides what it

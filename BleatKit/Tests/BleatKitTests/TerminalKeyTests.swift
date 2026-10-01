@@ -59,6 +59,21 @@ struct TerminalKeyTests {
         #expect(TerminalKey.enter.bytes != Data([0x0A]))
     }
 
+    /// The keys a phone's keyboard does not have. Ctrl-C is the one that was
+    /// put on the wire: two of them, 300ms apart, exited Claude Code on a
+    /// scratch session on 1 Oct 2026.
+    @Test("tab and the control characters are their own bytes")
+    func controls() {
+        #expect(TerminalKey.tab.bytes == Data([0x09]))
+        #expect(TerminalKey.backTab.bytes == Data("\u{1B}[Z".utf8))
+        #expect(TerminalKey.controlC.bytes == Data([0x03]))
+        #expect(TerminalKey.controlD.bytes == Data([0x04]))
+        #expect(TerminalKey.controlL.bytes == Data([0x0C]))
+        #expect(TerminalKey.controlO.bytes == Data([0x0F]))
+        #expect(TerminalKey.controlR.bytes == Data([0x12]))
+        #expect(TerminalKey.controlU.bytes == Data([0x15]))
+    }
+
     /// Every key has to survive the encoding, not just the two that had tests.
     @Test("no key is empty, and all of them encode", arguments: TerminalKey.allCases)
     func allEncode(_ key: TerminalKey) throws {

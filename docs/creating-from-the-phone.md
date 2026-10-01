@@ -954,6 +954,7 @@ so a shell had no row and no route; and the only button on it was Start Agent.
   terminal row has nothing else to show and the tap is the ask — but it is why
   the list only lists, and why nothing here opens a pane the user did not name.
 - **Opening a terminal row takes the pane**, as every terminal does since 1 Oct
-  2026 — see **The terminal always holds the pane**. herdr allows one input
+  2026 — see **The terminal always holds the pane** in
+  [`pane-view.md`](pane-view.md). herdr allows one input
   owner and a `control` attach that is not a takeover is silently inert, so
   there is no way to type into a shell without becoming it.

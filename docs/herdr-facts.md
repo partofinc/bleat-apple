@@ -85,7 +85,8 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
   must be captured empirically into `Fixtures/`.
 - `pane read` caps at ~1000 lines (undocumented). Don't build history views on
   it — and for an agent pane there is nothing to build one *from*; see
-  **An agent pane has no scrollback, at all** below. Its `--source` takes
+  **Scrollback: measured properly** in [`pane-view.md`](pane-view.md). Its
+  `--source` takes
   `visible`, `recent`, `recent-unwrapped` or `detection`, and
   `recent-unwrapped` is the one worth knowing: the buffer without the host's
   wrapping, which is the only form that can be reflowed to a phone.

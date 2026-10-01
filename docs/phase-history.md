@@ -13,7 +13,8 @@ The host printed `Paired.`
 **Screens verified on device, 6 Sept 2026.** Hosts → session → workspaces →
 agents → pane, all live against the `work` session. The pane renders at the
 pane's own grid and pans, so nothing is cropped — the sizing problem that held
-this gate open is settled; see **`--cols` crops** below. Unpairing revokes the
+this gate open is settled; see **`--cols` crops** in
+[`pane-view.md`](pane-view.md). Unpairing revokes the
 device key from the host, and `bleat keys` can see and remove one from the Mac
 side.
 
@@ -31,8 +32,9 @@ made Tailscale work was `ifconfig`: the tunnel's `utun` interface holds the
 addresses and they pass every filter, and `Endpoint.reach` classifies them.
 
 The CLI **is** consulted now, for the one thing no interface carries — the
-MagicDNS name. See the endpoint list under **A peer is a host key, not an
-address**. `bleat inspect` on this Mac with the tunnel up:
+MagicDNS name. See the endpoint list in [`pairing.md`](pairing.md), under
+**A peer is a host key, not an address**. `bleat inspect` on this Mac with the
+tunnel up:
 
 ```
 rawillkair.local                           lan       — same network only
@@ -82,10 +84,10 @@ push notifications, watchOS, Live Activities, multi-account badges.
   Verified 5 Sept 2026 against a scratch `HOME`, including the fingerprints
   matching `ssh-keygen -lf` exactly — that equality is the whole point, since
   comparing the two by eye is how a user identifies which phone a key belongs
-  to. See **`bleat keys`** below.
+  to. See **`bleat keys`** in [`console-tool.md`](console-tool.md).
 - **The phone's side is done too.** Unpairing revokes over the connection it
   still has and drops the record only once the key is gone; when it cannot, it
   shows the command that finishes the job before offering to forget the record
-  that names it. See **Unpairing** below. Verified end to end against a
-  throwaway sshd on 5 Sept 2026, including that the revoked key stops
-  authenticating.
+  that names it. See **Unpairing** in [`pairing.md`](pairing.md). Verified end
+  to end against a throwaway sshd on 5 Sept 2026, including that the revoked
+  key stops authenticating.

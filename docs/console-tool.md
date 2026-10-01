@@ -33,7 +33,7 @@ bleat pair [--endpoint HOST[:PORT]]...   # add endpoints detection cannot find
 
 Checks that `herdr` is installed and resolvable, enumerates endpoints, mints the
 single-use enrollment key, renders the QR in the terminal, and waits for the
-phone to swap in its own key. See **Pairing and peer identity** for the rules
+phone to swap in its own key. See [`pairing.md`](pairing.md) for the rules
 that govern it — they are settled, not per-PR decisions.
 
 The QR must be rendered so it does not persist: draw it in the alternate screen

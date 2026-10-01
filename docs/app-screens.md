@@ -313,7 +313,8 @@ the rest is `PeerSettingsView` behind the gear.
   drawn on top of the scrim and still tappable. The scrim is the only way out
   and is **inert while the launch is in flight**, for the reason the pairing
   sheet cannot be dismissed mid-swap: this is the only place the outcome is
-  reported. See **Starting a session** above for the command.
+  reported. See **Starting a session** in
+  [`creating-from-the-phone.md`](creating-from-the-phone.md) for the command.
 - **The gear zooms.** `matchedTransitionSource` on the gear, `.zoom` on the
   sheet, keyed by host key so it grows out of the gear for *that* host. The
   namespace cannot be local: the sheet is presented at the root and the gear is

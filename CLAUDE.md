@@ -250,8 +250,9 @@ host's own bytes instead of a synthesised sibling. The reply also carries a
 first real exercise of "unknown keys are ignored, never fatal" on this command.
 
 Resolved (7 Sept 2026): **`blocked` and `done` agent rows**, and with them what
-`done` actually means — see the agent-state bullets under **Herdr facts**. The
-sort order recorded there was wrong and has been corrected.
+`done` actually means — see the agent-state bullets in
+[`docs/herdr-facts.md`](docs/herdr-facts.md). The sort order recorded there was
+wrong and has been corrected.
 
 Resolved (6 Sept 2026): `observe` ignores `terminal.scroll`, so there is no
 host-side scrollback for a reader; and `agent prompt --wait` is documented on the

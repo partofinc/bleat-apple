@@ -201,7 +201,8 @@ first thing to run when pairing misbehaves.
 ## Displaying the QR
 
 `CIQRCodeGenerator` on macOS and `QREncoder` on Linux (see **The console tool
-builds for Linux**). `QRMatrix` and its renderer are in `BleatKit` and shared.
+builds for Linux** in [`repository-layout.md`](repository-layout.md)).
+`QRMatrix` and its renderer are in `BleatKit` and shared.
 
 - **Draw on the alternate screen** (`\e[?1049h`), never the normal one. A QR on
   the normal screen stays in scrollback, which iTerm2 persists to disk and tmux

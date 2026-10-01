@@ -4,10 +4,11 @@ import SwiftUI
 
 /// Where a line is composed before it goes to the pane.
 ///
-/// An ordinary text field, so everything the system keyboard does works —
-/// autocorrect, dictation, the cursor under a finger — none of which a
-/// terminal offers. Nothing reaches the pane until it is sent, and then the
-/// whole line goes at once with Enter after it. See `SubmittedLine`.
+/// A real text field, so what the system keyboard does works — autocorrect,
+/// dictation, the cursor under a finger — none of which a terminal offers.
+/// Nothing reaches the pane until it is sent, and then the whole line goes at
+/// once with Enter after it. See `SubmittedLine`, and `PaneLineField` for why
+/// the field itself is UIKit's.
 ///
 /// **One line, at a fixed height.** This row is in a safe-area bar, and the
 /// bar's height is the terminal's height, which is the pane's size on
@@ -16,25 +17,19 @@ import SwiftUI
 struct PaneInputField: View {
     let model: PaneModel
     @Binding var draft: String
-    var isFocused: FocusState<Bool>.Binding
+    @Binding var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            TextField("Type a line to send", text: $draft)
-                .focused(isFocused)
-                // What is typed here is as often a command as a sentence, and
-                // a capital on `ls` is a command that does not exist.
-                .textInputAutocapitalization(.never)
-                .submitLabel(.send)
-                .onSubmit {
-                    send()
-                    // Return gives up focus, and a keyboard that drops after
-                    // every line makes a conversation of several a chore.
-                    isFocused.wrappedValue = true
-                }
-                .padding(.horizontal, 12)
-                .frame(maxHeight: .infinity)
-                .background(.fill.tertiary, in: .capsule)
+            PaneLineField(
+                placeholder: "Type a line to send",
+                text: $draft,
+                isFocused: $isFocused,
+                onSubmit: send
+            )
+            .padding(.horizontal, 12)
+            .frame(maxHeight: .infinity)
+            .background(.fill.tertiary, in: .capsule)
 
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -56,15 +51,17 @@ struct PaneInputField: View {
     private var canSend: Bool { line != nil && model.phase == .live }
 
     private func send() {
-        // **The draft is kept unless it went.** With no stream the model drops
-        // input, and a line that vanished from the field without arriving
-        // anywhere is the worst of both.
+        // **Kept when there is plainly nowhere to send it**, since the model
+        // drops input with no stream. That is as far as the promise goes: the
+        // line is queued, not acknowledged, so a stream that reopens or dies
+        // in the moment between here and the write still loses it — or types
+        // it without its Enter. Rare, visible in the pane, and not something
+        // this layer can know.
         guard canSend, let line else { return }
         draft = ""
         Task { await model.submit(line) }
     }
 }
 
-// No `#Preview` of its own: it needs a `FocusState` from a parent, and
-// `PaneKeyBar` previews it in place.
+// No `#Preview` of its own: `PaneKeyBar` previews it in place.
 #endif

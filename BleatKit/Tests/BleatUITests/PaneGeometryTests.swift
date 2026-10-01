@@ -284,6 +284,38 @@ struct PaneGeometryTests {
         #expect(height(.input, typingInPane: true) == field)
     }
 
+    /// **What is typed is what is sent.** Smart Punctuation is on by default
+    /// and rewrites the characters a command is made of — `--oneline` to an em
+    /// dash, straight quotes to curly ones — and SwiftUI's `TextField` has no
+    /// way to turn it off, which is why the field is UIKit's. This reads the
+    /// real field out of the laid-out accessory, so swapping it back for a
+    /// SwiftUI one fails here rather than on someone's shell.
+    @Test("the text field does not rewrite dashes or quotes")
+    func fieldLeavesPunctuationAlone() throws {
+        let key = "pane.accessoryMode"
+        let saved = UserDefaults.standard.string(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+        UserDefaults.standard.set(PaneAccessoryMode.input.rawValue, forKey: key)
+
+        let host = UIHostingController(
+            rootView: PaneKeyBar(model: PaneModel(previewing: .live), isActive: true)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 200))
+        window.rootViewController = host
+        window.isHidden = false
+        window.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        func find(_ view: UIView) -> UITextField? {
+            if let field = view as? UITextField { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let field = try #require(find(host.view), "the accessory has no UIKit text field")
+        #expect(field.smartDashesType == .no)
+        #expect(field.smartQuotesType == .no)
+        #expect(field.autocapitalizationType == .none)
+    }
+
     /// **`keyboardDidHide` cannot be the only way out of the freeze.** With a
     /// hardware keyboard attached no software keyboard appears, so the
     /// notification never arrives — and SwiftTerm's accessory bar, which might

@@ -855,7 +855,17 @@ real `terminal session control --takeover`:
   need that signal, or a guess.
 - **An empty field sends nothing.** A bare Enter commits an agent's dialog; it
   has its own key on the bottom row.
-- The draft is cleared only if there was a live stream to send it on.
+- The draft is cleared only if there was a live stream to send it on. That
+  is a check, not an acknowledgement: a stream that reopens or dies between
+  the tap and the write still loses the line, or types it without its Enter.
+- **The field is a `UITextField` (`PaneLineField`), because SwiftUI cannot turn
+  Smart Punctuation off.** Caught in review before a device saw it: it is on by
+  default and rewrites `--oneline` to `—oneline` and `"fix"` to curly quotes a
+  shell reads as letters, so the line that ran would not be the line typed.
+  Autocorrect stays — it offers, where smart punctuation substitutes. Return
+  answers false from `textFieldShouldReturn`, so the keyboard never drops
+  between lines; a SwiftUI field gives up focus on Return, and a keyboard that
+  hides posts the `keyboardDidHide` that thaws the grid.
 
 **The shortcuts**, in `PaneShortcut.all`: `⌃C`, `⌃C ⌃C`, `tab`, `⇧tab`, `⌃R`,
 `⌃O`, `⌃U`, `⌃L`, `⌃D`.
@@ -892,8 +902,7 @@ terminal takes first responder back on its next update. Switching to chat drops
 the field's focus, for the reason it clears `wantsKeyboard`: the surface stays
 mounted at `opacity(0)`, which resigns nothing.
 
-**Not yet seen on a device**: the look of the bubble, the keyboard staying up
-after a send, and whether `keyboardWillShow` arrives before SwiftUI lays the
+**Not yet seen on a device**: the look of the bubble, and whether `keyboardWillShow` arrives before SwiftUI lays the
 surface out shorter — the test posts the notification by hand.
 
 ## An agent over SSH cannot read the login keychain — out of scope (settled 12 Sept 2026)

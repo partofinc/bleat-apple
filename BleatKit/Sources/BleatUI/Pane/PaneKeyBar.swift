@@ -43,7 +43,9 @@ struct PaneKeyBar: View {
     /// Held here rather than by the field, so a line half typed survives a
     /// look at the shortcuts.
     @State private var draft = ""
-    @FocusState private var isComposing: Bool
+    /// Whether the field has the keyboard. Plain state rather than
+    /// `@FocusState`: the field is UIKit's — see `PaneLineField`.
+    @State private var isComposing = false
 
     var body: some View {
         VStack(spacing: 6) {

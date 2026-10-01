@@ -28,6 +28,10 @@ final class PaneTerminalController: UIViewController {
     /// the host for" and "what the stream is being rendered at" — they are the
     /// same number now, which is why there is one callback instead of two.
     var onSize: ((TerminalGrid) -> Void)?
+    /// How tall the terminal draws a row, alongside every size report. Not
+    /// part of `onSize` because it is not a size anything is asked for: it is
+    /// only what the scroll gesture measures a finger against.
+    var onRowHeight: ((CGFloat) -> Void)?
     /// Called once, with the view ready to be fed.
     var onReady: ((TerminalView) -> Void)?
     /// What the keyboard produced, byte for byte, on its way to the host.
@@ -249,11 +253,29 @@ final class PaneTerminalController: UIViewController {
 
         let terminal = terminalView.getTerminal()
         if isActive { report(TerminalGrid(cols: terminal.cols, rows: terminal.rows)) }
+        // The terminal's own figure. It was `view.bounds` over the rows, and
+        // under the keyboard the bounds halve while the rows are frozen — which
+        // is what made a drag scroll twice too fast while typing.
+        onRowHeight?(rowHeight)
 
         if !announced {
             announced = true
             onReady?(terminalView)
         }
+    }
+
+    /// The height SwiftTerm draws a row at.
+    ///
+    /// **Recomputed, because SwiftTerm keeps its own internal** — this is
+    /// `computeFontDimensions`, line for line: the font's ascent, descent and
+    /// leading, rounded up. The frame's height over the row count is not the
+    /// same number: SwiftTerm takes `Int(height / cellHeight)` rows and leaves
+    /// the remainder as a strip at the bottom, so that quotient is a fraction
+    /// of a point too large. If SwiftTerm's line spacing is ever changed from
+    /// its default of 1, this has to follow.
+    private var rowHeight: CGFloat {
+        let font = terminalView.font as CTFont
+        return ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))
     }
 
     /// Read by `BleatUITests` to check the terminal really fills its view —

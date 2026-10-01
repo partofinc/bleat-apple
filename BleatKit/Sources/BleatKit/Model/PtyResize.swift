@@ -45,8 +45,8 @@ public enum PtyResize {
         // caller — but then the caller could not tell a resize from a no-op
         // either, and reported every pane as resized. A pane with no tty, a
         // denied `stty`, and a Linux host (whose `stty` wants `-F`, not `-f`)
-        // all counted as success, which silently disabled the badge that exists
-        // to say output is being cut off. Both spellings are tried, so this
+        // all counted as success, so a pane still at the Mac's width was
+        // rendered as if it had been narrowed. Both spellings are tried, so this
         // works on the Linux hosts the console tool already plans for.
         return """
             t=$(ps -o tty= -p \(pid) 2>/dev/null | tr -d ' '); \

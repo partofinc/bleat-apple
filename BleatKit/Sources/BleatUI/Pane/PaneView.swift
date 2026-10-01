@@ -186,8 +186,8 @@ struct PaneView: View {
 }
 
 /// The terminal mounts SwiftTerm and, in a canvas, has no stream feeding it —
-/// so what this shows is the chrome around an empty grid: the badge, the
-/// scroll keys, the key bar and the mode picker.
+/// so what this shows is the chrome around an empty grid: the key bar and the
+/// mode picker.
 #Preview("Terminal", traits: .sampleData) {
     NavigationStack {
         PaneView(peer: .preview, title: "w2:p1", mode: .terminal)

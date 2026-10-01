@@ -77,8 +77,14 @@ struct PeerDetailView: View {
             empty: "No sessions yet. Start one with the button below.",
             retry: { await sessions.load(for: peer) }
         ) { list in
-            ForEach(list) { session in
-                SessionLink(peer: peer, session: session, control: control)
+            // Only over rows, as on the agents screen: a heading above the
+            // empty state reads as a list that failed to load.
+            if !list.isEmpty {
+                Section("Sessions") {
+                    ForEach(list) { session in
+                        SessionLink(peer: peer, session: session, control: control)
+                    }
+                }
             }
         }
         .navigationTitle(peer.name)
@@ -122,17 +128,11 @@ struct PeerDetailView: View {
     }
 
     #if os(iOS)
+    /// **The plus is on the trailing side on every screen that has one** —
+    /// here, the session's and the workspace's — so the thumb finds it in one
+    /// place all the way down the drill-down. Settings takes the other corner.
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) {
-            Button("Add Session", systemImage: "plus") {
-                // Whatever the last attempt said is not about this one.
-                newSession.clearFailure()
-                isNaming = true
-            }
-            .buttonStyle(.glassProminent)
-        }
-        ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             // Through the router rather than a local `@State` sheet: the peer
             // list behind this screen opens the same settings from a swipe, and
@@ -142,6 +142,15 @@ struct PeerDetailView: View {
                 context.peerSettings.show(peer)
             }
             .matchedZoomSource(peer.hostKey, in: settingsNamespace)
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            Button("Add Session", systemImage: "plus") {
+                // Whatever the last attempt said is not about this one.
+                newSession.clearFailure()
+                isNaming = true
+            }
+            .buttonStyle(.glassProminent)
         }
     }
     #endif

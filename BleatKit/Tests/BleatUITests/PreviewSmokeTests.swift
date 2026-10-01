@@ -381,7 +381,8 @@ struct PreviewSmokeTests {
         let context = sampleContext()
         // The session screen with its bar in each state: ours and running,
         // ours and stopped, and one this install did not start — which now
-        // carries the same Stop as our own, and a longer confirmation. These also exercise the screen
+        // carries the same Stop as our own, and a longer confirmation. These
+        // also exercise the screen
         // reading `AppContext` for the router it pops with; a version that
         // reached for a `NavigationRouter` in the environment compiled and
         // trapped here.
@@ -518,6 +519,44 @@ struct PreviewSmokeTests {
             advice: .check(deviceMarker: nil, deviceFingerprint: "SHA256:abc")
         ))))
         #expect(context.connections.endpoint == nil)
+    }
+
+    /// **A bar button's question opens out of that button.**
+    ///
+    /// On iOS 26 a confirmation dialog grows from the view it is attached to,
+    /// so where the modifier sits is the whole of the behaviour — and it is
+    /// invisible in a diff: attached to the screen instead, everything still
+    /// compiles, still asks, and appears from nowhere near the finger. UIKit
+    /// says which it was. The dialog is a popover, and its source is either a
+    /// bar button item or it is not.
+    ///
+    /// Delete is the case that pins *which* button: it shares the bar with
+    /// Start, and a dialog that hung off the bar rather than off its own
+    /// button would open from the wrong corner.
+    @Test("a bar button's confirmation is presented from that button", arguments: [
+        (SessionControlModel.Action.stop, true),
+        (SessionControlModel.Action.delete, false),
+    ])
+    func barDialogSource(action: SessionControlModel.Action, running: Bool) async {
+        let context = sampleContext()
+        let info = SessionInfo(name: "work", running: running, isDefault: false)
+        let window = render(context, NavigationStack {
+            WorkspacesView(
+                peer: .previewOwningSessions, session: "work",
+                previewing: .loaded(Workspace.samples),
+                status: info, control: .confirming(action, info)
+            )
+        })
+        // A presentation is not synchronous with the layout pass that asks
+        // for it.
+        var presented: UIViewController?
+        for _ in 0..<40 where presented == nil {
+            try? await Task.sleep(for: .milliseconds(50))
+            presented = window.rootViewController?.presentedViewController
+        }
+        #expect(presented?.title == "\(action.title) work?")
+        let source = presented?.popoverPresentationController?.sourceItem as? UIBarButtonItem
+        #expect(source?.title == action.title, "the dialog was not presented from its own button")
     }
 
     /// **The settings sheet must be gone before the unpair starts.**

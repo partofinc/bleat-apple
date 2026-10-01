@@ -1,7 +1,9 @@
 import BleatKit
 import SwiftUI
 
-/// The confirmation a swipe reaches, and the explanation if the host refuses.
+/// What a session action needs from its screen: the confirmation a swipe
+/// reaches, the reload once something happened, and the explanation if the host
+/// refuses.
 ///
 /// Attached once to the sessions screen rather than to each row, for the reason
 /// `UnpairFlow` is attached to the stack: a `confirmationDialog` per row is one
@@ -14,10 +16,15 @@ import SwiftUI
 /// nothing at the Mac saying who did it, and since Stop stopped being gated on
 /// `startedHere` there is no second guard behind this one. So the message names
 /// the session, says what goes with it and says whose it is, rather than asking
-/// "are you sure?" about a verb.
+/// "are you sure?" about a verb. The dialog itself is `SessionConfirmation`.
 struct SessionControlFlow: ViewModifier {
     let control: SessionControlModel
     let peer: PairedPeer
+    /// Whether the screen asks the question itself. True for a list, whose
+    /// swipes have nothing else to ask from; false where the actions are
+    /// toolbar buttons, each of which carries its own `sessionConfirmation` so
+    /// the dialog opens out of the button that was tapped.
+    let confirmsHere: Bool
     /// Run after something actually happened, so the screen reflects it. Takes
     /// the action because the right answer differs: a list refreshes, while the
     /// screen *inside* a session it has just deleted has to leave.
@@ -25,7 +32,7 @@ struct SessionControlFlow: ViewModifier {
 
     func body(content: Content) -> some View {
         @Bindable var control = control
-        content
+        confirming(content)
             // Installed once, for every way an action can start. Assigned here
             // rather than passed to each call site because there are two of
             // those — the dialog's button and a button that needs no dialog —
@@ -36,27 +43,6 @@ struct SessionControlFlow: ViewModifier {
             // holds `reload` — a cycle that leaks a model and everything it
             // captured on every push. Re-installed on the way back in.
             .onDisappear { control.onCompleted = nil }
-            .confirmationDialog(
-                title, isPresented: $control.isConfirming, titleVisibility: .visible
-            ) {
-                // **Captured here, not read back when the task runs.**
-                // SwiftUI clears `isPresented` before running this action, and
-                // that write resets the model's phase — so reading the pending
-                // action inside the closure finds nothing armed and the tap
-                // does nothing, silently. `UnpairFlow` captures its peer for
-                // the same reason.
-                if let pending = control.pending {
-                    Button(pending.action.title, role: .destructive) {
-                        // No reload here: `perform` calls `onCompleted` itself,
-                        // so this path and the one that raises no dialog end
-                        // the same way.
-                        Task { await control.perform(pending.action, about: pending.session, on: peer) }
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(message)
-            }
             // An alert rather than a line under the list: the row is still
             // there but says nothing about a refusal, and the commonest cause
             // — the session being in a state herdr will not do this from —
@@ -71,31 +57,31 @@ struct SessionControlFlow: ViewModifier {
             }
     }
 
-    private var title: String {
-        guard let pending = control.pending else { return "" }
-        return "\(pending.action.title) \(pending.session.name)?"
-    }
-
-    /// **The wording lives on the model, not here.** Stop is offered for every
-    /// running session now, so what this says is the safety story rather than a
-    /// label for it — and a `private var` on a view modifier is something no
-    /// test can read. See `SessionControlModel.confirmation(for:about:on:)`.
-    private var message: String {
-        guard let pending = control.pending else { return "" }
-        return SessionControlModel.confirmation(
-            for: pending.action, about: pending.session, on: peer
-        )
+    /// A branch that cannot flip: `confirmsHere` is fixed by the call site, so
+    /// the `_ConditionalContent` this builds keeps one identity for the life of
+    /// the screen.
+    @ViewBuilder
+    private func confirming(_ content: Content) -> some View {
+        if confirmsHere {
+            content.sessionConfirmation(control, on: peer)
+        } else {
+            content
+        }
     }
 }
 
 extension View {
-    /// Confirms and reports the stop and delete actions for one screen's rows.
+    /// Reports the start, stop and delete actions for one screen, and confirms
+    /// them unless its buttons do that themselves.
     func sessionControl(
         _ control: SessionControlModel,
         on peer: PairedPeer,
+        confirmsHere: Bool = true,
         reload: @escaping (SessionControlModel.Action) async -> Void
     ) -> some View {
-        modifier(SessionControlFlow(control: control, peer: peer, reload: reload))
+        modifier(SessionControlFlow(
+            control: control, peer: peer, confirmsHere: confirmsHere, reload: reload
+        ))
     }
 }
 

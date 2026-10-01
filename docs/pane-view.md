@@ -475,7 +475,8 @@ What the app does with it:
   - **That height is recomputed from the font, not divided out of the frame.**
     SwiftTerm's `cellDimension` is internal. It takes `Int(height /
     cellHeight)` rows and leaves the remainder as a strip at the bottom, so
-    `frame.height / rows` is a fraction of a point too large, and a drag would run that much ahead of the finger.
+    `frame.height / rows` is a fraction of a point too large — caught in
+    review, where it put the keyboard anchor between rows and between pixels.
     `PaneTerminalController.rowHeight` repeats `computeFontDimensions`:
     `ceil(ascent + descent + leading)`. It assumes SwiftTerm's default line
     spacing of 1.
@@ -708,10 +709,29 @@ disabling the fix: **one show/hide round trip reports three grids** — three
 stream reopens and three writes to the host.
 
 So the grid is **frozen** and the terminal is **translated, not resized**: it
-keeps its full frozen height with its bottom pinned above the keyboard and its
-top clipped by the view (`clipsToBounds`). The grid never changes, nothing is
-written to the host, and what stays on screen is the bottom of the pane — the
-prompt and the input line, which is what is being typed into.
+keeps its full frozen height, slides up under the navigation bar, and has its
+top clipped by the view (`clipsToBounds`). The grid never changes and nothing
+is written to the host.
+
+- **It slides only as far as the last row in use (1 Oct 2026).** It used to be
+  pinned by its bottom edge, always, on the reasoning that the bottom of a pane
+  is its input line. True of an agent; false of a shell, whose prompt is
+  wherever its output has got to. A shell with three lines in it had its
+  prompt slid off the top of the screen by the keyboard raised to type into
+  it. `KeyboardAnchor.offset` now lifts the terminal just far enough to clear
+  the lowest row that is the cursor's or has something drawn on it, plus one
+  row of margin, in whole rows, and never past the old bottom-pinned position.
+  - **Cursor and content, because neither is enough alone.** An empty prompt
+    has only a cursor; an agent may park or hide its cursor anywhere above
+    its status lines, and what marks the bottom of its screen is the last row
+    it drew. A screen drawn to the bottom therefore behaves exactly as before.
+  - "Drawn" means a visible character: herdr paints blank cells as spaces as
+    readily as it skips them.
+  - It follows output: `rangeChanged` asks for a layout pass when the anchor
+    has moved, so a command that prints ten lines takes the terminal ten rows
+    up with its prompt. Only the origin changes — nothing is reported.
+  - Pinned by `KeyboardAnchorTests` and three cases in `PaneGeometryTests`.
+    **Not yet seen against a real shell on a device.**
 
 - **Frozen before the keyboard animates in, thawed on `keyboardDidHide`.**
   Not `willHide`: unfreezing on the way down reports a grid per frame of the

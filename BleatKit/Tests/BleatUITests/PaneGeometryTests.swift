@@ -126,6 +126,76 @@ struct PaneGeometryTests {
         )
     }
 
+    /// **A shell's prompt must stay on screen under the keyboard.** The frozen
+    /// terminal used to be pinned by its bottom edge, which suits an agent —
+    /// its input box is the last thing it draws — and slid a shell with three
+    /// lines in it clean off the top, prompt included.
+    @Test("a prompt near the top stays put when the keyboard comes up")
+    func keyboardKeepsAShortShellOnScreen() {
+        let controller = PaneTerminalController()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        controller.feedForTesting(Data("\u{1B}[1;1H$ ls\u{1B}[2;1Hfile\u{1B}[3;1H$ ".utf8))
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+
+        #expect(controller.terminalOriginForTesting == 0, "the prompt was slid off the top")
+        #expect(controller.terminalFrameForTesting.height == 700)
+    }
+
+    /// The case the old rule was right about: a screen drawn to the bottom.
+    @Test("a full screen is pinned by its bottom edge")
+    func keyboardPinsAFullScreenToTheBottom() {
+        let controller = PaneTerminalController()
+        var grid: TerminalGrid?
+        controller.onSize = { grid = $0 }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        let rows = grid?.rows ?? 0
+        #expect(rows > 0)
+        // An agent's status line: something on the very last row, with the
+        // cursor parked well above it.
+        controller.feedForTesting(Data("\u{1B}[\(rows);1Hstatus\u{1B}[5;1H".utf8))
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+
+        // Within a pixel: UIKit stores the frame as a centre and bounds, and
+        // the origin read back is not bit-for-bit the one that was set.
+        #expect(abs(controller.terminalOriginForTesting - (380 - 700)) < 0.5)
+    }
+
+    /// Output moves the prompt down, and the terminal has to follow it.
+    @Test("the terminal follows the prompt as output pushes it down")
+    func keyboardFollowsThePrompt() {
+        let controller = PaneTerminalController()
+        var grid: TerminalGrid?
+        controller.onSize = { grid = $0 }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        let rows = grid?.rows ?? 0
+        controller.feedForTesting(Data("\u{1B}[1;1H$ ".utf8))
+
+        controller.wantsKeyboard = true
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+        #expect(controller.terminalOriginForTesting == 0)
+
+        // The prompt, now most of the way down the pane.
+        controller.feedForTesting(Data("\u{1B}[\(rows - 4);1H$ ".utf8))
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        let y = controller.terminalOriginForTesting
+        #expect(y < 0, "the prompt went under the keyboard and the terminal stayed put")
+        #expect(y > 380 - 700, "it moved further than the prompt needed")
+        // Whole points, so the text is not drawn between pixels.
+        #expect(abs(y - y.rounded()) < 0.01, "the terminal sits at a fractional offset: \(y)")
+    }
+
     /// And the way back down reports nothing either — which is the half that is
     /// easy to get wrong. Unfreezing on `willHide` rather than `didHide` would
     /// report a grid per frame of the dismissal animation, and every one of

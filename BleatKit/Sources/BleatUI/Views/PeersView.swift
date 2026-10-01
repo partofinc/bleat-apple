@@ -112,13 +112,15 @@ public struct PeersView: View {
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
         ToolbarItem(placement: .bottomBar) {
-            Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
-                .buttonStyle(.glassProminent)
-        }
-        ToolbarSpacer(.flexible, placement: .bottomBar)
-        ToolbarItem(placement: .bottomBar) {
             Button("This device's key", systemImage: "key") { isShowingKey = true }
                 .matchedZoomSource("key", in: namespace)
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        // Trailing, where the plus is on every screen below this one: pairing
+        // is how a host is added, whatever its icon.
+        ToolbarItem(placement: .bottomBar) {
+            Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
+                .buttonStyle(.glassProminent)
         }
     }
     #endif

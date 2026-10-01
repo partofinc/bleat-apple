@@ -504,10 +504,37 @@ question.
   at all for a name `SessionName` will not accept**: herdr takes `-x` and this
   app cannot address it, so a row created at the Mac under such a name would
   otherwise offer an action that fails by construction.
-- **The session screen has a bottom bar too**, the same shape as the peer
-  screen's: the action on the left, prominent, and Delete to the right when
-  there is one. Empty while a session runs, since Stop is already the one on the
-  right.
+- **The session screen has a bottom bar too, and Start and Stop share its
+  leading corner** (1 Oct 2026). One `ToolbarItem` holds whichever of the two
+  the session's state allows, so the button does not move: stopping a session
+  and starting it again is the pair most often done in a row, and with Stop on
+  the right and Start on the left the second tap was at the far side of the
+  screen from the first. The trailing corner takes what is left — the plus
+  while the session runs, Delete once it has stopped and the phone created it.
+- **The plus is trailing on every screen** (1 Oct 2026): hosts (Pair), a
+  host's sessions, a session's workspaces, a workspace's agents. It used to be
+  leading on three of them and moved when Stop took the session screen's
+  leading corner; one place for the whole drill-down beats two. The host
+  screen's gear and the host list's key took the leading corner in exchange,
+  and the agents screen has a lone `ToolbarSpacer` before its plus, which is
+  all that puts a single item on that side.
+- **A bar button's confirmation is attached to the button, not to the screen**
+  (1 Oct 2026). On iOS 26 a `confirmationDialog` opens out of the view it is
+  attached to, so on the button it grows from under the finger and on the
+  screen it appears from nowhere in particular. `SessionConfirmation` is the
+  dialog; each bar button carries one naming its own action, and
+  `SessionControlFlow` is told `confirmsHere: false` so the screen does not
+  raise a second — two dialogs over one question is one that never appears.
+  - **The peer screen still asks from the screen**, because its actions are
+    swipes: a swipe button is gone by the time the question is up, so there is
+    no view to attach to.
+  - **Each button's binding is guarded on its own action, in both
+    directions.** Start and Delete sit on one bar over one model; without the
+    guard Delete's question could be presented from Start, and a dismissal
+    written by the button that was never presented would cancel the other's.
+  - `PreviewSmokeTests.barDialogSource` pins it against UIKit: the dialog is a
+    popover whose `sourceItem` is the bar button item titled with the action.
+    Measured on the simulator, not yet looked at on a device.
 - **`SessionStatus` fetches whether the session is running**, because the route
   cannot carry it: a route's identity would then change the moment the session
   stopped, which is exactly when the screen has to stay put. `nil` means "not
@@ -647,7 +674,9 @@ where focusing takes nothing from anybody.
 which button is prominent in the bottom bar: while a session is up the useful
 action is adding to it and Stop is the afterthought, while a stopped one has
 nothing to add *to* — a client command against it answers `server_not_running` —
-so Start takes the prominent position and the plus is not shown at all.
+so Start is the prominent one and the plus is not shown at all. Prominence
+follows the action, not the corner: the plus is prominent on the trailing side
+and Stop is plain on the leading one, where Start will be.
 
 **Each bottom-bar button keeps its own `ToolbarItem` with a `ToolbarSpacer`
 between**, and that is load-bearing rather than layout taste. Start and Delete

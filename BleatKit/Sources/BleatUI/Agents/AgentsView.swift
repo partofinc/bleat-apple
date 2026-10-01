@@ -159,6 +159,10 @@ struct AgentsView: View {
         .navigationTitle(title)
         #if os(iOS)
         .toolbar {
+            // Nothing to the left of it, and the spacer is there anyway: it is
+            // what puts the plus on the trailing side, where every other
+            // screen has it.
+            ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 // **A menu only where it has two things in it.** A tab belongs
                 // to a workspace, so the session-wide list cannot make a

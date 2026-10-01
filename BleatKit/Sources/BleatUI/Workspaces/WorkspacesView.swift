@@ -36,17 +36,20 @@ struct WorkspacesView: View {
 
     #if DEBUG
     /// Preview-only: the workspaces are handed in and nothing is fetched.
+    /// `control` parks the session action in a phase — `.confirming` is the
+    /// bar with its question already asked.
     init(
         peer: PairedPeer,
         session: String?,
         previewing state: Loadable<[Workspace]>,
-        status: SessionInfo? = nil
+        status: SessionInfo? = nil,
+        control: SessionControlModel.Phase = .idle
     ) {
         self.peer = peer
         self.session = session
         _workspaces = State(wrappedValue: RemoteList(previewing: state))
         _status = State(wrappedValue: SessionStatus(previewing: status))
-        _control = State(wrappedValue: SessionControlModel(previewing: .idle))
+        _control = State(wrappedValue: SessionControlModel(previewing: control))
         _newWorkspace = State(wrappedValue: NewWorkspaceModel(previewing: ""))
     }
     #endif
@@ -90,7 +93,9 @@ struct WorkspacesView: View {
         #else
         .toolbar { ToolbarItemGroup(placement: .primaryAction) { actionButtons } }
         #endif
-        .sessionControl(control, on: peer) { action in
+        // The bar's own buttons ask — see `actionButton` — so the screen does
+        // not: two dialogs over one question is one that never appears.
+        .sessionControl(control, on: peer, confirmsHere: false) { action in
             // A screen cannot stay inside a session it has just deleted: the
             // route names something the host no longer has, and every refresh
             // from here on would fail against it.
@@ -141,82 +146,84 @@ struct WorkspacesView: View {
         return SessionControlModel.actions(for: info, on: peer)
     }
 
+    /// Start or Stop, whichever the session's state allows — the one that
+    /// turns it on or off. Nil before the host has said, and for a name this
+    /// app cannot address.
+    private var power: SessionControlModel.Action? {
+        actions.first { $0 != .delete }
+    }
+
     @ViewBuilder
     private var actionButtons: some View {
         if let info = status.info {
             ForEach(actions, id: \.self) { action in
-                Button(action.title, systemImage: action.symbol) {
-                    control.begin(action, about: info, on: peer)
-                }
-                .disabled(control.isWorking)
+                actionButton(action, about: info, prominent: false)
             }
         }
     }
 
     #if os(iOS)
-    /// The same shape as the peer screen's bar: the action that does something
-    /// on the left, prominent, and the rest to the right. Which action that is
-    /// depends on whether the session is up — see below.
+    /// Start and Stop share the leading corner, and what is left goes to the
+    /// trailing one: the plus while the session runs, Delete once it has
+    /// stopped.
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
-        // **Which button is prominent follows what the session needs.** While
-        // it is running, the useful thing is to add to it and Stop is the
-        // afterthought; while it is stopped there is nothing to add *to* — a
-        // client command against a dead session answers `server_not_running` —
-        // so Start takes the position and the plus is not offered at all.
-        if isRunning {
-            ToolbarItem(placement: .bottomBar) {
-                Button("Add Workspace", systemImage: "plus") {
-                    // **A whole reset, not just the failure.** The model is
-                    // `@State` here rather than on the sheet, so everything it
-                    // holds outlives a dismissal — a stale path would come back
-                    // prefilled and armed, and a "landed elsewhere" warning
-                    // would come back with the button already spent and no way
-                    // on the screen to clear it.
-                    newWorkspace.reset()
-                    isNaming = true
+        if let info = status.info {
+            // **One item for both, so the button does not move.** Stopping a
+            // session and starting it again is the pair most often done in a
+            // row, and with Stop on the right and Start on the left the second
+            // tap was at the far side of the screen from the first. Start is
+            // the prominent one: on a stopped session it is the only thing
+            // there is to do. Stop is not, because the thing to do with a
+            // running session is add to it.
+            if let power {
+                ToolbarItem(placement: .bottomBar) {
+                    actionButton(power, about: info, prominent: power == .start)
                 }
-                .buttonStyle(.glassProminent)
-                .disabled(control.isWorking)
-            }
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-            // At most Stop here — herdr will not delete a running session — so
-            // there is only ever one thing on the right.
-            ToolbarItem(placement: .bottomBar) { trailingAction(prominent: false) }
-        } else if let info = status.info, let first = actions.first {
-            ToolbarItem(placement: .bottomBar) {
-                actionButton(first, about: info, prominent: true)
             }
             // **The spacer is what keeps Delete away from Start**, and it is
-            // load-bearing rather than layout taste: the two are the only pair
-            // that appear together, and one of them removes somebody's session
-            // directory. Rendering both inside a single `ToolbarItem` — which a
-            // `ForEach` does — puts a destructive action flush against the
-            // primary one, a tap's width apart.
+            // load-bearing rather than layout taste: the two appear together,
+            // and one of them removes somebody's session directory. Rendering
+            // both inside a single `ToolbarItem` — which a `ForEach` does —
+            // puts a destructive action flush against the primary one, a tap's
+            // width apart.
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) { trailingAction(prominent: false) }
-        }
-    }
-
-    /// Whatever action goes to the right of the bar, if any.
-    ///
-    /// Empty while the session runs, because the only action then is Stop and
-    /// it is already the one on the right. Empty too for a stopped session this
-    /// phone did not create, where Start is the whole of the list — Delete is
-    /// still earned rather than offered. See
-    /// `SessionControlModel.actions(for:on:)`.
-    @ViewBuilder
-    private func trailingAction(prominent: Bool) -> some View {
-        if let info = status.info {
-            // The second action when the leading one is shown beside it, and
-            // the only action when it is not.
-            let trailing = isRunning ? actions.first : actions.dropFirst().first
-            if let trailing {
-                actionButton(trailing, about: info, prominent: prominent)
+            // **The plus is offered only while the session is running**: a
+            // `workspace create` against a stopped one answers
+            // `server_not_running`. Delete is the other way round — herdr will
+            // not delete a running session — so the two never want the corner
+            // at once.
+            if isRunning {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Add Workspace", systemImage: "plus") {
+                        // **A whole reset, not just the failure.** The model is
+                        // `@State` here rather than on the sheet, so everything
+                        // it holds outlives a dismissal — a stale path would
+                        // come back prefilled and armed, and a "landed
+                        // elsewhere" warning would come back with the button
+                        // already spent and no way on the screen to clear it.
+                        newWorkspace.reset()
+                        isNaming = true
+                    }
+                    .buttonStyle(.glassProminent)
+                    .disabled(control.isWorking)
+                }
+            } else if actions.contains(.delete) {
+                ToolbarItem(placement: .bottomBar) {
+                    actionButton(.delete, about: info, prominent: false)
+                }
             }
         }
     }
+    #endif
 
+    /// One session action as a button that asks its own question.
+    ///
+    /// **The confirmation is on the button, not on the screen**, because a
+    /// dialog opens out of the view it is attached to: here that is the button
+    /// under the finger, and attached to the screen it would be nowhere in
+    /// particular. Each button names its own action so that Start's — which
+    /// asks nothing — and Delete's beside it cannot answer for one another.
     @ViewBuilder
     private func actionButton(
         _ action: SessionControlModel.Action,
@@ -227,6 +234,7 @@ struct WorkspacesView: View {
             control.begin(action, about: info, on: peer)
         }
         .disabled(control.isWorking)
+        .sessionConfirmation(control, for: action, on: peer)
 
         if prominent {
             button.buttonStyle(.glassProminent)
@@ -234,7 +242,6 @@ struct WorkspacesView: View {
             button
         }
     }
-    #endif
 }
 
 #if DEBUG
@@ -244,8 +251,9 @@ struct WorkspacesView: View {
     }
 }
 
-/// A session this phone started, running — so the bar offers Stop, and nothing
-/// beside it, because herdr will not delete a running session.
+/// A session this phone started, running — so the bar offers Stop where Start
+/// would be, and the plus opposite, because herdr will not delete a running
+/// session.
 #Preview("Ours, running", traits: .sampleData) {
     NavigationStack {
         WorkspacesView(

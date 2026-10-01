@@ -135,7 +135,7 @@ struct AgentsView: View {
             empty: workspace == nil
                 ? "Nothing is running in this session. Open a workspace to start something in it."
                 : "Nothing is running here. Open a terminal, or start an agent in one.",
-            retry: { await entries.load(for: peer) }
+            retry: { await load() }
         ) { list in
             // Each section is drawn only when it has rows: a heading over
             // nothing reads as a list that failed to load its other half.
@@ -239,8 +239,19 @@ struct AgentsView: View {
         .yieldsToPairing(whileBusy: newAgent.isStarting || newAgent.isAddingPane,
                          presenting: $isStarting)
         #endif
-        .refreshable { await entries.load(for: peer) }
-        .task { await entries.load(for: peer) }
+        .hostLoadBar(for: peer)
+        .refreshable { await load(force: true) }
+        .task { await load() }
+    }
+
+    /// The rows, then how busy the host is — last, because that is read only
+    /// over a connection the rows have already brought up.
+    ///
+    /// - Parameter force: a pull-to-refresh, which reads the load again even
+    ///   if the last reading is seconds old.
+    private func load(force: Bool = false) async {
+        await entries.load(for: peer)
+        await context.hostLoad.refresh(for: peer, force: force)
     }
 
     #if os(iOS)

@@ -112,6 +112,14 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// whatever the person at the Mac started next under that name.
     public var startedSessions: [String]?
 
+    /// What the host last said it is — system, kernel, model, herdr version.
+    ///
+    /// Kept so the host list can say what each machine is without connecting
+    /// to any of them. Written after a connection, from `HostStatusProbe`, and
+    /// nil on a peer that has been paired but not yet used. It is a
+    /// description, never an identity: the host key is that.
+    public var hostInfo: HostInfo?
+
     public var id: String { hostKey }
 
     /// Whether this phone is why `session` is currently running. Creating one
@@ -146,7 +154,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         session: String? = nil,
         hostReport: EndpointDiscovery.Report? = nil,
         createdSessions: [String]? = nil,
-        startedSessions: [String]? = nil
+        startedSessions: [String]? = nil,
+        hostInfo: HostInfo? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -159,6 +168,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.hostReport = hostReport
         self.createdSessions = createdSessions
         self.startedSessions = startedSessions
+        self.hostInfo = hostInfo
     }
 
     public init(payload: PairingPayload) {
@@ -217,6 +227,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         // from all of them.
         merged.createdSessions = union(createdSessions, other.createdSessions)
         merged.startedSessions = union(startedSessions, other.startedSessions)
+        // A re-pair comes from a QR, which says nothing about the machine.
+        merged.hostInfo = other.hostInfo ?? hostInfo
         return merged
     }
 

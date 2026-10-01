@@ -119,6 +119,24 @@ public struct PeerRegistry: Sendable {
         try write(peers)
     }
 
+    /// Lays what the host just said it is over what was known.
+    ///
+    /// A targeted mutation for the reason `recordHerdrPath` is one. Writes only
+    /// when something changed: this runs after every status read, and nearly
+    /// every one of them says what the last one did.
+    ///
+    /// - Returns: whether the record changed.
+    @discardableResult
+    public func recordHostInfo(_ info: HostInfo, forHostKey hostKey: String) throws -> Bool {
+        var peers = try all()
+        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return false }
+        let updated = (peers[index].hostInfo ?? HostInfo()).updated(with: info)
+        guard !updated.isEmpty, peers[index].hostInfo != updated else { return false }
+        peers[index].hostInfo = updated
+        try write(peers)
+        return true
+    }
+
     /// Folds a fresh report of the host's own addresses into the stored record.
     ///
     /// A targeted mutation for the reason `recordHerdrPath` is one, and here it

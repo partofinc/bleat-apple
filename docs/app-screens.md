@@ -268,6 +268,9 @@ and neither is fixed. Written down rather than discovered twice.
 
 ## A host's screen is its sessions; everything else is a sheet (Phase 2)
 
+(Since 1 Oct 2026 the sheet also says what the host runs, and the screen
+carries a bar with how busy it is — see the next section.)
+
 `PeerDetailView` used to be a `Form` with the sessions on top and four sections
 of pairing detail under them — user, `herdr` path, host key fingerprint,
 addresses, device marker, unpair. It is the sessions and a bottom bar now, and
@@ -325,6 +328,138 @@ the rest is `PeerSettingsView` behind the gear.
   A zoom with an absent source falls back to a plain presentation.
   **`.zoom` is unavailable on macOS** while `matchedTransitionSource` is not, so
   the platform branch lives in `zoomTransition` rather than at each call site.
+
+## What a host says about itself (Phase 3, 1 Oct 2026)
+
+One probe, two halves with different lifetimes — `HostStatus` is a `HostInfo`
+and a `HostLoad`.
+
+- **`HostInfo` sticks to the host**: system, kernel, architecture, model, herdr
+  version. Stored on the peer record (`PairedPeer.hostInfo`), so it survives a
+  disconnect and a relaunch.
+  - **The host list shows it without connecting to anything**: a mark for the
+    kind of machine in front of the name, and the system (`macOS 27.0.1`) where
+    `user@address` used to be. A peer that has never been connected to has said
+    nothing yet, so its row keeps `user@address` and a generic mark.
+  - **All of it is in the settings sheet**, under **System**, with the pairing
+    detail it belongs beside.
+  - **Laid over, never replaced.** `HostInfo.updated(with:)` is field by field
+    and a missing field never erases a known one: each part of the probe fails
+    alone, so a reply without a model is a tool that did not answer this time.
+    `PeerRegistry.recordHostInfo` writes only when something changed — it runs
+    after every reading — and `PeerStore` reloads only then, because a reload
+    redraws every list of hosts.
+  - **The mark is `HostInfo.platform`**, from the kernel's name and, for a Pi,
+    the model. A Mac gets `apple.logo`. **SF Symbols has nothing for a
+    Raspberry Pi or for Linux**, so a Pi gets `berry`, a custom symbol, and
+    other Linux hosts `server.rack`.
+  - **`berry` is a drawing of the fruit, not the Raspberry Pi logo and not a
+    variation on it.** Their trademark rules (read 1 Oct 2026; last updated
+    17 June 2026, <https://www.raspberrypi.com/trademark-rules/>) allow the
+    logo only "in connection with the sale or distribution of genuine
+    Raspberry Pi products or services", require a licence for commercial use,
+    and separately forbid "a name or logo which is so similar to the Raspberry
+    Pi Marks that it may confuse or mislead". So drawing something close to it
+    is no safer than using it. The logo is one outline cut into segments under
+    two broad leaves; `berry` is loose round drupelets under a five-pointed
+    calyx and a stem. **Do not redraw it towards the logo.** The official one
+    needs a licence from Raspberry Pi first.
+  - **It is generated**: `swift Design/symbols.swift` writes an SF Symbols
+    template into `BleatUI/Resources/Symbols.xcassets`. Only Regular-M is
+    drawn; Xcode accepted that and derives the rest.
+    `PreviewSmokeTests.berrySymbol` checks it loads from the package's bundle
+    *as a symbol* — `Image(_:bundle:)` draws nothing for a name it cannot find,
+    so a rejected template would be a gap beside every Pi and fail no build.
+    The catalog is a resource of the package, not the app, so previews and the
+    render tests find it. `swift build` on a Mac copies the catalog without
+    compiling it; nothing there draws.
+- **`HostLoad` is live**: processor, load average, memory, disk, temperature,
+  uptime. Never stored.
+  - **It is a bar, `.safeAreaBar(edge: .bottom)`, carried down the
+    drill-down**: the host's screen, a session's, a workspace's
+    (`hostLoadBar(for:)`). The processor is one line — share busy, load
+    average, and the temperature with its own icon when the host has one.
+    Memory and disk are gauges: amount used, share in brackets, a bar that
+    turns orange at 75% and red at 90%. Uptime is read and not shown.
+  - **Not on a pane.** Layout there is the stream's size, and a bar that comes
+    and goes with the connection would resize the pty on someone's Mac.
+  - **One reading, in `AppContext.hostLoad`**, not per-screen state: three
+    screens deep in one machine show what the last one read. A screen
+    appearing reads again only if the reading is older than ten seconds; a
+    pull-to-refresh always reads, and holds its spinner for the probe's second.
+    There is no timer.
+  - **It never dials, and is shown only while connected.**
+    `HostLoadStore.refresh` returns at once unless
+    `ConnectionStore.isConnected(to:)`, and `load(for:)` is nil the moment the
+    connection goes — a number about a machine nobody is talking to is not
+    worth showing. **A reading is tied to the connection it was read over**
+    (`ConnectionStore.connectionID`), not just to the host: the app releases
+    its connection in the background, and matched on the host alone an
+    hour-old reading came back as live when the same host was dialled again.
+    (Found in review.) So each screen asks for a reading *after* its own list has
+    loaded, which is what brought the connection up. This is also what keeps
+    previews and the render tests off the network: they have no connection, so
+    a read willing to open one would dial a real host from the canvas.
+    `PreviewSmokeTests.hostLoadBar` pins it.
+  - **Best effort and silent.** A failed read keeps the last reading. It does
+    not call `ConnectionStore.handle`: the list above reports the same dropped
+    connection, and two loads each releasing it would have the slower tear down
+    what the faster one's retry had just dialled.
+  - **The bar appears about a second after the first list on a host**, which
+    moves the bottom of that list once. Deeper screens have it from the start.
+
+The probe:
+
+- **One shell command, `HostStatusProbe.command`, through
+  `ConnectionStore.shell`.** herdr reports none of this but its own version, so
+  it is plain shell like pairing and the directory check, and it leaves the
+  session prefix alone. No change to `HerdrTransport`.
+- **The script tags raw tool output and the phone parses it.** Every line comes
+  back as `bleat-host:<tag>:<the tool's own line>`; the shell does no
+  arithmetic. The parser is fed from `Fixtures/host-status-macos.txt` and
+  `host-status-linux.txt`, which are the command's real output on the dev Mac
+  and the Pi. Untagged lines — a profile's banner — are ignored, and each field
+  parses or is absent on its own.
+- **It is wrapped in `/bin/sh -c '…'`**, because an exec channel runs through
+  the account's login shell and the script is POSIX. The login shell then only
+  has to read one single-quoted string, so the script holds no single quote and
+  no `\\`. Run under zsh, bash, dash and macOS's `sh`; **not run under fish**,
+  which is not installed on either host.
+- **`PATH` is set to the four system directories**, not inherited, so `df` is
+  the system's `df`. herdr is therefore not searched for: the probe is handed
+  `peer.herdrPath`, and leaves the version out when the peer has none yet.
+- **What each host can and cannot say** (measured, both on herdr 0.9.3):
+
+  | | macOS 27.0.1 (M1) | Debian 13 (Pi CM5) |
+  |---|---|---|
+  | system | `sw_vers` | `PRETTY_NAME` in `/etc/os-release` |
+  | kernel, arch | `uname -srm` | `uname -srm` |
+  | model | `sysctl hw.model` | `/proc/device-tree/model`, else DMI `product_name` |
+  | cores | `getconf _NPROCESSORS_ONLN` | the same |
+  | processor | last line of `iostat -n0 -c 2 -w 1` | two reads of `/proc/stat`, 1 s apart |
+  | load | the same `iostat` line | `/proc/loadavg` |
+  | memory | `vm_stat` + `hw.memsize` | `MemTotal − MemAvailable` |
+  | disk | `df -Pk "$HOME"` | the same |
+  | temperature | **not available** | `/sys/class/thermal/thermal_zone*` |
+  | uptime | `kern.boottime` against `date +%s` | `/proc/uptime` |
+
+  - **A Mac gives no temperature without root.** `powermetrics` needs `sudo`,
+    `pmset -g therm` only says whether a thermal warning was ever recorded, and
+    Apple silicon has no `sysctl` for it. The row is simply absent.
+  - **Processor usage costs one second.** Both hosts count since boot, so one
+    reading is an average over days: the first `iostat` line said 73% idle on a
+    Mac whose second line said 0%. The second is the sample. The whole probe
+    took 1.4 s from this Mac to the Pi over SSH.
+  - **Mac memory "used" is anonymous pages less purgeable, plus wired, plus what
+    the compressor occupies** — Activity Monitor's definition. Total less free
+    would read 16 GB of 16 GB on any Mac that has been up for an hour.
+  - **Disk used is total less available, on the volume under `$HOME`.** `/` on
+    APFS is the sealed system volume (14% used on a disk that was 82% full), and
+    a volume's own "Used" leaves out its siblings in the container.
+  - **The herdr version is the client binary's** (`herdr --version`), which is
+    what runs this phone's commands. A server started before an update can be
+    older; `herdr status --json` reports both and `restart_needed`, and is not
+    read yet.
 
 ## Previews (Phase 2)
 

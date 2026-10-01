@@ -54,6 +54,28 @@ struct PeerSettingsView: View {
                     .font(.footnote.monospaced())
             }
 
+            // What the host last said it is. Stored on the peer, so it is here
+            // whether or not anything is connected.
+            if let info = peer.hostInfo, !info.isEmpty {
+                Section {
+                    if let system = info.system { LabeledContent("System", value: system) }
+                    if let kernel = info.kernel {
+                        LabeledContent(
+                            "Kernel",
+                            value: info.architecture.map { "\(kernel) · \($0)" } ?? kernel
+                        )
+                    }
+                    if let model = info.model { LabeledContent("Model", value: model) }
+                    if let version = info.herdrVersion {
+                        LabeledContent("herdr version", value: version)
+                    }
+                } header: {
+                    Text("System")
+                } footer: {
+                    Text("As \(peer.name) reported it the last time this phone connected.")
+                }
+            }
+
             Section("Host key") {
                 Text(peer.hostKeyFingerprint ?? peer.hostKey)
                     .font(.footnote.monospaced())

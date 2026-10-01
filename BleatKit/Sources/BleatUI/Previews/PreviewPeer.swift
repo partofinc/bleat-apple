@@ -32,6 +32,7 @@ extension PairedPeer {
             deviceMarker: "bleat-device-9f2c1a4e"
         )
         peer.lastGoodEndpoint = Endpoint(host: "192.168.11.54")
+        peer.hostInfo = .sampleMac
         return peer
     }
 
@@ -48,13 +49,16 @@ extension PairedPeer {
                 Endpoint(host: "100.114.119.30", port: 2222),
             ],
             herdrPath: "/usr/local/bin/herdr",
-            deviceMarker: "bleat-device-3d70b8c5"
+            deviceMarker: "bleat-device-3d70b8c5",
+            hostInfo: .sampleLinux
         )
     }
 
     /// Paired before `herdrPath` and the marker were recorded, and known only
     /// by an mDNS name — so the detail screen has to say "not resolved", and
-    /// the unpair screen has no marker to name in its command.
+    /// the unpair screen has no marker to name in its command. Never connected
+    /// to either, so it has not said what it is: its row falls back to where
+    /// it is.
     static var previewSparse: PairedPeer {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHqW3mR8tYvL5aBnKzXcJ2dPfEoUi7SgMhVrQwZyNbTA",

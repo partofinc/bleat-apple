@@ -1,0 +1,39 @@
+bleat-host:uname:Darwin 27.0.0 arm64
+bleat-host:herdr:herdr 0.9.3
+bleat-host:cores:8
+bleat-host:df:Filesystem   1024-blocks      Used Available Capacity  Mounted on
+bleat-host:df:/dev/disk3s5   482766932 367978072  81766008    82%    /System/Volumes/Data
+bleat-host:sw_vers:ProductName:		macOS
+bleat-host:sw_vers:ProductVersion:		27.0.1
+bleat-host:sw_vers:BuildVersion:		26A434
+bleat-host:model:MacBookAir10,1
+bleat-host:memsize:17179869184
+bleat-host:boottime:{ sec = 1790664100, usec = 851287 } Tue Sep 29 10:41:40 2026
+bleat-host:now:1790856618
+bleat-host:vm_stat:Mach Virtual Memory Statistics: (page size of 16384 bytes)
+bleat-host:vm_stat:Pages free:                                     3849.
+bleat-host:vm_stat:Pages active:                                 219828.
+bleat-host:vm_stat:Pages inactive:                               214251.
+bleat-host:vm_stat:Pages speculative:                              4676.
+bleat-host:vm_stat:Pages throttled:                                   0.
+bleat-host:vm_stat:Pages wired down:                             181788.
+bleat-host:vm_stat:Pages purgeable:                                 278.
+bleat-host:vm_stat:"Translation faults":                      923454594.
+bleat-host:vm_stat:Pages copy-on-write:                        26570024.
+bleat-host:vm_stat:Pages zero filled:                         362869760.
+bleat-host:vm_stat:Pages reactivated:                         142490750.
+bleat-host:vm_stat:Pages purged:                               11548203.
+bleat-host:vm_stat:File-backed pages:                            149437.
+bleat-host:vm_stat:Anonymous pages:                              289318.
+bleat-host:vm_stat:Pages stored in compressor:                   893757.
+bleat-host:vm_stat:Pages occupied by compressor:                 388557.
+bleat-host:vm_stat:Decompressions:                            123916305.
+bleat-host:vm_stat:Compressions:                              141315349.
+bleat-host:vm_stat:Pageins:                                    58503355.
+bleat-host:vm_stat:Pageouts:                                     254129.
+bleat-host:vm_stat:Swapins:                                     1599614.
+bleat-host:vm_stat:Swapouts:                                    2424725.
+bleat-host:iostat:      cpu    load average
+bleat-host:iostat: us sy id   1m   5m   15m
+bleat-host:iostat: 19  8 73  53.98 82.84 69.86
+bleat-host:iostat: 87 13  0  53.98 82.84 69.86

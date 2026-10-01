@@ -26,6 +26,8 @@ public final class ConnectionStore {
     private let reachability: Reachability
 
     private struct Live {
+        /// Which connection this is, counted from launch. See `connectionID`.
+        let id: Int
         let hostKey: String
         /// Where the phone was standing when this was raced. A connection made
         /// on Wi-Fi is pinned to whichever address won, so once the phone
@@ -38,6 +40,8 @@ public final class ConnectionStore {
     }
 
     private var current: Live?
+    /// How many connections have been installed, which is what numbers them.
+    private var installed = 0
     /// A dial in flight, so two screens asking at once do not race every
     /// endpoint twice and leak whichever transport loses the assignment.
     private var connecting: (hostKey: String, task: Task<PeerConnection.Connected, any Error>)?
@@ -59,6 +63,23 @@ public final class ConnectionStore {
     public init(peers: PeerStore, reachability: Reachability) {
         self.peers = peers
         self.reachability = reachability
+    }
+
+    /// Whether the live connection is to this peer. Observed, so a view that
+    /// reads it redraws when the connection goes.
+    ///
+    /// For work that is only worth doing over a connection somebody else
+    /// already wanted — reading the host's load — and must never be the reason
+    /// one is dialled.
+    public func isConnected(to peer: PairedPeer) -> Bool {
+        connectionID(for: peer) != nil
+    }
+
+    /// Which connection to this peer is live, or nil when none is. Different
+    /// for every connection, so something read over one can be told from the
+    /// same host reached again an hour later. Observed, like `isConnected`.
+    public func connectionID(for peer: PairedPeer) -> Int? {
+        current?.hostKey == peer.hostKey ? current?.id : nil
     }
 
     /// A client for this peer, connecting if there is not one already.
@@ -150,7 +171,8 @@ public final class ConnectionStore {
             throw CancellationError()
         }
 
-        current = Live(hostKey: peer.hostKey, link: link, connected: connected)
+        installed += 1
+        current = Live(id: installed, hostKey: peer.hostKey, link: link, connected: connected)
         endpoint = connected.endpoint
 
         // Written back so the next connection tries the winner first instead of

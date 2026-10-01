@@ -86,6 +86,14 @@ public final class PeerStore {
         reload()
     }
 
+    /// Keeps what the host just said it is, so the host list can show it
+    /// without a connection. Reloads only when the record changed — this runs
+    /// after every status read, and a reload redraws every list of hosts.
+    public func recordHostInfo(_ info: HostInfo, for peer: PairedPeer) {
+        guard (try? registry.recordHostInfo(info, forHostKey: peer.hostKey)) == true else { return }
+        reload()
+    }
+
     /// Remembers that this phone created a session on the host, which is what
     /// lets it be deleted from here later. See `PairedPeer.createdSessions`.
     ///

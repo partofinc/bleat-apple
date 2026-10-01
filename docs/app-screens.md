@@ -392,7 +392,11 @@ and a `HostLoad`.
     `HostLoadStore.refresh` returns at once unless
     `ConnectionStore.isConnected(to:)`, and `load(for:)` is nil the moment the
     connection goes — a number about a machine nobody is talking to is not
-    worth showing. So each screen asks for a reading *after* its own list has
+    worth showing. **A reading is tied to the connection it was read over**
+    (`ConnectionStore.connectionID`), not just to the host: the app releases
+    its connection in the background, and matched on the host alone an
+    hour-old reading came back as live when the same host was dialled again.
+    (Found in review.) So each screen asks for a reading *after* its own list has
     loaded, which is what brought the connection up. This is also what keeps
     previews and the render tests off the network: they have no connection, so
     a read willing to open one would dial a real host from the canvas.

@@ -67,7 +67,10 @@ struct WorkspacesView: View {
                 RemoteListView(
                     state: workspaces.state,
                     empty: "No workspaces in this session.",
-                    retry: { await workspaces.load(for: peer) }
+                    // The whole reload, not just the list: a retry is what
+                    // brings the connection up after a failed first load, and
+                    // the host's load is read only once it is.
+                    retry: { await reload() }
                 ) { list in
                     ForEach(list) { workspace in
                         WorkspaceLink(peer: peer, session: session, workspace: workspace)

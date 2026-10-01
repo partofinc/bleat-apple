@@ -135,7 +135,7 @@ struct AgentsView: View {
             empty: workspace == nil
                 ? "Nothing is running in this session. Open a workspace to start something in it."
                 : "Nothing is running here. Open a terminal, or start an agent in one.",
-            retry: { await entries.load(for: peer) }
+            retry: { await load() }
         ) { list in
             // Each section is drawn only when it has rows: a heading over
             // nothing reads as a list that failed to load its other half.

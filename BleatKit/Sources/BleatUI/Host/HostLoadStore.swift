@@ -23,7 +23,11 @@ import Observation
 /// down what the faster one's retry had just dialled.
 @Observable
 public final class HostLoadStore {
-    private var reading: (hostKey: String, load: HostLoad)?
+    /// **Tied to the connection it was read over, not just to the host.** The
+    /// app releases its connection in the background; an hour later the same
+    /// host is dialled again, and a reading matched on the host alone would
+    /// come back on screen as if it were live.
+    private var reading: (hostKey: String, connection: Int?, load: HostLoad)?
     private var readAt: ContinuousClock.Instant?
     /// The host a read is in flight for, so three screens pushed in a second
     /// do not each start one.
@@ -54,7 +58,7 @@ public final class HostLoadStore {
         #if DEBUG
         if isPreview { return reading.load }
         #endif
-        return connections.isConnected(to: peer) ? reading.load : nil
+        return reading.connection == connections.connectionID(for: peer) ? reading.load : nil
     }
 
     /// Reads the host's status, if there is a connection to read it over.
@@ -66,10 +70,11 @@ public final class HostLoadStore {
     /// - Parameter force: read even though the last reading is fresh. A screen
     ///   appearing passes false; a pull-to-refresh passes true.
     func refresh(for peer: PairedPeer, force: Bool = false) async {
-        guard connections.isConnected(to: peer) else { return }
+        guard let connection = connections.connectionID(for: peer) else { return }
         if !force {
             guard refreshing != peer.hostKey else { return }
-            if reading?.hostKey == peer.hostKey, let readAt, .now - readAt < Self.fresh { return }
+            if reading?.hostKey == peer.hostKey, reading?.connection == connection,
+               let readAt, .now - readAt < Self.fresh { return }
         }
         generation += 1
         let generation = generation
@@ -83,8 +88,12 @@ public final class HostLoadStore {
         let status = HostStatusProbe.status(fromOutput: output)
         peers.recordHostInfo(status.info, for: peer)
         // A reply with nothing in it is not news that the host has no memory.
-        guard !status.load.isEmpty else { return }
-        reading = (peer.hostKey, status.load)
+        // And one that outlived its connection is about a moment that has
+        // gone: the shell re-dials, so the reply can come back over a new one.
+        guard !status.load.isEmpty, connections.connectionID(for: peer) == connection else {
+            return
+        }
+        reading = (peer.hostKey, connection, status.load)
         readAt = .now
     }
 
@@ -92,7 +101,7 @@ public final class HostLoadStore {
     /// Seeds a reading that shows without a connection — for `#Preview` and
     /// the render tests, which have none.
     func preview(_ load: HostLoad?, for peer: PairedPeer) {
-        reading = load.map { (peer.hostKey, $0) }
+        reading = load.map { (peer.hostKey, nil, $0) }
         isPreview = true
     }
     #endif

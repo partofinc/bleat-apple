@@ -2,22 +2,15 @@ import Foundation
 
 /// A key, as the bytes a terminal would send for it.
 ///
-/// **Why keys rather than `terminal.scroll`.** Herdr's own scroll record moves
-/// a pane's *host* scrollback, and an agent has none: measured 8 Sept 2026, a
-/// pane running a full-screen program reports `max_offset_from_bottom: 0` and
-/// `pane read --source recent` returns exactly the visible rows. The earlier
-/// output is not in herdr at all — it is inside the program, which is drawing
-/// its own viewport and scrolling it in response to keys. So the only way to
-/// see it is to press the program's own keys, which is what these are.
+/// Scrolling is not done with keys: `terminal.scroll` reaches both herdr's own
+/// history and a full-screen program's, and Page Up only reached programs that
+/// bind it. See `PaneModel.scroll`.
 ///
-/// Proved with `less` over 200 lines in a 30-row pane: sending a space moved
-/// the visible rows from 1–29 to 59–87 while the host scrollback stayed 0.
-///
-/// The same argument reaches an agent's **dialogs**, which is what the arrows,
-/// `escape` and `enter` are for. A blocked agent is one sitting at a question,
-/// and `agent prompt` cannot answer it — herdr rejects a blocked agent with
-/// `agent_blocked` *before sending any input*. Keys are the only thing that
-/// moves such a dialog.
+/// What keys are for is an agent's **dialogs** — the arrows, `escape` and
+/// `enter`. A blocked agent is one sitting at a question, and `agent prompt`
+/// cannot answer it — herdr rejects a blocked agent with `agent_blocked`
+/// *before sending any input*. Keys are the only thing that moves such a
+/// dialog.
 ///
 /// `TerminalCommand.bytes` carries them, because `text` cannot express an
 /// escape sequence — a raw ESC inside a JSON string is not valid JSON, and the
@@ -29,8 +22,6 @@ public enum TerminalKey: Sendable, CaseIterable {
     case right
     case escape
     case enter
-    case pageUp
-    case pageDown
 
     public var bytes: Data {
         switch self {
@@ -60,8 +51,6 @@ public enum TerminalKey: Sendable, CaseIterable {
         // usually wants CR and an Ink-based one — which Claude Code is — treats
         // LF as a newline in the composer rather than a submit.
         case .enter: Data([0x0D])
-        case .pageUp: Data([0x1B, 0x5B, 0x35, 0x7E])    // ESC [ 5 ~
-        case .pageDown: Data([0x1B, 0x5B, 0x36, 0x7E])  // ESC [ 6 ~
         }
     }
 }

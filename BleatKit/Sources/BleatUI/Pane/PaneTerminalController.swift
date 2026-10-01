@@ -136,7 +136,7 @@ final class PaneTerminalController: UIViewController {
         // for a while on the theory that a program which did scroll would then
         // work — but nothing can, so all it did was consume every vertical
         // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
-        // gets the drag and can turn it into the program's own page keys.
+        // gets the drag and turns it into `terminal.scroll` requests.
         terminalView.isScrollEnabled = false
 
         // **Taking the keyboard re-arms mouse reporting, and that undoes the

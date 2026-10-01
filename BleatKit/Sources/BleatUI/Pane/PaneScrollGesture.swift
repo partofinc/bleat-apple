@@ -2,31 +2,33 @@
 import BleatKit
 import SwiftUI
 
-/// Turns a drag on the terminal into the program's own page keys.
+/// Turns a drag on the terminal into wheel notches, the way a desktop terminal
+/// turns a trackpad swipe into them.
 ///
-/// **This is a translation, not a scroll, and the difference is visible.**
-/// There is no buffer under the finger to move: the pane's earlier output is
-/// inside the program on the host, which redraws a whole screen when it is
-/// sent Page Up. So a drag cannot track content continuously — it can only
-/// decide *when* to ask for the next screen. Dragging is quantised into pages
-/// for that reason, and it will always feel like paging rather than scrolling.
+/// **This is still a request, not a scroll.** The stream carries one viewport
+/// and no history, so there is no buffer under the finger to move. Each notch
+/// asks the host to scroll and the host repaints: herdr moves its own history
+/// for a shell, or hands a full-screen program — Claude Code, `less` — a wheel
+/// event it answers itself. See `PaneModel.scroll`. What a notch per few rows
+/// of travel buys over the page keys this replaced is that the content follows
+/// the finger, near enough, instead of jumping a screen at a time.
 ///
 /// Natural direction: pulling **down** brings earlier output down into view,
-/// which is Page Up — the same way a scroll view moves content with the
+/// which is scrolling up — the same way a scroll view moves content with the
 /// finger rather than against it.
 ///
-/// Only while this screen owns the pane. Observing, there is nothing to send
-/// the keys to, and a gesture that silently does nothing is worse than no
-/// gesture — so the drag is not installed at all and the terminal keeps its
-/// ordinary tap behaviour.
+/// Only while this screen owns the pane. Observing, `observe` ignores scroll
+/// requests, and a gesture that silently does nothing is worse than no gesture
+/// — so the drag is not installed at all and the terminal keeps its ordinary
+/// tap behaviour.
 struct PaneScrollGesture: ViewModifier {
     let model: PaneModel
 
-    /// How far the terminal is, so a page of dragging is a page of content.
+    /// How tall the terminal is, so a notch can be sized to its rows.
     @State private var height: CGFloat = 0
-    /// Translation already spent on keys within this one drag. A `DragGesture`
-    /// reports a cumulative translation, so without this every callback past
-    /// the threshold would fire again for the same movement.
+    /// Translation already spent on notches within this one drag. A
+    /// `DragGesture` reports a cumulative translation, so without this every
+    /// callback past the threshold would fire again for the same movement.
     @State private var spent: CGFloat = 0
     /// Whether a drag is in flight.
     ///
@@ -34,8 +36,7 @@ struct PaneScrollGesture: ViewModifier {
     /// **or is cancelled**, and `onEnded` does not run on a cancellation. Left
     /// to `onEnded` alone, a drag interrupted by another recogniser leaves
     /// `spent` behind, and the next drag is measured against travel that
-    /// already happened — needing roughly double the distance to page, or
-    /// firing one after a flick in the opposite direction.
+    /// already happened.
     @GestureState private var isDragging = false
 
     func body(content: Content) -> some View {
@@ -58,12 +59,16 @@ struct PaneScrollGesture: ViewModifier {
             }
     }
 
-    /// Half the terminal, so a full-screen drag pages twice.
+    /// Finger travel per notch: the height of the three rows a notch scrolls a
+    /// shell by, so its history moves with the finger.
     ///
-    /// A whole screen per page is the literal mapping and feels dead — the
-    /// finger travels the entire pane before anything happens. Half is the
-    /// compromise; the floor keeps it sane on a short pane or in landscape.
-    private var step: CGFloat { max(120, height / 2) }
+    /// A full-screen program ignores `lines` and scrolls by its own amount —
+    /// Claude Code accelerates — so there the match is only approximate. The
+    /// floor keeps a pane with no known grid from firing on every point.
+    private var step: CGFloat {
+        guard let rows = model.grid?.rows, rows > 0, height > 0 else { return 36 }
+        return max(12, height / CGFloat(rows) * 3)
+    }
 
     private var drag: some Gesture {
         // Enough to not fire on a tap, small enough that a deliberate drag is
@@ -72,22 +77,24 @@ struct PaneScrollGesture: ViewModifier {
             .updating($isDragging) { _, state, _ in state = true }
             .onChanged { value in
                 let moved = value.translation.height - spent
-                guard abs(moved) >= step else { return }
-                // **One key per callback, not a loop.** A fast flick reports a
-                // large jump, and paging it out all at once would send a burst
-                // of keys the program renders as one long jump with nothing in
-                // between. `onChanged` fires often enough that a fast drag
-                // still pages fast.
+                let notches = min(Int(abs(moved) / step), Self.burst)
+                guard notches > 0 else { return }
                 let earlier = moved > 0
-                spent += earlier ? step : -step
-                Task { await model.send(earlier ? .pageUp : .pageDown) }
+                spent += CGFloat(notches) * (earlier ? step : -step)
+                Task { await model.scroll(earlier ? .up : .down, notches: notches) }
             }
             .onEnded { _ in spent = 0 }
     }
+
+    /// The most notches one callback may send. A flick reports a large jump in
+    /// one callback, and a wheel turned that fast is not something a program
+    /// is written to expect; the rest of the travel is spent on later callbacks
+    /// or dropped when the finger lifts.
+    private static let burst = 6
 }
 
 extension View {
-    /// Pages the pane's program when this screen owns its input.
+    /// Scrolls the pane when this screen owns its input.
     func paneScrollGesture(_ model: PaneModel) -> some View {
         modifier(PaneScrollGesture(model: model))
     }

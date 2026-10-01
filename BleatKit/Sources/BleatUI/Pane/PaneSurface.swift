@@ -34,9 +34,9 @@ struct PaneSurface: View {
             .paneScrollGesture(model)
             .overlay(alignment: .trailing) {
                 // Only while this screen owns input, because these are the
-                // only circumstances in which they can do anything: the keys
-                // go to the program, and a pane this screen is merely watching
-                // has nowhere to put them.
+                // only circumstances in which they can do anything: `observe`
+                // ignores a scroll request, so a pane this screen is merely
+                // watching has nowhere to put one.
                 if case .live = model.phase, model.control == .controlling {
                     PaneScrollControl(model: model)
                 }

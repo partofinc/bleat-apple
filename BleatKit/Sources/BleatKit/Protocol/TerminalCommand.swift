@@ -17,7 +17,10 @@ public enum TerminalCommand: Sendable {
     /// (arrows, Ctrl-C, and the rest of the Phase 3 accessory row).
     case bytes(Data)
     case resize(cols: Int, rows: Int)
-    /// Both fields are required by the host.
+    /// Both fields are required by the host, and `lines` is only honoured
+    /// against herdr's own history. For a full-screen program herdr sends one
+    /// wheel event per record whatever it says (measured on 0.9.3). `observe`
+    /// ignores the record entirely.
     case scroll(direction: ScrollDirection, lines: Int)
     /// Give up input ownership. The host closes the stream and the command
     /// exits 0, so this is the clean detach path — no need to kill the channel.

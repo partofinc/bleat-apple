@@ -93,7 +93,7 @@ struct PaneSurface: View {
                 // step. It was an `inputAccessoryView` for a day; on a device
                 // that put the keys at the far edge of the screen, a reach away
                 // from the arrows they belong beside.
-                PaneKeyBar(model: model)
+                PaneKeyBar(model: model, isActive: isActive)
             }
         #else
         ContentUnavailableView(

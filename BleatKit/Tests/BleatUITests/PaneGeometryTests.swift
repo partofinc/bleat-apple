@@ -226,6 +226,64 @@ struct PaneGeometryTests {
         #expect(reports.last == before)
     }
 
+    /// **The text field's keyboard takes the same half of the screen.** The
+    /// terminal never asked for this one — `wantsKeyboard` stays false — so the
+    /// freeze has to come from the keyboard itself, or tapping the field in
+    /// `PaneKeyBar` resizes the pane the way typing into the terminal once did.
+    @Test("a keyboard the terminal did not ask for freezes the grid too")
+    func anotherKeyboardFreezesTheGrid() {
+        let controller = PaneTerminalController()
+        var reports: [TerminalGrid] = []
+        controller.onSize = { reports.append($0) }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 1)
+
+        NotificationCenter.default.post(
+            name: UIResponder.keyboardWillShowNotification, object: nil
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 380)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 1, "the field's keyboard reported a new grid: \(reports.dropFirst())")
+
+        NotificationCenter.default.post(
+            name: UIResponder.keyboardDidHideNotification, object: nil
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 700)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 1, "the round trip reported \(reports.count) grids")
+
+        // And it let go: a genuinely different height is reported again.
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 600)
+        controller.view.layoutIfNeeded()
+        #expect(reports.count == 2, "the grid stayed frozen after the keyboard went")
+    }
+
+    /// **The accessory is one height whatever it holds.** It sits in a
+    /// safe-area bar, so its height is the terminal's, and the terminal's is
+    /// the grid the pane on someone's Mac is `stty`'d to. A text field a point
+    /// taller than the shortcut strip would resize their pane every time the
+    /// mode menu was used.
+    @Test("the accessory is the same height in every mode")
+    func accessoryHeightIsConstant() {
+        let key = "pane.accessoryMode"
+        let saved = UserDefaults.standard.string(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+
+        func height(_ mode: PaneAccessoryMode, typingInPane: Bool = false) -> CGFloat {
+            UserDefaults.standard.set(mode.rawValue, forKey: key)
+            let model = PaneModel(previewing: .live)
+            model.setWantsKeyboard(typingInPane)
+            let host = UIHostingController(rootView: PaneKeyBar(model: model, isActive: true))
+            return host.sizeThatFits(in: CGSize(width: 393, height: 800)).height
+        }
+
+        let field = height(.input)
+        #expect(field > 80, "the accessory did not lay out two rows: \(field)")
+        #expect(height(.shortcuts) == field)
+        #expect(height(.input, typingInPane: true) == field)
+    }
+
     /// **`keyboardDidHide` cannot be the only way out of the freeze.** With a
     /// hardware keyboard attached no software keyboard appears, so the
     /// notification never arrives — and SwiftTerm's accessory bar, which might

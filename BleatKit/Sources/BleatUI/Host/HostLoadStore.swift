@@ -54,17 +54,28 @@ public final class HostLoadStore {
     /// is still up. Nil the moment it is not: a load from before a disconnect
     /// is a number about a machine nobody is talking to.
     func load(for peer: PairedPeer) -> HostLoad? {
-        guard let reading, reading.hostKey == peer.hostKey else { return nil }
+        // An empty one is kept only so it is not waited for twice — see
+        // `isAwaitingFirstReading`.
+        guard let reading, reading.hostKey == peer.hostKey, !reading.load.isEmpty else {
+            return nil
+        }
         #if DEBUG
         if isPreview { return reading.load }
         #endif
         return reading.connection == connections.connectionID(for: peer) ? reading.load : nil
     }
 
-    /// Whether a read for this host is in flight — what a list that keeps a
-    /// row for the load draws a placeholder on, the first time.
-    func isReading(for peer: PairedPeer) -> Bool {
-        refreshing == peer.hostKey
+    /// Whether the first read over this connection is in flight — what a list
+    /// that keeps a row for the load draws a placeholder on.
+    ///
+    /// **Only the first.** A host whose probe says nothing gets one
+    /// placeholder that comes and goes, and that answer is then remembered
+    /// for the connection; asked on `refreshing` alone, the row was inserted
+    /// and taken away again on every appearance of every screen.
+    func isAwaitingFirstReading(for peer: PairedPeer) -> Bool {
+        guard refreshing == peer.hostKey else { return false }
+        guard let reading, reading.hostKey == peer.hostKey else { return true }
+        return reading.connection != connections.connectionID(for: peer)
     }
 
     /// Reads the host's status, if there is a connection to read it over.
@@ -96,9 +107,11 @@ public final class HostLoadStore {
         // A reply with nothing in it is not news that the host has no memory.
         // And one that outlived its connection is about a moment that has
         // gone: the shell re-dials, so the reply can come back over a new one.
-        guard !status.load.isEmpty, connections.connectionID(for: peer) == connection else {
-            return
-        }
+        guard connections.connectionID(for: peer) == connection else { return }
+        if status.load.isEmpty, let reading, reading.hostKey == peer.hostKey,
+           reading.connection == connection, !reading.load.isEmpty { return }
+        // Stored even when empty, as the answer for this connection: nothing
+        // is shown for it, and nothing waits for it a second time.
         reading = (peer.hostKey, connection, status.load)
         readAt = .now
     }

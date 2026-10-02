@@ -120,12 +120,16 @@ struct WorkspacesView: View {
     }
 
     /// - Parameter force: a pull-to-refresh, which reads the host's load again
-    ///   even if the last reading is seconds old. Last, because it is read
-    ///   only over a connection the lists above have already brought up.
+    ///   even if the last reading is seconds old. After the workspaces,
+    ///   because it is read only over a connection they have already brought
+    ///   up — and beside the status rather than after it: on a watch the load
+    ///   is a row above the workspaces, and one that waited a `session list`
+    ///   to claim its place pushed them down after they were drawn.
     private func reload(force: Bool = false) async {
         await workspaces.load(for: peer)
+        async let load: Void = context.hostLoad.refresh(for: peer, force: force)
         await status.load(for: peer)
-        await context.hostLoad.refresh(for: peer, force: force)
+        await load
     }
 
     /// Only for a session known to be stopped — `nil` is "not asked yet", and

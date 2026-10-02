@@ -27,7 +27,7 @@ struct HostLoadSection: View {
             Section {
                 HostLoadBar(load: load, isCompact: true)
             }
-        } else if context.hostLoad.isReading(for: peer) {
+        } else if context.hostLoad.isAwaitingFirstReading(for: peer) {
             Section {
                 HostLoadBar(load: Self.placeholder, isCompact: true)
                     .redacted(reason: .placeholder)

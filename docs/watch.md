@@ -177,7 +177,7 @@ the one switch; the phone's layout is untouched.
   a list showing two rows. The compact `HostLoadBar` draws no glass and no
   margins there — the row brings both.
   The row is held with a placeholder while the first reading is in flight
-  (`HostLoadStore.isReading`): the probe takes a second, and a row arriving
+  (`HostLoadStore.isAwaitingFirstReading`): the probe takes a second, and a row arriving
   that late pushed the list down under a finger.
 - **What the screen is about follows in a named section** — Sessions,
   Workspaces, Agents and Terminals. The phone's workspace list has no heading;

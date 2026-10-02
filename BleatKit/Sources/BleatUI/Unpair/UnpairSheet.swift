@@ -66,7 +66,7 @@ struct UnpairSheet: View {
             Section("Check on \(peer.name)") {
                 Text(advice.command)
                     .font(.footnote.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
                 if let detail = advice.detail {
                     Text(detail)
                         .font(.footnote)
@@ -120,7 +120,7 @@ struct UnpairSheet: View {
             Section("Remove it on \(peer.name)") {
                 Text(advice.command)
                     .font(.footnote.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
                 if let detail = advice.detail {
                     Text(detail)
                         .font(.footnote)

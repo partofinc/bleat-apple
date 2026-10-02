@@ -32,6 +32,9 @@ public struct PeersView: View {
                 // visibly the same thing is worth a line.
                 .tag(peer.hostKey)
                 .swipeActions {
+                    // Not through a relay: unpairing and a host's settings
+                    // belong to the device that holds the key.
+                    if !context.isRelayed {
                     // **Swiping asks; it does not unpair.** Unpairing is not
                     // list management — it decides what a machine will let in
                     // — and the record is the only thing that knows how to
@@ -52,17 +55,28 @@ public struct PeersView: View {
                         context.peerSettings.show(peer)
                     }
                     .tint(.gray)
+                    }
                 }
             }
         }
         .overlay {
             if context.peers.peers.isEmpty, context.peers.failure == nil {
-                ContentUnavailableView {
-                    Label("No hosts yet", systemImage: "desktopcomputer")
-                } description: {
-                    Text("Run `bleat pair` on the machine running Herdr, then scan the code it shows.")
-                } actions: {
-                    Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
+                if context.isRelayed {
+                    // The watch pairs with nothing itself: it shows the hosts
+                    // the phone has, once the phone has said what they are.
+                    ContentUnavailableView(
+                        "No hosts yet",
+                        systemImage: "desktopcomputer",
+                        description: Text("Pair a host in Bleat on your iPhone and it appears here.")
+                    )
+                } else {
+                    ContentUnavailableView {
+                        Label("No hosts yet", systemImage: "desktopcomputer")
+                    } description: {
+                        Text("Run `bleat pair` on the machine running Herdr, then scan the code it shows.")
+                    } actions: {
+                        Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }
+                    }
                 }
             }
         }
@@ -80,7 +94,7 @@ public struct PeersView: View {
         .toolbar {
             bottomBar
         }
-        #else
+        #elseif !os(watchOS)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Pair a host", systemImage: "qrcode.viewfinder") { context.pairing.open() }

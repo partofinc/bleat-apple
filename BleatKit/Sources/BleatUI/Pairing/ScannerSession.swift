@@ -1,4 +1,4 @@
-#if canImport(UIKit)
+#if canImport(UIKit) && !os(watchOS)
 import AVFoundation
 
 /// The capture session, and everything attached to it.

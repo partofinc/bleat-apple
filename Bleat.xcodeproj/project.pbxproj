@@ -9,16 +9,62 @@
 /* Begin PBXBuildFile section */
 		9DECFFD3737B4877834F708D /* BleatUI in Frameworks */ = {isa = PBXBuildFile; productRef = BF272107744E47FD9B53DCC9 /* BleatUI */; };
 		D51B8BE6FD3343248EF259F5 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA6E6623F32448A79D178D4D /* BleatKit */; };
+		A7C000000000000000000001 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = A7C000000000000000000003 /* BleatKit */; };
+		A7C000000000000000000002 /* BleatUI in Frameworks */ = {isa = PBXBuildFile; productRef = A7C000000000000000000004 /* BleatUI */; };
+		A7C00000000000000000000D /* BleatWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A7C000000000000000000005 /* BleatWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A7C00000000000000000000F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B4B836EB36BF456FBD1DDEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A7C000000000000000000009;
+			remoteInfo = BleatWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A7C00000000000000000000C /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				A7C00000000000000000000D /* BleatWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		20E20555DDB3457D8B6F0FBF /* Bleat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bleat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7C000000000000000000005 /* BleatWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BleatWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A7C000000000000000000007 /* Exceptions for "App" folder in "BleatWatch" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				BleatApp.swift,
+			);
+			target = A7C000000000000000000009 /* BleatWatch */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		11C77B934E994327A73DC460 /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A7C000000000000000000007 /* Exceptions for "App" folder in "BleatWatch" target */,
+			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		A7C000000000000000000006 /* Watch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Watch;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +79,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7C000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7C000000000000000000001 /* BleatKit in Frameworks */,
+				A7C000000000000000000002 /* BleatUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +95,7 @@
 			isa = PBXGroup;
 			children = (
 				20E20555DDB3457D8B6F0FBF /* Bleat.app */,
+				A7C000000000000000000005 /* BleatWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				11C77B934E994327A73DC460 /* App */,
+				A7C000000000000000000006 /* Watch */,
 				1FBDBD56747D4343AFEF1C68 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,10 +119,12 @@
 				3690780BF54E47D2A45B8974 /* Sources */,
 				9DE36EF37E6C4891904E4B1D /* Frameworks */,
 				02130AA56F714DA0B101B726 /* Resources */,
+				A7C00000000000000000000C /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A7C00000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				11C77B934E994327A73DC460 /* App */,
@@ -77,6 +136,31 @@
 			);
 			productName = Bleat;
 			productReference = 20E20555DDB3457D8B6F0FBF /* Bleat.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A7C000000000000000000009 /* BleatWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7C000000000000000000010 /* Build configuration list for PBXNativeTarget "BleatWatch" */;
+			buildPhases = (
+				A7C00000000000000000000A /* Sources */,
+				A7C000000000000000000008 /* Frameworks */,
+				A7C00000000000000000000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				11C77B934E994327A73DC460 /* App */,
+				A7C000000000000000000006 /* Watch */,
+			);
+			name = BleatWatch;
+			packageProductDependencies = (
+				A7C000000000000000000003 /* BleatKit */,
+				A7C000000000000000000004 /* BleatUI */,
+			);
+			productName = BleatWatch;
+			productReference = A7C000000000000000000005 /* BleatWatch.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -91,6 +175,9 @@
 				TargetAttributes = {
 					02368EBFE106437991545345 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					A7C000000000000000000009 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -112,12 +199,20 @@
 			projectRoot = "";
 			targets = (
 				02368EBFE106437991545345 /* Bleat */,
+				A7C000000000000000000009 /* BleatWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		02130AA56F714DA0B101B726 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7C00000000000000000000B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -134,7 +229,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7C00000000000000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7C00000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A7C000000000000000000009 /* BleatWatch */;
+			targetProxy = A7C00000000000000000000F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		226CE00A9253445D8E698DC4 /* Debug */ = {
@@ -264,6 +374,68 @@
 			};
 			name = Debug;
 		};
+		A7C000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 4N6MH577X7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Bleat;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = team.partof.bleat;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		A7C000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 4N6MH577X7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Bleat;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = team.partof.bleat;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -285,6 +457,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A7C000000000000000000010 /* Build configuration list for PBXNativeTarget "BleatWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7C000000000000000000011 /* Debug */,
+				A7C000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -302,6 +483,14 @@
 		FA6E6623F32448A79D178D4D /* BleatKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BleatKit;
+		};
+		A7C000000000000000000003 /* BleatKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BleatKit;
+		};
+		A7C000000000000000000004 /* BleatUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BleatUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

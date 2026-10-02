@@ -33,14 +33,21 @@ public final class AppContext {
     /// one sheet — a permission granted after a sheet closed is still the
     /// answer the next one needs.
     public let localNetwork = LocalNetworkAccess()
+    /// Whether this device reaches its hosts through another one — the watch,
+    /// through the phone. What it cannot do follows from that: it pairs with
+    /// nothing, holds no key, and has no terminal.
+    public let isRelayed: Bool
 
-    public init(peers: PeerStore) {
+    /// - Parameter relay: How to ask the phone, on the watch. See
+    ///   `ConnectionStore.init`.
+    public init(peers: PeerStore, relay: RelayTransport.Channel? = nil) {
+        self.isRelayed = relay != nil
         let reachability = Reachability()
         let navigation = NavigationRouter()
         self.navigation = navigation
         self.peers = peers
         self.reachability = reachability
-        let connections = ConnectionStore(peers: peers, reachability: reachability)
+        let connections = ConnectionStore(peers: peers, reachability: reachability, relay: relay)
         self.connections = connections
         self.hostLoad = HostLoadStore(connections: connections, peers: peers)
         self.unpair = UnpairModel(peers: peers, connections: connections, navigation: navigation)

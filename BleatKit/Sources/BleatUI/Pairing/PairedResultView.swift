@@ -27,7 +27,7 @@ struct PairedResultView: View {
             Section("Host key") {
                 Text(peer.hostKeyFingerprint ?? peer.hostKey)
                     .font(.footnote.monospaced())
-                    .textSelection(.enabled)
+                    .selectable()
             }
 
             Section("Reachable at") {

@@ -25,6 +25,20 @@ struct PeerRegistryTests {
         )
     }
 
+    @Test("a copy of another device's records replaces what was there")
+    func replaceAll() throws {
+        let (store, directory) = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try store.save(peer(key: "ssh-ed25519 OLD", endpoints: ["old.local"]))
+        try store.save(peer(key: "ssh-ed25519 KEPT", endpoints: ["a.local", "b.local"]))
+
+        // Not a merge: the host that is gone goes, and the one that stayed
+        // has exactly the addresses it was sent with.
+        let incoming = [peer(key: "ssh-ed25519 KEPT", endpoints: ["a.local"])]
+        try store.replaceAll(with: incoming)
+        #expect(try store.all() == incoming)
+    }
+
     @Test("an empty store reads as empty rather than failing")
     func emptyStore() throws {
         let (store, _) = scratch()

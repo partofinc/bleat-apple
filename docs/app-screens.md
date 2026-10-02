@@ -100,6 +100,9 @@ prompts, guesses, or trusts anything on first sight.
   *previous* winner, so saving it undoes the one just recorded. Both
   `recordSuccess` and `recordHerdrPath` edit the stored record in place.
 
+The watch uses this same store with a relay in place of the dial — see
+[`watch.md`](watch.md).
+
 ## The list screens (Phase 2)
 
 Sessions, workspaces and agents are the same screen three times, so the loading

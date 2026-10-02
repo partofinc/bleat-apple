@@ -12,6 +12,12 @@ struct TerminalLink: View {
     let pane: Pane
 
     var body: some View {
+        #if os(watchOS)
+        // A row and not a link: a terminal is a stream, and the watch has
+        // none — see `RelayTransport`. An agent's row still opens, because
+        // its conversation is a file.
+        TerminalRow(pane: pane)
+        #else
         NavigationLink(
             value: NavigationRouter.Route.pane(
                 peer: peer.hostKey,
@@ -24,6 +30,7 @@ struct TerminalLink: View {
             TerminalRow(pane: pane)
         }
         .buttonStyle(.plain)
+        #endif
     }
 }
 

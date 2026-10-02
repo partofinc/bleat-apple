@@ -318,6 +318,15 @@ public struct PeerRegistry: Sendable {
         return true
     }
 
+    /// Makes the file exactly these peers.
+    ///
+    /// For a device whose registry is a copy of another's — the watch, which
+    /// is sent the phone's records and pairs with nothing itself. Everywhere
+    /// else a peer arrives through `save`, which merges.
+    public func replaceAll(with peers: [PairedPeer]) throws {
+        try write(peers)
+    }
+
     private func write(_ peers: [PairedPeer]) throws {
         var directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(

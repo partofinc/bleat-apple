@@ -24,7 +24,7 @@ public protocol ShellRunner: Sendable {
 ///
 /// Distinct from `HerdrError` (herdr was reached and said no) and from
 /// `TransportError` (the connection itself). Pairing produces this one.
-public struct ShellError: Error, Sendable, Equatable {
+public struct ShellError: Error, Sendable, Equatable, Codable {
     public let command: String
     public let exitCode: Int32
     public let stderr: String

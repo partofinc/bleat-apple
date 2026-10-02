@@ -28,7 +28,8 @@ struct PaneChatView: View {
     /// Offered from the empty state. A pane with no transcript — a plain shell,
     /// an agent that keeps none — would otherwise land the user on a dead
     /// screen with the way out only in a toolbar icon.
-    let showTerminal: () -> Void
+    /// Nil where there is no terminal to show — the watch.
+    let showTerminal: (() -> Void)?
 
     var body: some View {
         ScrollView {
@@ -46,7 +47,7 @@ struct PaneChatView: View {
             }
             .padding(.horizontal)
             .padding(.top, 12)
-            .textSelection(.enabled)
+            .selectable()
         }
         // The newest turn is the one they came for.
         .defaultScrollAnchor(.bottom)
@@ -84,7 +85,9 @@ struct PaneChatView: View {
             } description: {
                 Text(reason)
             } actions: {
-                Button("Show the terminal", action: showTerminal)
+                if let showTerminal {
+                    Button("Show the terminal", action: showTerminal)
+                }
             }
         case .failed(let message):
             ContentUnavailableView {
@@ -93,7 +96,9 @@ struct PaneChatView: View {
                 Text(message)
             } actions: {
                 Button("Try again") { Task { await reload() } }
-                Button("Show the terminal", action: showTerminal)
+                if let showTerminal {
+                    Button("Show the terminal", action: showTerminal)
+                }
             }
         }
     }

@@ -109,7 +109,7 @@ struct PeerDetailView: View {
             )
         }
         .yieldsToPairing(whileBusy: newSession.isStarting, presenting: $isNaming)
-        #else
+        #elseif !os(watchOS)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Settings", systemImage: "gearshape") { context.peerSettings.show(peer) }

@@ -11,9 +11,11 @@ struct HostUsageGauge: View {
     /// `.memory` counts in powers of 1024, as RAM is sold; `.file` in powers
     /// of 1000, as disks are.
     let style: ByteCountFormatStyle.Style
+    /// The share alone, without the amount — see `HostLoadBar.isCompact`.
+    var isCompact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: isCompact ? 2 : 4) {
             HStack(spacing: 4) {
                 Image(systemName: symbol)
                     .foregroundStyle(.secondary)
@@ -34,6 +36,7 @@ struct HostUsageGauge: View {
     var text: String {
         let used = usage.used.formatted(.byteCount(style: style))
         let share = usage.fraction.formatted(.percent.precision(.fractionLength(0)))
+        if isCompact { return share }
         return "\(used) (\(share))"
     }
 

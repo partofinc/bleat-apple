@@ -7,7 +7,7 @@ import NIOCore
 ///
 /// Transport v1: no daemon, no relay, no plugin on the host. One connection
 /// carries every channel — list polling and the pane stream run side by side.
-public final class SSHTransport: HerdrTransport, @unchecked Sendable {
+public final class SSHTransport: PeerLink, @unchecked Sendable {
     private let host: SSHHost
     private let privateKey: Curve25519.Signing.PrivateKey
     private let validator: PinningHostKeyValidator
@@ -198,6 +198,10 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     /// environment it pins the command to the wrong session and silently
     /// overrides `HERDR_SESSION`.
     func command(for args: [String]) -> String {
+        command(for: args, session: session)
+    }
+
+    func command(for args: [String], session: String?) -> String {
         var parts = ["env", "-u", "HERDR_SOCKET_PATH"]
         if let session { parts.append("HERDR_SESSION=\(Self.quote(session))") }
         parts.append(Self.quote(herdrPath))
@@ -211,7 +215,11 @@ public final class SSHTransport: HerdrTransport, @unchecked Sendable {
     }
 
     public func run(_ args: [String]) async throws -> Data {
-        try await execute(command(for: args)) { exitCode, stderr in
+        try await run(args, inSession: session)
+    }
+
+    public func run(_ args: [String], inSession session: String?) async throws -> Data {
+        try await execute(command(for: args, session: session)) { exitCode, stderr in
             // herdr writes its error envelope to stderr and exits non-zero.
             HerdrError.fromStderr(command: args, exitCode: exitCode, stderr: stderr)
         }

@@ -95,8 +95,14 @@ the watch launched it and the sessions arrived.
 - **Nothing is left open for a watch that has gone.** The watch sends
   `.release` when it leaves a host or goes to the background. A watch that
   walks out of range cannot, so the phone also closes the connection 15
-  seconds after the last relayed command finishes, and holds a background task
-  for that long so it is not suspended with the session still up.
+  seconds after the last relayed command finishes.
+- **Background time is held per command, and again for that wait — not as one
+  span.** Without a hold the app is suspended the moment a reply is sent, with
+  the session still up. The first version held one task from the first command
+  to the end of the wait; under a watch that keeps asking it never ended, and
+  its expiry closed the connection under a command in flight (caught in
+  review, not observed). Not exercised on a device either way: it only matters
+  with the phone locked or in the background.
 - **The phone runs what the watch app sends, shell included.**
   WatchConnectivity connects an app only to its own counterpart, signed by the
   same team, so this is the app talking to itself — but it does mean the watch
@@ -115,6 +121,18 @@ host said it is — is written locally *and* sent to the phone as a `PeerNote`
 (`PeerStore.upstream`). It goes as a message while the phone is reachable and
 as a queued `transferUserInfo` when it is not, or when the message fails.
 
+- **The message's handlers are passed from a `nonisolated` function, or the
+  watch app dies.** WatchConnectivity calls a reply or error handler on its own
+  queue. A closure written inside main-actor code is main-actor code, and
+  Swift 6 checks that on entry, so handlers passed from the `upstream` closure
+  trapped in `dispatch_assert_queue` when the phone answered. It reached the
+  simulator — opening a host records what the host is, and the app crashed —
+  and went unnoticed because the next screenshot was of a relaunch. Look in
+  `~/Library/Logs/DiagnosticReports` after a simulator run, not only at the
+  picture.
+- **`mirror` compares against the file, not the loaded list**, which is empty
+  until a screen has read it. The phone's copy can arrive first, and an empty
+  one — the last host unpaired — would otherwise look like no change.
 - The first version only queued, and on the simulator the note never arrived:
   a host opened on the watch showed its system and its mark until the next
   launch, when the phone's copy came back without them. `transferUserInfo`

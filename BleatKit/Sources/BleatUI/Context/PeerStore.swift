@@ -193,7 +193,14 @@ public final class PeerStore {
     /// from the watch with it, and whatever the watch recorded was sent
     /// upstream when it happened, so the phone's records already hold it.
     public func mirror(_ incoming: [PairedPeer]) {
-        guard incoming != peers || failure != nil else { return }
+        // Against the file, not `peers`: that is empty until a screen has
+        // loaded it, and the phone's copy can arrive first. An empty list from
+        // the phone — its last host unpaired — would then look like no change,
+        // and the screen would go on to load the hosts that are gone.
+        guard (try? registry.all()) != incoming else {
+            if peers != incoming || failure != nil { reload() }
+            return
+        }
         do {
             try registry.replaceAll(with: incoming)
             reload()

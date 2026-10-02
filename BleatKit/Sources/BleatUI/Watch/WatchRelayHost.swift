@@ -15,10 +15,15 @@ import WatchConnectivity
 ///
 /// **Nothing is left open on a host for a watch that has gone.** The watch
 /// says when it has stopped looking; a watch that walks out of range cannot,
-/// so the connection is also closed a few seconds after its last command. A
-/// background task holds the app awake for that long — the system would
-/// otherwise suspend it the moment the reply was sent, with the SSH session
-/// still up on somebody's Mac.
+/// so the connection is also closed a few seconds after its last command.
+///
+/// **Background time is held twice over, and not as one span.** The system
+/// would otherwise suspend the app the moment a reply was sent, with the SSH
+/// session still up on somebody's Mac. Each command holds a task of its own
+/// for as long as it runs, and the wait after the last one holds another. One
+/// task from the first command to the end of the wait would run out under a
+/// watch that keeps asking, and the only thing its expiry could do is close
+/// the connection under a command in flight.
 public final class WatchRelayHost: NSObject {
     private let peers: PeerStore
     private let connections: ConnectionStore
@@ -28,7 +33,8 @@ public final class WatchRelayHost: NSObject {
     /// a slow command is not cut off by a timer that began when it did.
     private var inFlight = 0
     private var idle: Task<Void, Never>?
-    private var background = UIBackgroundTaskIdentifier.invalid
+    /// The background task held while the idle clock runs.
+    private var lingering = UIBackgroundTaskIdentifier.invalid
     /// How long a connection opened for the watch outlives its last command.
     /// Longer than a wrist coming back up to the next screen; shorter than the
     /// background time the system allows.
@@ -66,11 +72,14 @@ public final class WatchRelayHost: NSObject {
     private func answer(_ request: Data) async -> Data {
         guard let responder else { return Data() }
         inFlight += 1
-        idle?.cancel()
-        holdAwake()
+        stopIdleClock()
+        let awake = holdAwake("Bleat watch command")
         let reply = await responder.reply(to: request)
         inFlight -= 1
+        // The clock takes its own hold before this command gives up its, so
+        // there is no moment with neither.
         if inFlight == 0 { startIdleClock() }
+        letSleep(awake)
         return reply
     }
 
@@ -100,32 +109,54 @@ public final class WatchRelayHost: NSObject {
     // MARK: - Not outstaying the watch
 
     private func startIdleClock() {
-        idle?.cancel()
+        stopIdleClock()
+        let awake = holdAwake("Bleat watch linger") { [weak self] in
+            // Out of time while nothing was running: close now. The hold ends
+            // as this returns, so the close is started rather than waited for.
+            guard let self else { return }
+            self.lingering = .invalid
+            self.idle?.cancel()
+            self.idle = nil
+            Task { await self.connections.release() }
+        }
+        lingering = awake
         idle = Task { [weak self] in
             try? await Task.sleep(for: Self.linger)
             guard !Task.isCancelled, let self else { return }
             await self.connections.release()
-            self.letSleep()
+            // A command that arrived during the close has already ended this
+            // hold and taken one of its own; ending it again would end theirs.
+            guard self.lingering == awake else { return }
+            self.lingering = .invalid
+            self.letSleep(awake)
         }
     }
 
-    private func holdAwake() {
-        guard background == .invalid else { return }
-        background = UIApplication.shared.beginBackgroundTask(withName: "Bleat watch relay") { [weak self] in
-            // Out of time: close now rather than be suspended with it open.
-            Task { @MainActor in
-                guard let self else { return }
-                self.idle?.cancel()
-                await self.connections.release()
-                self.letSleep()
-            }
-        }
+    private func stopIdleClock() {
+        idle?.cancel()
+        idle = nil
+        letSleep(lingering)
+        lingering = .invalid
     }
 
-    private func letSleep() {
-        guard background != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(background)
-        background = .invalid
+    /// Holds the app awake until `letSleep`. The system calls `onExpiry` on
+    /// the main thread if it runs out of patience first, and the hold ends
+    /// there and then — it has to, before that call returns.
+    private func holdAwake(
+        _ name: String,
+        onExpiry: @escaping @MainActor () -> Void = {}
+    ) -> UIBackgroundTaskIdentifier {
+        var held = UIBackgroundTaskIdentifier.invalid
+        held = UIApplication.shared.beginBackgroundTask(withName: name) {
+            onExpiry()
+            UIApplication.shared.endBackgroundTask(held)
+        }
+        return held
+    }
+
+    private func letSleep(_ held: UIBackgroundTaskIdentifier) {
+        guard held != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(held)
     }
 
     // MARK: - The watch's copy of the hosts

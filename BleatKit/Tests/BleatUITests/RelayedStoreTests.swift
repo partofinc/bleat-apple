@@ -137,6 +137,17 @@ struct RelayedStoreTests {
         #expect(peers.peers.isEmpty)
     }
 
+    @Test("an empty list from the phone empties a copy no screen has loaded yet")
+    func mirrorBeforeTheFirstLoad() {
+        // No `reload()`: this is the watch app launching, with the phone's
+        // copy arriving before the host list has read the file.
+        let peers = PeerStore(registry: .sample())
+        #expect(peers.peers.isEmpty)
+        peers.mirror([])
+        peers.reload()
+        #expect(peers.peers.isEmpty)
+    }
+
     @Test("what the watch records about a host is also sent to the phone")
     func upstream() {
         let peers = PeerStore(registry: .sample())

@@ -52,14 +52,7 @@ public final class WatchLink: NSObject {
             guard let data = try? JSONEncoder().encode(RelayRequest.note(hostKey: hostKey, note)) else {
                 return
             }
-            let session = WCSession.default
-            guard session.activationState == .activated, session.isReachable else {
-                session.transferUserInfo([WatchWire.request: data])
-                return
-            }
-            session.sendMessageData(data, replyHandler: { _ in }, errorHandler: { _ in
-                WCSession.default.transferUserInfo([WatchWire.request: data])
-            })
+            WatchLink.send(note: data)
         }
         let session = WCSession.default
         session.delegate = self
@@ -74,6 +67,24 @@ public final class WatchLink: NSObject {
             return
         }
         peers?.mirror(incoming)
+    }
+
+    /// **`nonisolated`, and that is what keeps the app alive.** The system
+    /// calls a message's reply and error handlers on a queue of its own. A
+    /// closure written inside main-actor code is taken to be main-actor code,
+    /// and Swift 6 checks that on entry — so the first version, which passed
+    /// these from the `upstream` closure, trapped in `dispatch_assert_queue`
+    /// the moment the phone answered a note. It reached the simulator: opening
+    /// a host recorded what the host is, and the watch app died.
+    private nonisolated static func send(note data: Data) {
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isReachable else {
+            session.transferUserInfo([WatchWire.request: data])
+            return
+        }
+        session.sendMessageData(data, replyHandler: { _ in }, errorHandler: { _ in
+            WCSession.default.transferUserInfo([WatchWire.request: data])
+        })
     }
 
     /// Activation is asynchronous and the first screen asks at once.

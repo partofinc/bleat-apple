@@ -154,8 +154,7 @@ watchOS 27.0) against a scratch sshd and a scratch herdr session on this Mac:
 Compiled and reachable, **not exercised** — nothing can tap a simulator from
 the command line:
 
-- stopping, starting and deleting a session from a swipe on its row, and
-  the Start and Stop rows on a session's own screen;
+- stopping, starting and deleting a session from a swipe on its row;
 - an agent's conversation.
 
 Not on the watch:
@@ -194,7 +193,9 @@ the one switch; the phone's layout is untouched.
   screen is a list as well: what Start brings back, then Start. Delete is
   only the swipe on the session's row.
 
-**Not verified on a real watch at all.** The reply size limit is the open
+**On a real watch, 2 Oct 2026** (Apple Watch Series 7, watchOS 26.6, by
+hand): the lists with the load row first, and Start and Stop from a session's
+screen, all working. The reply size limit is still unmeasured, and it is the open
 question there: a message has a limit the system does not publish, and an
 agent's conversation is the large reply. Replies are deflated before they
 cross (`WatchWire.pack`), which is headroom rather than proof.

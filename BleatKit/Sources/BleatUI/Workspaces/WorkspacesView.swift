@@ -70,10 +70,19 @@ struct WorkspacesView: View {
                     // The whole reload, not just the list: a retry is what
                     // brings the connection up after a failed first load, and
                     // the host's load is read only once it is.
-                    retry: { await reload() }
+                    retry: { await reload() },
+                    header: { HostLoadSection(peer: peer) },
+                    footer: { powerSection }
                 ) { list in
-                    ForEach(list) { workspace in
-                        WorkspaceLink(peer: peer, session: session, workspace: workspace)
+                    // Named on a watch, where the host's load is the row
+                    // above and a list that simply follows it reads as more
+                    // of the same.
+                    if WatchLayout.isHere {
+                        if !list.isEmpty {
+                            Section("Workspaces") { links(to: list) }
+                        }
+                    } else {
+                        links(to: list)
                     }
                 }
             }
@@ -96,8 +105,8 @@ struct WorkspacesView: View {
         #elseif !os(watchOS)
         .toolbar { ToolbarItemGroup(placement: .primaryAction) { actionButtons } }
         #endif
-        // The bar's own buttons ask — see `actionButton` — so the screen does
-        // not: two dialogs over one question is one that never appears.
+        // The bar's own buttons ask — see `actionButton`, and `powerSection`
+        // on a watch — so the screen does not: two dialogs over one question is one that never appears.
         .sessionControl(control, on: peer, confirmsHere: false) { action in
             // A screen cannot stay inside a session it has just deleted: the
             // route names something the host no longer has, and every refresh
@@ -129,21 +138,75 @@ struct WorkspacesView: View {
     /// `server_not_running`.
     private var isRunning: Bool { status.info?.running == true }
 
+    private func links(to list: [Workspace]) -> some View {
+        ForEach(list) { workspace in
+            WorkspaceLink(peer: peer, session: session, workspace: workspace)
+        }
+    }
+
+    /// A list on a watch, for the reason `RemoteListView` is one there: the
+    /// explanation is longer than the screen, and Start has to be a row
+    /// because there is no bar.
+    @ViewBuilder
     private var stopped: some View {
-        ContentUnavailableView(
-            "Session stopped",
-            systemImage: "stop.circle",
-            // Says what Start actually does, because it is not obvious and it
-            // is not nothing: measured, a restarted session comes back with its
-            // workspaces and panes and a freshly spawned shell in each — but
-            // **agents are not restarted**. `herdr agent start` is a separate
-            // step herdr does not replay, so a pane that held an agent comes
-            // back as a plain shell.
-            description: Text(
-                "Nothing is running in \(session ?? peer.name). Starting it brings back its "
-                + "workspaces and a shell in each pane; agents are not restarted."
+        if WatchLayout.isHere {
+            List {
+                HostLoadSection(peer: peer)
+                Section {
+                    Label("Session stopped", systemImage: "stop.circle")
+                        .font(.headline)
+                    Text(stoppedText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                powerSection
+            }
+        } else {
+            ContentUnavailableView(
+                "Session stopped",
+                systemImage: "stop.circle",
+                description: Text(stoppedText)
             )
-        )
+        }
+    }
+
+    /// Says what Start actually does, because it is not obvious and it is not
+    /// nothing: measured, a restarted session comes back with its workspaces
+    /// and panes and a freshly spawned shell in each — but **agents are not
+    /// restarted**. `herdr agent start` is a separate step herdr does not
+    /// replay, so a pane that held an agent comes back as a plain shell.
+    private var stoppedText: String {
+        "Nothing is running in \(session ?? peer.name). Starting it brings back its "
+            + "workspaces and a shell in each pane; agents are not restarted."
+    }
+
+    /// Start or Stop as the list's last row, on a watch — the phone has them
+    /// in its bottom bar, and a watch has no bar.
+    ///
+    /// **Last, under the workspaces**, so Stop is something scrolled to
+    /// rather than the first thing under a thumb, and asks before it acts
+    /// like every other Stop. Delete is not here: it stays a swipe on the
+    /// session's row, one screen up.
+    @ViewBuilder
+    private var powerSection: some View {
+        if WatchLayout.isHere, let info = status.info, let power {
+            Section {
+                Button {
+                    control.begin(power, about: info, on: peer)
+                } label: {
+                    HStack {
+                        Label(power.title, systemImage: power.symbol)
+                            .foregroundStyle(power == .start ? .green : .red)
+                        Spacer()
+                        // A start is a launch and a poll: seconds, on a
+                        // screen that otherwise would not move.
+                        if control.isWorking { ProgressView().fixedSize() }
+                    }
+                }
+                .disabled(control.isWorking)
+                .sessionConfirmation(control, for: power, on: peer)
+            }
+        }
     }
 
     /// What this screen's session offers — see

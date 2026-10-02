@@ -12,7 +12,8 @@ import SwiftUI
 ///
 /// What does change by the minute — how busy the machine is — rides in a bar
 /// under the list, here and on the two screens below this one. See
-/// `HostLoadBarModifier`.
+/// `HostLoadBarModifier`. On a watch it is the list's first row instead:
+/// `HostLoadSection`.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
     /// Published by `PeerSettingsFlow`, which presents the sheet at the root.
@@ -78,8 +79,13 @@ struct PeerDetailView: View {
         // failure with a way back, and rows that survive a failed refresh.
         RemoteListView(
             state: sessions.state,
-            empty: "No sessions yet. Start one with the button below.",
-            retry: { await load() }
+            // The watch has no such button: sessions are made on the phone.
+            empty: context.isRelayed
+                ? "No sessions on this host."
+                : "No sessions yet. Start one with the button below.",
+            retry: { await load() },
+            header: { HostLoadSection(peer: peer) },
+            footer: { EmptyView() }
         ) { list in
             // Only over rows, as on the agents screen: a heading above the
             // empty state reads as a list that failed to load.

@@ -384,6 +384,8 @@ and a `HostLoad`.
     average, and the temperature with its own icon when the host has one.
     Memory and disk are gauges: amount used, share in brackets, a bar that
     turns orange at 75% and red at 90%. Uptime is read and not shown.
+  - **On a watch it is the list's first row, not a bar** (`HostLoadSection`).
+    See [watch](watch.md).
   - **Not on a pane.** Layout there is the stream's size, and a bar that comes
     and goes with the connection would resize the pty on someone's Mac.
   - **One reading, in `AppContext.hostLoad`**, not per-screen state: three

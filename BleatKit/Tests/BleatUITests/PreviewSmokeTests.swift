@@ -274,6 +274,22 @@ struct PreviewSmokeTests {
         ] {
             render(context, List { Text("Row") }.safeAreaBar(edge: .bottom) { HostLoadBar(load: load) })
         }
+        // The watch's form: a row at the top of the list, with the failure
+        // and the empty answer as rows under it rather than laid over it.
+        let states: [Loadable<[Workspace]>] = [
+            .loaded(Workspace.samples), .loaded([]), .loading,
+            .failed(.hostSaidNo("no herdr server is running")),
+            .stale(Workspace.samples, .unreachable("the connection closed")),
+        ]
+        for state in states {
+            render(context, RemoteListView(
+                state: state, empty: "No workspaces in this session.", isInline: true, retry: {},
+                header: { Section { HostLoadBar(load: .sampleLinux, isCompact: true) } },
+                footer: { Section { Button("Stop") {} } }
+            ) { list in
+                Section("Workspaces") { ForEach(list) { WorkspaceRow(workspace: $0) } }
+            })
+        }
         render(context, PeerSettingsView(hostKey: PairedPeer.preview.hostKey))
         await settle(context)
     }

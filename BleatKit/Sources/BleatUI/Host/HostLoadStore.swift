@@ -61,6 +61,12 @@ public final class HostLoadStore {
         return reading.connection == connections.connectionID(for: peer) ? reading.load : nil
     }
 
+    /// Whether a read for this host is in flight — what a list that keeps a
+    /// row for the load draws a placeholder on, the first time.
+    func isReading(for peer: PairedPeer) -> Bool {
+        refreshing == peer.hostKey
+    }
+
     /// Reads the host's status, if there is a connection to read it over.
     ///
     /// Also where what the host *is* gets stored on its peer record — the same

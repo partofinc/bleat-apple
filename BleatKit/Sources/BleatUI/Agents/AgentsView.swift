@@ -132,10 +132,10 @@ struct AgentsView: View {
             // list has no plus for a terminal — a tab belongs to a workspace —
             // so telling that one to open a terminal is advice it refuses to
             // take.
-            empty: workspace == nil
-                ? "Nothing is running in this session. Open a workspace to start something in it."
-                : "Nothing is running here. Open a terminal, or start an agent in one.",
-            retry: { await load() }
+            empty: emptyText,
+            retry: { await load() },
+            header: { HostLoadSection(peer: peer) },
+            footer: { EmptyView() }
         ) { list in
             // Each section is drawn only when it has rows: a heading over
             // nothing reads as a list that failed to load its other half.
@@ -242,6 +242,14 @@ struct AgentsView: View {
         .hostLoadBar(for: peer)
         .refreshable { await load(force: true) }
         .task { await load() }
+    }
+
+    /// Named for what this device can do as well: the watch starts nothing.
+    private var emptyText: String {
+        if context.isRelayed { return "Nothing is running here." }
+        return workspace == nil
+            ? "Nothing is running in this session. Open a workspace to start something in it."
+            : "Nothing is running here. Open a terminal, or start an agent in one."
     }
 
     /// The rows, then how busy the host is — last, because that is read only

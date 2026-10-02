@@ -10,20 +10,15 @@ import SwiftUI
 ///
 /// **On a watch it keeps the icons and drops the words**: the busy share
 /// without the load average beside it, and each gauge's percentage without the
-/// amount. The whole bar is a fifth of that screen as it is.
+/// amount. It is also not a bar there but a row in the screen's list — see
+/// `HostLoadSection` — so the compact form draws no glass and no margins of
+/// its own; the row brings both.
 struct HostLoadBar: View {
     let load: HostLoad
-    /// Whether to leave out everything but one number per icon. Follows the
-    /// platform; a parameter so both forms can be laid out anywhere.
-    var isCompact = HostLoadBar.isCompactHere
-
-    static var isCompactHere: Bool {
-        #if os(watchOS)
-        true
-        #else
-        false
-        #endif
-    }
+    /// Whether to leave out everything but one number per icon, and the bar's
+    /// own chrome. Follows the platform; a parameter so both forms can be
+    /// laid out anywhere.
+    var isCompact = WatchLayout.isHere
 
     var body: some View {
         VStack(alignment: .leading, spacing: isCompact ? 4 : 8) {
@@ -66,11 +61,25 @@ struct HostLoadBar: View {
         }
         .font(isCompact ? .caption2 : .caption)
         .monospacedDigit()
-        .padding(.horizontal, isCompact ? 10 : 14)
-        .padding(.vertical, isCompact ? 6 : 10)
-        .glassEffect(in: .rect(cornerRadius: isCompact ? 14 : 20))
-        .padding(.horizontal, isCompact ? 4 : 16)
-        .padding(.bottom, isCompact ? 0 : 6)
+        .modifier(Chrome(isBar: !isCompact))
+    }
+
+    /// What makes it a bar: glass, and room around it. A row has its list's.
+    private struct Chrome: ViewModifier {
+        let isBar: Bool
+
+        func body(content: Content) -> some View {
+            if isBar {
+                content
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .glassEffect(in: .rect(cornerRadius: 20))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            } else {
+                content
+            }
+        }
     }
 
     /// One number for the processor: how busy it is, or the load average where
@@ -115,12 +124,13 @@ struct HostLoadBar: View {
         .safeAreaBar(edge: .bottom) { HostLoadBar(load: .sampleLinux) }
 }
 
-/// The watch's form, at about a watch's width.
+/// The watch's form, at about a watch's width: a row above the screen's own.
 #Preview("Compact", traits: .sampleData) {
-    List { Text("Sessions") }
-        .safeAreaBar(edge: .bottom) {
-            HostLoadBar(load: .sampleLinux, isCompact: true).frame(width: 190)
-        }
+    List {
+        Section { HostLoadBar(load: .sampleLinux, isCompact: true) }
+        Section("Sessions") { Text("work") }
+    }
+    .frame(width: 190)
 }
 
 /// A host that answered half the probe gets half the bar.

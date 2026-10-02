@@ -147,7 +147,7 @@ watchOS 27.0) against a scratch sshd and a scratch herdr session on this Mac:
 - the host list, with the host's mark and system;
 - a host's sessions, a session's workspaces, a workspace's agents and
   terminals;
-- the load bar on all three, in a compact form — one number per icon, no
+- the host's load on all three, in a compact form — one number per icon, no
   amounts;
 - herdr's own error text on a failed command.
 
@@ -165,7 +165,37 @@ Not on the watch:
 - creating a session, a workspace or an agent. The forms are iOS-only files
   and each needs text entry designed for a watch.
 
-**Not verified on a real watch at all.** The reply size limit is the open
+### Everything is in the list
+
+Changed 2 Oct 2026, after the first build was worn. `WatchLayout.isHere` is
+the one switch; the phone's layout is untouched.
+
+- **The host's load is the list's first row** (`HostLoadSection`), not the
+  phone's `.safeAreaBar`. A bar does not scroll: fixed to the bottom of a
+  watch it took a third of the screen for as long as the screen was up, over
+  a list showing two rows. The compact `HostLoadBar` draws no glass and no
+  margins there — the row brings both.
+  The row is held with a placeholder while the first reading is in flight
+  (`HostLoadStore.isAwaitingFirstReading`): the probe takes a second, and a row arriving
+  that late pushed the list down under a finger.
+- **What the screen is about follows in a named section** — Sessions,
+  Workspaces, Agents and Terminals. The phone's workspace list has no heading;
+  the watch's does, because rows that simply follow the load row read as more
+  of it.
+- **A failure and an empty answer are rows too** (`RemoteListView.isInline`),
+  where the phone lays them over the list. An overlay cannot be scrolled, and
+  herdr's account of a refusal is longer than a watch; it would also sit on
+  top of the load row.
+- **Start and Stop are the last row of a session's screen**
+  (`WorkspacesView.powerSection`) — the phone has them in a bottom bar, and
+  the watch has no bar. Last, so Stop is scrolled to rather than under the
+  thumb; it asks first, with the same words as the phone. A stopped session's
+  screen is a list as well: what Start brings back, then Start. Delete is
+  only the swipe on the session's row.
+
+**On a real watch, 2 Oct 2026** (Apple Watch Series 7, watchOS 26.6, by
+hand): the lists with the load row first, and Start and Stop from a session's
+screen, all working. The reply size limit is still unmeasured, and it is the open
 question there: a message has a limit the system does not publish, and an
 agent's conversation is the large reply. Replies are deflated before they
 cross (`WatchWire.pack`), which is headroom rather than proof.

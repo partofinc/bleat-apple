@@ -98,3 +98,37 @@ Captured from a running server on the dev Mac (session `work`). Fixtures in
 
 When something contradicts this section, the live host wins. Re-verify and
 update this file in the same commit.
+
+## Resolved open questions
+
+Moved here from `CLAUDE.md`, whose open-questions list keeps only what is
+still open.
+
+Resolved (7 Sept 2026): **a split tab's `pane layout`**, captured at last —
+`Fixtures/pane-layout-split.json`. Both blockers turned out to be avoidable: a
+`herdr pane split` needs no `session attach`, so the nested-herdr guard never
+came into it, and an isolated probe workspace in the `phone` session meant the
+live `work` session was never touched. The numbers justify the design — the
+tab's `area` is 54 columns and **each pane is 27** — so a client that rendered a
+split pane at `area.width` would wrap every line at double the real width.
+Looking the pane up by id is what avoids that, and the test now runs against the
+host's own bytes instead of a synthesised sibling. The reply also carries a
+`splits` array, a field nothing reads and no fixture had ever contained: the
+first real exercise of "unknown keys are ignored, never fatal" on this command.
+
+Resolved (7 Sept 2026): **`blocked` and `done` agent rows**, and with them what
+`done` actually means — see the agent-state bullets near the top of
+`herdr-facts.md`, under **`done` is not "finished"**. The sort order recorded there was
+wrong and has been corrected.
+
+Resolved (6 Sept 2026): `observe` ignores `terminal.scroll`, so there is no
+host-side scrollback for a reader; and `agent prompt --wait` is documented on the
+host — an already-**blocked** agent is rejected with `agent_blocked` *before any
+input is sent*, a non-working agent needs an observed state change within 5000ms
+or returns `agent_prompt_stalled`, and it does not track turns, so an agent that
+was already working may match on that turn's completion.
+
+Resolved (4 Sept 2026): `terminal.frame` shape and the absence of a cursor
+field; `agent list` needing no join; the four stdin record types; and
+`terminal.release` — the host closes the stream and the command **exits 0**, so
+release is the clean detach and the channel need not be killed.

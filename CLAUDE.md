@@ -58,6 +58,7 @@ shipped once, written down so it does not ship twice.
 | [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build, the SDK's ARMv8.1 allocator and what the port needed |
 | [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, why approachable concurrency is off |
 | [`docs/app-icon.md`](docs/app-icon.md) | the icon, `Design/icon.swift`, and authoring a `.icon` by hand |
+| [`docs/testing.md`](docs/testing.md) | a scratch herdr session, a scratch sshd, testing pairing without touching your own keys |
 | [`docs/phase-history.md`](docs/phase-history.md) | how each phase gate was verified |
 
 ## Repository layout
@@ -116,6 +117,7 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
   from `BleatKit/`, or the simulator test run.
 - **Command-line `xcodebuild` passes `-derivedDataPath`** to a scratch
   directory, or it corrupts the DerivedData the open Xcode uses.
+  ([layout](docs/repository-layout.md))
 - **Build the Linux tool with `Scripts/build-linux.sh`, not a bare
   `swift build`.** The stock static SDK's allocator is ARMv8.1 code, and its
   binaries die with SIGILL before `main` on a Pi 4 or CM4.
@@ -125,13 +127,8 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
 
 ## Concurrency settings
 
-| where | settings |
-|---|---|
-| Xcode targets | `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` |
-| package | `swiftLanguageModes: [.v6]`, `.enableUpcomingFeature("MemberImportVisibility")` on every target, `.defaultIsolation(MainActor.self)` on `BleatUI` only |
-
-`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately. Why, and
-the rest, in [`docs/concurrency.md`](docs/concurrency.md).
+`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately. The
+settings on each side, and why, are in [`docs/concurrency.md`](docs/concurrency.md).
 
 ## Architecture rules
 
@@ -197,50 +194,14 @@ the rest, in [`docs/concurrency.md`](docs/concurrency.md).
     would pull the base branch out from under a stacked PR the moment its
     parent merged. Delete merged branches deliberately instead, once nothing
     is stacked on them.
-- **The package is named `BleatKit`, not `bleat`, and the reason is a
-  filesystem collision.** It used to be `bleat`, against an `.xcodeproj` named
-  `Bleat` — and macOS is case-insensitive, so Xcode's two intermediates
-  directories, `Intermediates.noindex/bleat.build` (the package) and
-  `Bleat.build` (the project), were **the same directory**. Verified by inode:
-  both `stat` calls returned `298112417`. The app target's own build directory
-  therefore sat inside the package's, alongside `BleatKit.build` and
-  `BleatUI.build`. Reproduced from a clean `-derivedDataPath`, so it was
-  structural rather than a corrupted cache. Renaming the package separates them
-  — the executable *product* is still `bleat`, so the CLI is unchanged.
-  - The autocreated package scheme is `BleatKit-Package` now, and it resolves
-    only from `BleatKit/`, not from the project.
-  - Two schemes still differ only in case (`bleat`, the tool, and `Bleat`, the
-    app). That is tolerable where the build directories were not, but it is
-    worth knowing when something in Xcode behaves oddly.
-
-- **`git add -A` can silently strip `Support/Info.plist`'s comments, because
-  Xcode rewrites that file.** Caught in review, 30 Sept 2026: a commit that
-  touched only doc comments also deleted the 25-line XML comment explaining why
-  that plist exists at all — the two keys that cannot be build settings, the
-  `PairingPayload.urlScheme` coupling no test can assert, and why
-  `NSBonjourServices` is not optional. The keys themselves survived; only the
-  reasoning went, which is the worse loss in a file nobody reads twice.
-  - **`xcodebuild build` is not the culprit** — reproduced with a scratch
-    `-derivedDataPath` and the file's md5 was unchanged. It is the **open
-    Xcode**, which normalises a plist it manages, and plist serialisation drops
-    comments. Same family as the DerivedData note below: the GUI and the command
-    line both think they own things in here.
-  - So **stage paths deliberately in this repo rather than `-A`**, and if the
-    plist does appear in `git status` unexpectedly, diff it before staging:
-    `PlistBuddy -c Print` on both versions says whether any *key* really moved.
-
-- **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
-  Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
-  open Xcode is using. Interleaving configurations and destinations there —
-  Debug simulator, Debug device, Release device, in one sitting — leaves the
-  build database and the products on disk out of step, and the first thing that
-  notices is **previews**, which JIT-link per-file object files:
-  `FailedToLaunchAppError` wrapping `ShellCouldNotValidatePathExists: Could not
-  validate that build product path exists to link: …/BleatUI.build/
-  Objects-normal/arm64/AgentLink.o`. The file was there; the build description
-  disagreed. It cost a 2.2 GB DerivedData deletion and a full rebuild to clear.
-  Build into a scratch path instead, and let Xcode keep its own.
-
+- **The package is named `BleatKit`, not `bleat`**, because macOS is
+  case-insensitive and the old name put the package's build directory and the
+  `Bleat` project's in one place. Two schemes still differ only in case
+  (`bleat`, the tool; `Bleat`, the app). ([layout](docs/repository-layout.md))
+- **Stage paths deliberately, never `git add -A`.** The open Xcode rewrites
+  `Support/Info.plist` and drops its comments. If the plist shows up in
+  `git status` unexpectedly, compare `PlistBuddy -c Print` on both versions
+  before staging. ([layout](docs/repository-layout.md))
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.
@@ -255,71 +216,12 @@ the rest, in [`docs/concurrency.md`](docs/concurrency.md).
 - Whether the host ever sends a non-`terminal.frame` record on stdout. Only
   frames have been observed; `TerminalRecord.unknown` covers the rest.
 
-Resolved (7 Sept 2026): **a split tab's `pane layout`**, captured at last —
-`Fixtures/pane-layout-split.json`. Both blockers turned out to be avoidable: a
-`herdr pane split` needs no `session attach`, so the nested-herdr guard never
-came into it, and an isolated probe workspace in the `phone` session meant the
-live `work` session was never touched. The numbers justify the design — the
-tab's `area` is 54 columns and **each pane is 27** — so a client that rendered a
-split pane at `area.width` would wrap every line at double the real width.
-Looking the pane up by id is what avoids that, and the test now runs against the
-host's own bytes instead of a synthesised sibling. The reply also carries a
-`splits` array, a field nothing reads and no fixture had ever contained: the
-first real exercise of "unknown keys are ignored, never fatal" on this command.
-
-Resolved (7 Sept 2026): **`blocked` and `done` agent rows**, and with them what
-`done` actually means — see the agent-state bullets in
-[`docs/herdr-facts.md`](docs/herdr-facts.md). The sort order recorded there was
-wrong and has been corrected.
-
-Resolved (6 Sept 2026): `observe` ignores `terminal.scroll`, so there is no
-host-side scrollback for a reader; and `agent prompt --wait` is documented on the
-host — an already-**blocked** agent is rejected with `agent_blocked` *before any
-input is sent*, a non-working agent needs an observed state change within 5000ms
-or returns `agent_prompt_stalled`, and it does not track turns, so an agent that
-was already working may match on that turn's completion.
-
-Resolved (4 Sept 2026): `terminal.frame` shape and the absence of a cursor
-field; `agent list` needing no join; the four stdin record types; and
-`terminal.release` — the host closes the stream and the command **exits 0**, so
-release is the clean detach and the channel need not be killed.
-
 ## Testing against a live host
 
-`herdr` runs on the dev Mac, so Phase 1 does not need SSH to be exercised.
-`LocalProcessTransport` spawns the CLI directly behind the same
-`HerdrTransport` seam that `SSHTransport` will sit behind.
-
-- Never experiment against the `work` session: it holds real agents, and
-  `--takeover` seizes input from whoever owns it.
-- Start an isolated session instead — it needs a pty, so:
-  `script -q /dev/null herdr session attach bleat-test &`. A client command
-  alone will not autostart a server; it returns `server_not_running`.
-- Tear it down with `herdr session stop <name>` when finished.
-
-To exercise the SSH path without changing system settings, generate a host key
-and a client key, write an `sshd_config` with `StrictModes no` and
-`UsePAM no`, and run `/usr/sbin/sshd -f <config> -D -e` as your own user on a
-high port bound to `127.0.0.1`. Remember `herdr` will not be on the PATH of the
-resulting non-login shell, so pass `--herdr /opt/homebrew/bin/herdr`.
-
-**Testing pairing needs one more line in that config, and it is not optional.**
-Pairing writes to `~/.ssh/authorized_keys`, and `~` in an exec channel is the
-*real* home: sshd logs you into your actual account whatever `HOME` the tool was
-started with. Pointing `AuthorizedKeysFile` at a scratch file does **not** move
-the shell's `~`, so the two disagree — and a run under that config installs a key
-in your own `authorized_keys` while reporting success against a file sshd never
-reads. Add `SetEnv HOME=<scratch>` alongside the scratch `AuthorizedKeysFile`
-(verified: the session's `HOME` and `~` both become the scratch), and run
-`bleat pair` with the same `HOME`. Then everything stays inside the scratch
-directory.
-
-`PATH` cannot describe a host without herdr, either: `/etc/profile` runs
-`path_helper`, which rebuilds `PATH` from `/etc/paths.d` — and Homebrew installs
-a file there — so a login shell puts `/opt/homebrew/bin` back whatever it was
-handed. Supply a stub `$SHELL` instead, as `EnrollmentShellTests` does.
-
-Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the passwd
-entry — so `PeerRegistry.standard()` and `HostRegistry.standard()` still write to
-the real `~/.bleat/` under a scratch `HOME`. Pass an explicit directory when that
-matters.
+herdr runs on this Mac, so `LocalProcessTransport` needs no SSH. Never
+experiment against the `work` session: start a scratch one with
+`script -q /dev/null herdr session attach bleat-test &` and stop it with
+`herdr session stop <name>`. **Testing pairing against a scratch sshd needs
+`SetEnv HOME=<scratch>`**, or it writes to your real `authorized_keys`. The
+scratch sshd recipe and the `PATH` and `NSHomeDirectory` traps are in
+[`docs/testing.md`](docs/testing.md).

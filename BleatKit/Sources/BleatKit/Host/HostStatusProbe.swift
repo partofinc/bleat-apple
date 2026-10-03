@@ -172,7 +172,6 @@ public enum HostStatusProbe {
 
     // MARK: - macOS
 
-    /// `ProductName:\t\tmacOS` and `ProductVersion:\t\t27.0.1`.
     /// `"product-name" = <"MacBook Air (M1, 2020)">`, from `ioreg`: the
     /// property is a byte string, which `ioreg` prints quoted inside angle
     /// brackets. Absent on an Intel Mac, which has no such property.
@@ -187,6 +186,7 @@ public enum HostStatusProbe {
         return nil
     }
 
+    /// `ProductName:\t\tmacOS` and `ProductVersion:\t\t27.0.1`.
     private static func macSystem(_ lines: [Substring]) -> String? {
         let values = keyed(lines, separator: ":")
         guard let name = values["ProductName"], let version = values["ProductVersion"] else {

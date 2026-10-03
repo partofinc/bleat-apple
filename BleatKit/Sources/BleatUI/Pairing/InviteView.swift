@@ -109,7 +109,10 @@ struct InviteView: View {
                     Text("On the other device, open Bleat, tap Pair a host, and scan this.")
                         .multilineTextAlignment(.center)
 
-                    Text("Expires in \(Text(timerInterval: Date.now...invitation.deadline, countsDown: true))")
+                    // Clamped: the phase is still `.showing` for up to a poll
+                    // after the deadline, and a range whose start is past its
+                    // end traps.
+                    Text("Expires in \(Text(timerInterval: min(Date.now, invitation.deadline)...invitation.deadline, countsDown: true))")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
 

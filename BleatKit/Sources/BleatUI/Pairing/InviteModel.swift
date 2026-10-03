@@ -58,10 +58,24 @@ final class InviteModel {
         pollInterval: Duration = InviteModel.pollInterval
     ) async {
         phase = .opening
+        let prepared: Invitation
+        do {
+            prepared = try Invitation.prepare(for: peer, now: now())
+        } catch {
+            phase = .failed(ErrorMessage.of(error))
+            return
+        }
         let invitation: Invitation
         do {
-            invitation = try await Invitation.open(for: peer, on: shell(), now: now())
+            invitation = try await prepared.install(on: shell())
         } catch {
+            // The append may have landed before whatever failed — the
+            // read-back, or the screen closing — so the line is withdrawn
+            // either way. Removing one that is not there is harmless.
+            Self.withdrawLater(prepared, shell: shell)
+            // Closed while the key was going in: nothing to report, and a
+            // cancellation is not a broken connection to hand on.
+            if Task.isCancelled { return }
             await handle(error)
             phase = .failed(ErrorMessage.of(error))
             return

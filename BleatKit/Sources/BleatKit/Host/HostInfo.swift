@@ -28,6 +28,10 @@ public struct HostInfo: Sendable, Codable, Equatable {
     public var architecture: String?
     /// The machine: `MacBookAir10,1`, `Raspberry Pi Compute Module 5 Rev 1.0`.
     public var model: String?
+    /// What the machine is sold as: `MacBook Air (M1, 2020)`. Only a Mac on
+    /// Apple silicon says, through `ioreg`; an Intel Mac and a Linux box have
+    /// only `model`.
+    public var modelName: String?
     /// The herdr this phone's commands run, which is the client binary. A
     /// running server may be older until it is restarted.
     public var herdrVersion: String?
@@ -37,12 +41,14 @@ public struct HostInfo: Sendable, Codable, Equatable {
         kernel: String? = nil,
         architecture: String? = nil,
         model: String? = nil,
+        modelName: String? = nil,
         herdrVersion: String? = nil
     ) {
         self.system = system
         self.kernel = kernel
         self.architecture = architecture
         self.model = model
+        self.modelName = modelName
         self.herdrVersion = herdrVersion
     }
 
@@ -57,6 +63,23 @@ public struct HostInfo: Sendable, Codable, Equatable {
         return .unknown
     }
 
+    /// The machine in a few words, for a row: `MacBook Air (M1, 2020)`,
+    /// `Raspberry Pi CM5`.
+    ///
+    /// The name it is sold as when the host gives one. Otherwise `model`,
+    /// without a Pi's board revision and with "Compute Module" shortened to
+    /// the CM that Raspberry Pi itself prints on the board.
+    public var shortModel: String? {
+        if let modelName, !modelName.isEmpty { return modelName }
+        guard var model else { return nil }
+        if let revision = model.range(of: #" Rev [0-9.]+$"#, options: .regularExpression) {
+            model.removeSubrange(revision)
+        }
+        return model.replacingOccurrences(
+            of: #"Compute Module ([0-9]+)"#, with: "CM$1", options: .regularExpression
+        )
+    }
+
     /// This, with whatever `newer` knows laid over it.
     ///
     /// **Field by field, and a missing field never erases a known one.** Each
@@ -68,6 +91,7 @@ public struct HostInfo: Sendable, Codable, Equatable {
             kernel: newer.kernel ?? kernel,
             architecture: newer.architecture ?? architecture,
             model: newer.model ?? model,
+            modelName: newer.modelName ?? modelName,
             herdrVersion: newer.herdrVersion ?? herdrVersion
         )
     }

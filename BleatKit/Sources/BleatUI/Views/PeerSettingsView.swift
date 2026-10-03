@@ -65,7 +65,10 @@ struct PeerSettingsView: View {
                             value: info.architecture.map { "\(kernel) · \($0)" } ?? kernel
                         )
                     }
-                    if let model = info.model { LabeledContent("Model", value: model) }
+                    if let name = info.modelName { LabeledContent("Model", value: name) }
+                    if let model = info.model {
+                        LabeledContent(info.modelName == nil ? "Model" : "Identifier", value: model)
+                    }
                     if let version = info.herdrVersion {
                         LabeledContent("herdr version", value: version)
                     }

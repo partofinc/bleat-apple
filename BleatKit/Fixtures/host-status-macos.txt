@@ -7,6 +7,7 @@ bleat-host:sw_vers:ProductName:		macOS
 bleat-host:sw_vers:ProductVersion:		27.0.1
 bleat-host:sw_vers:BuildVersion:		26A434
 bleat-host:model:MacBookAir10,1
+bleat-host:product:      "product-name" = <"MacBook Air (M1, 2020)">
 bleat-host:memsize:17179869184
 bleat-host:boottime:{ sec = 1790664100, usec = 851287 } Tue Sep 29 10:41:40 2026
 bleat-host:now:1790856618

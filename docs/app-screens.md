@@ -356,9 +356,17 @@ and a `HostLoad`.
   version. Stored on the peer record (`PairedPeer.hostInfo`), so it survives a
   disconnect and a relaunch.
   - **The host list shows it without connecting to anything**: a mark for the
-    kind of machine in front of the name, and the system (`macOS 27.0.1`) where
-    `user@address` used to be. A peer that has never been connected to has said
-    nothing yet, so its row keeps `user@address` and a generic mark.
+    kind of machine, `user@name` with the machine trailing it in secondary
+    (`pi@adam … Raspberry Pi CM5`), and the system (`macOS 27.0.1`) under them.
+    A peer that has never been connected to has said nothing yet, so its row
+    has no machine, its address where the system goes, and a generic mark. The
+    watch leaves the machine out: the login alone fills its line.
+  - **The machine is `HostInfo.shortModel`**: the name a Mac is sold as when
+    it gives one, else the model without a Pi's board revision and with
+    "Compute Module" shortened to CM. The sold-as name is `product-name` from
+    `ioreg -rc IOPlatformDevice` (`MacBook Air (M1, 2020)`), stored as
+    `HostInfo.modelName`; only Apple silicon has it, so an Intel Mac shows its
+    identifier. Added 3 Oct 2026, asked for from the phone.
   - **All of it is in the settings sheet**, under **System**, with the pairing
     detail it belongs beside.
   - **Laid over, never replaced.** `HostInfo.updated(with:)` is field by field
@@ -480,6 +488,7 @@ The probe:
   | system | `sw_vers` | `PRETTY_NAME` in `/etc/os-release` |
   | kernel, arch | `uname -srm` | `uname -srm` |
   | model | `sysctl hw.model` | `/proc/device-tree/model`, else DMI `product_name` |
+  | model name | `product-name` from `ioreg` (Apple silicon) | none |
   | cores | `getconf _NPROCESSORS_ONLN` | the same |
   | processor | last line of `iostat -n0 -c 2 -w 1` | two reads of `/proc/stat`, 1 s apart |
   | load | the same `iostat` line | `/proc/loadavg` |

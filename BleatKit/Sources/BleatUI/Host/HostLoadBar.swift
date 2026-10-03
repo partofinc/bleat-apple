@@ -15,6 +15,12 @@ import SwiftUI
 /// its own; the row brings both.
 struct HostLoadBar: View {
     let load: HostLoad
+    /// `pi@adam`, heading the bar: which machine the numbers are about, and
+    /// as whom this phone is on it. Not in the compact form, where the
+    /// screen's own title already says.
+    var login: String?
+    /// `Raspberry Pi CM5`, trailing the login in secondary.
+    var machine: String?
     /// Whether to leave out everything but one number per icon, and the bar's
     /// own chrome. Follows the platform; a parameter so both forms can be
     /// laid out anywhere.
@@ -22,6 +28,22 @@ struct HostLoadBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: isCompact ? 4 : 8) {
+            if !isCompact, let login {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(verbatim: login)
+                        .fontWeight(.semibold)
+                        // The login is what says whose numbers these are;
+                        // the machine gives way first.
+                        .layoutPriority(1)
+                    if let machine {
+                        Spacer(minLength: 8)
+                        Text(machine)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.subheadline)
+                .lineLimit(1)
+            }
             if cpuText != nil || temperatureText != nil {
                 HStack(spacing: 4) {
                     if let cpuText = isCompact ? compactCPUText : cpuText {
@@ -115,13 +137,17 @@ struct HostLoadBar: View {
 #if DEBUG
 #Preview("Mac", traits: .sampleData) {
     List { Text("Sessions") }
-        .safeAreaBar(edge: .bottom) { HostLoadBar(load: .sampleMac) }
+        .safeAreaBar(edge: .bottom) {
+            HostLoadBar(load: .sampleMac, login: "ravil@rawillk.air", machine: HostInfo.sampleMac.shortModel)
+        }
 }
 
 /// The one with a temperature.
 #Preview("Linux", traits: .sampleData) {
     List { Text("Sessions") }
-        .safeAreaBar(edge: .bottom) { HostLoadBar(load: .sampleLinux) }
+        .safeAreaBar(edge: .bottom) {
+            HostLoadBar(load: .sampleLinux, login: "pi@adam", machine: HostInfo.sampleLinux.shortModel)
+        }
 }
 
 /// The watch's form, at about a watch's width: a row above the screen's own.

@@ -26,7 +26,7 @@ extension HostInfo {
     static var sampleMac: HostInfo {
         HostInfo(
             system: "macOS 27.0.1", kernel: "Darwin 27.0.0", architecture: "arm64",
-            model: "MacBookAir10,1", herdrVersion: "0.9.3"
+            model: "MacBookAir10,1", modelName: "MacBook Air (M1, 2020)", herdrVersion: "0.9.3"
         )
     }
 

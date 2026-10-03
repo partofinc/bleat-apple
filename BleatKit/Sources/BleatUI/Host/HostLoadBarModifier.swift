@@ -32,7 +32,11 @@ struct HostLoadBarModifier: ViewModifier {
         content
             .safeAreaBar(edge: .bottom) {
                 if !WatchLayout.isHere, let load = context.hostLoad.load(for: peer) {
-                    HostLoadBar(load: load)
+                    HostLoadBar(
+                        load: load,
+                        login: "\(peer.username)@\(peer.name)",
+                        machine: peer.hostInfo?.shortModel
+                    )
                 }
             }
             // On the watch too, where the bar draws nothing and the reading

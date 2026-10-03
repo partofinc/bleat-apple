@@ -64,6 +64,7 @@ public enum HostStatusProbe {
         Darwin)
           sw_vers | p sw_vers
           sysctl -n hw.model | p model
+          ioreg -rc IOPlatformDevice -k product-name | grep product-name | p product
           sysctl -n hw.memsize | p memsize
           sysctl -n kern.boottime | p boottime
           date +%s | p now
@@ -127,6 +128,7 @@ public enum HostStatusProbe {
 
         status.load.cores = number(lines("cores").first)
         status.info.model = lines("model").lazy.map(trimmed).first { !$0.isEmpty }
+        status.info.modelName = productName(lines("product"))
         status.info.system = macSystem(lines("sw_vers")) ?? linuxSystem(lines("os-release"))
         status.load.disk = disk(lines("df"))
         status.load.memory = macMemory(vmStat: lines("vm_stat"), memsize: lines("memsize").first)
@@ -160,6 +162,20 @@ public enum HostStatusProbe {
     }
 
     // MARK: - macOS
+
+    /// `"product-name" = <"MacBook Air (M1, 2020)">`, from `ioreg`: the
+    /// property is a byte string, which `ioreg` prints quoted inside angle
+    /// brackets. Absent on an Intel Mac, which has no such property.
+    private static func productName(_ lines: [Substring]) -> String? {
+        for line in lines where line.contains("\"product-name\"") {
+            guard let open = line.range(of: "<\""),
+                  let close = line.range(of: "\">", range: open.upperBound..<line.endIndex)
+            else { continue }
+            let name = trimmed(line[open.upperBound..<close.lowerBound])
+            if !name.isEmpty { return name }
+        }
+        return nil
+    }
 
     /// `ProductName:\t\tmacOS` and `ProductVersion:\t\t27.0.1`.
     private static func macSystem(_ lines: [Substring]) -> String? {

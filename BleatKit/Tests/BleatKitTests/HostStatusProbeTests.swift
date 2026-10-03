@@ -15,6 +15,7 @@ struct HostStatusProbeTests {
         #expect(status.info.kernel == "Darwin 27.0.0")
         #expect(status.info.architecture == "arm64")
         #expect(status.info.model == "MacBookAir10,1")
+        #expect(status.info.modelName == "MacBook Air (M1, 2020)")
         #expect(status.info.herdrVersion == "0.9.3")
         #expect(status.load.cores == 8)
         // Anonymous less purgeable, wired, and the compressor, in 16 KiB pages
@@ -39,6 +40,7 @@ struct HostStatusProbeTests {
         #expect(status.info.kernel == "Linux 6.18.50+rpt-rpi-2712")
         #expect(status.info.architecture == "aarch64")
         #expect(status.info.model == "Raspberry Pi Compute Module 5 Rev 1.0")
+        #expect(status.info.modelName == nil)
         #expect(status.info.herdrVersion == "0.9.3")
         #expect(status.load.cores == 4)
         #expect(status.load.memory == .init(used: 775_520 * 1024, total: 8_255_824 * 1024))
@@ -117,14 +119,29 @@ struct HostStatusProbeTests {
         #expect(HostInfo().platform == .unknown)
     }
 
+    @Test("a row names the machine in a few words")
+    func shortModel() throws {
+        let mac = HostStatusProbe.status(fromOutput: try Fixture.text("host-status-macos.txt"))
+        let pi = HostStatusProbe.status(fromOutput: try Fixture.text("host-status-linux.txt"))
+        #expect(mac.info.shortModel == "MacBook Air (M1, 2020)")
+        #expect(pi.info.shortModel == "Raspberry Pi CM5")
+        #expect(HostInfo(model: "Raspberry Pi 4 Model B Rev 1.4").shortModel == "Raspberry Pi 4 Model B")
+        // An Intel Mac has no marketing name to read, so its identifier stands.
+        #expect(HostInfo(model: "MacBookPro16,1").shortModel == "MacBookPro16,1")
+        #expect(HostInfo().shortModel == nil)
+    }
+
     /// Each part of the probe fails alone, so a reply can be missing what the
     /// last one had.
     @Test("a newer report lays over an older one without erasing it")
     func updating() {
-        let known = HostInfo(system: "macOS 27.0.1", kernel: "Darwin 27.0.0", model: "Mac14,2")
+        let known = HostInfo(
+            system: "macOS 27.0.1", kernel: "Darwin 27.0.0", model: "Mac14,2", modelName: "Mac mini (2023)"
+        )
         let newer = HostInfo(system: "macOS 27.1", herdrVersion: "0.9.4")
         #expect(known.updated(with: newer) == HostInfo(
-            system: "macOS 27.1", kernel: "Darwin 27.0.0", model: "Mac14,2", herdrVersion: "0.9.4"
+            system: "macOS 27.1", kernel: "Darwin 27.0.0", model: "Mac14,2",
+            modelName: "Mac mini (2023)", herdrVersion: "0.9.4"
         ))
         #expect(known.updated(with: HostInfo()) == known)
     }

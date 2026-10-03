@@ -12,8 +12,9 @@ import SwiftUI
 /// **The row is held while the first reading is on its way**, which a bar has
 /// no need of: a bar arriving late moves nothing, and a row arriving late
 /// pushes the list down a second after it was drawn — under a finger that was
-/// already on its way to a session. The read starts in the same turn the
-/// list's rows land, so the two are drawn together.
+/// already on its way to a session. The read starts as soon as there is a
+/// connection — on the watch, with the list's first command — so the row is
+/// in place by the time the rows land.
 ///
 /// Draws and nothing else, like the bar: the screen asks for the reading.
 struct HostLoadSection: View {

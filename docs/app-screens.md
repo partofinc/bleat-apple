@@ -394,18 +394,42 @@ and a `HostLoad`.
     pull-to-refresh always reads, and holds its spinner for the probe's second.
     There is no timer.
   - **It never dials, and is shown only while connected.**
-    `HostLoadStore.refresh` returns at once unless
-    `ConnectionStore.isConnected(to:)`, and `load(for:)` is nil the moment the
+    `HostLoadStore.refresh` returns at once unless `ConnectionStore.liveShell`
+    has a connection to this host that it could reuse as it stands, and `load(for:)` is nil the moment the
     connection goes — a number about a machine nobody is talking to is not
     worth showing. **A reading is tied to the connection it was read over**
     (`ConnectionStore.connectionID`), not just to the host: the app releases
     its connection in the background, and matched on the host alone an
     hour-old reading came back as live when the same host was dialled again.
-    (Found in review.) So each screen asks for a reading *after* its own list has
-    loaded, which is what brought the connection up. This is also what keeps
-    previews and the render tests off the network: they have no connection, so
-    a read willing to open one would dial a real host from the canvas.
-    `PreviewSmokeTests.hostLoadBar` pins it.
+    (Found in review.) That also keeps previews and the render tests off the
+    network: they have no connection, so a read willing to open one would dial
+    a real host from the canvas. `PreviewSmokeTests.hostLoadBar` pins it.
+  - **A reading is asked for each time a connection comes up**:
+    `hostLoadBar(for:)` carries `.task(id: connectionID)`, on the watch as
+    well. Each screen also asks after its own list loads, which covers a pop
+    back to it; a read in flight on the same connection, or one under ten
+    seconds old, turns the extra asks away.
+    - **Fixed 3 Oct 2026, reported from a phone:** arriving on a host, the bar
+      stayed empty until a pull-to-refresh. A reading used to be tagged with
+      the connection that was live when it was asked for. But asking for the
+      shell can replace that connection — `ConnectionStore` re-dials when the
+      network has changed since its dial, and a tunnel coming up just after
+      the first connection is the usual case. So the reply came back over the
+      new connection, looked stale, and was dropped, and nothing asked again.
+      Now the read never goes through `shell(for:)`:
+      `ConnectionStore.liveShell` hands over the live connection and its
+      number together, or nothing when that connection could not be reused,
+      and the list's own load does the re-dial. The new connection's number
+      starting a read of its own (`.task(id:)`) is what fills the bar. Not
+      reproduced on a simulator, which cannot bring a tunnel up under a
+      connection: the cause is read from the code.
+    - **The first version of that fix read through `shell(for:)` and re-read
+      the number afterwards** — and with the read now starting beside the
+      list's load rather than after it, the two raced into
+      `connected(for:)` after a network change: each released, each dialled
+      before either had set `connecting`, and the second install orphaned the
+      first SSH session on the host. (Found in review, not observed.) A load
+      read that cannot dial cannot race one.
   - **Best effort and silent.** A failed read keeps the last reading. It does
     not call `ConnectionStore.handle`: the list above reports the same dropped
     connection, and two loads each releasing it would have the slower tear down
@@ -415,8 +439,8 @@ and a `HostLoad`.
 
 The probe:
 
-- **One shell command, `HostStatusProbe.command`, through
-  `ConnectionStore.shell`.** herdr reports none of this but its own version, so
+- **One shell command, `HostStatusProbe.command`, over
+  `ConnectionStore.liveShell`.** herdr reports none of this but its own version, so
   it is plain shell like pairing and the directory check, and it leaves the
   session prefix alone. No change to `HerdrTransport`.
 - **The script tags raw tool output and the phone parses it.** Every line comes

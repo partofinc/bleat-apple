@@ -76,7 +76,7 @@ struct PaneGeometryTests {
         // and reports no grid at all.
         func viewport(inPhase phase: PaneModel.Phase) -> TerminalGrid? {
             let model = PaneModel(previewing: phase)
-            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
+            let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
             window.rootViewController = UIHostingController(
                 rootView: PaneSurface(model: model, isActive: true)
             )
@@ -300,7 +300,7 @@ struct PaneGeometryTests {
         let host = UIHostingController(
             rootView: PaneKeyBar(model: PaneModel(previewing: .live), isActive: true)
         )
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 200))
+        let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: 200))
         window.rootViewController = host
         window.isHidden = false
         window.layoutIfNeeded()

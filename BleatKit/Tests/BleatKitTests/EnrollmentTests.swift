@@ -54,7 +54,7 @@ final class FakeHost: ShellRunner, @unchecked Sendable {
         // the key out and prints it back in one command — and its net effect is
         // the insert.
         if command.contains("printf '%s\\n'") {
-            if !swallowAppends { lock.withLock { installed.insert(blob) } }
+            if !swallowAppends { _ = lock.withLock { installed.insert(blob) } }
             return ""
         }
         if command.contains("grep -v -E") {

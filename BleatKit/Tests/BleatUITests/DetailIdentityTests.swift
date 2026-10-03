@@ -67,7 +67,7 @@ struct DetailIdentityTests {
         let controller = UIHostingController(
             rootView: Detail(key: "host-A", captured: captured, identified: identified)
         )
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1210, height: 834))
+        let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 1210, height: 834))
         window.rootViewController = controller
         window.makeKeyAndVisible()
         window.layoutIfNeeded()

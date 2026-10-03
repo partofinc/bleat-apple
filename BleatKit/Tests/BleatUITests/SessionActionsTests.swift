@@ -288,7 +288,7 @@ struct SessionActionsTests {
         let unreachable = PairedPeer(
             hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
         )
-        try? registry.save(unreachable)
+        _ = try? registry.save(unreachable)
 
         #expect(await model.perform(
             .start, about: session("work", running: false), on: unreachable

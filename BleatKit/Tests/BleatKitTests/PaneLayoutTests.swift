@@ -113,7 +113,7 @@ struct PaneLayoutTests {
     /// capture that actually exercises it on `pane layout`.
     @Test("an unread field in a real reply is ignored, not fatal")
     func toleratesSplitsField() throws {
-        let raw = try String(data: try Fixture.data("pane-layout-split.json"), encoding: .utf8)
+        let raw = String(data: try Fixture.data("pane-layout-split.json"), encoding: .utf8)
         #expect(raw?.contains("\"splits\"") == true)
         let layout = try JSONDecoder().decode(
             HerdrEnvelope<PaneLayoutResult>.self, from: try Fixture.data("pane-layout-split.json")

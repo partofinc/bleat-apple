@@ -45,7 +45,7 @@ struct PaneRepaintTests {
     /// out cannot repaint either.
     private func hosted(height: CGFloat = 700) -> (PaneTerminalController, UIWindow) {
         let controller = PaneTerminalController()
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: height))
+        let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: height))
         window.rootViewController = controller
         window.makeKeyAndVisible()
         window.layoutIfNeeded()

@@ -356,11 +356,12 @@ and a `HostLoad`.
   version. Stored on the peer record (`PairedPeer.hostInfo`), so it survives a
   disconnect and a relaunch.
   - **The host list shows it without connecting to anything**: a mark for the
-    kind of machine, `user@name` with the machine trailing it in secondary
-    (`pi@adam … Raspberry Pi CM5`), and the system (`macOS 27.0.1`) under them.
-    A peer that has never been connected to has said nothing yet, so its row
-    has no machine, its address where the system goes, and a generic mark. The
-    watch leaves the machine out: the login alone fills its line.
+    kind of machine in front of the name, and the system (`macOS 27.0.1`) where
+    `user@address` used to be. A peer that has never been connected to has said
+    nothing yet, so its row keeps `user@address` and a generic mark.
+  - **The load bar is headed by `user@name`, with the machine trailing it**
+    in secondary (`pi@adam … Raspberry Pi CM5`), so the numbers under it say
+    whose they are. Not on the watch, where the screen's title already does.
   - **The machine is `HostInfo.shortModel`**: the name a Mac is sold as when
     it gives one, else the model without a Pi's board revision and with
     "Compute Module" shortened to CM. The sold-as name is `product-name` from

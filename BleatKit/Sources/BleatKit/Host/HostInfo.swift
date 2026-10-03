@@ -63,7 +63,7 @@ public struct HostInfo: Sendable, Codable, Equatable {
         return .unknown
     }
 
-    /// The machine in a few words, for a row: `MacBook Air (M1, 2020)`,
+    /// The machine in a few words, for the load bar: `MacBook Air (M1, 2020)`,
     /// `Raspberry Pi CM5`.
     ///
     /// The name it is sold as when the host gives one. Otherwise `model`,

@@ -27,6 +27,9 @@ struct AgentRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(agent.displayTitle), \(agent.agentStatus.rawValue)")
+        // The label replaces the combined one, so the directory — what tells
+        // two agents with the same title apart — is read as the value.
+        .accessibilityValue(directory ?? "")
     }
 
     /// What the pane is actually working in, which is not always where it

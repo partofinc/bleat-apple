@@ -30,6 +30,11 @@ behaviour when it moves across the seam.
     reference, a `@Sendable` async closure, the same `load` body) compiles
     clean, so the trigger needs the whole module and is not characterised
     further.
+  - **Swift 6.4 builds it without the `deinit`** (re-tested 3 Oct 2026,
+    Xcode 27.1: `swift build -c release --target BleatUI` succeeds with it
+    removed). It stays until an archive has been made without it, since an
+    empty destructor costs nothing and the archive is where this was found;
+    the release build in `ci_post_clone.sh` stays either way.
 
 - **`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately.** Its
   package half, `NonisolatedNonsendingByDefault`, reproducibly segfaults the
@@ -37,7 +42,14 @@ behaviour when it moves across the seam.
   `swift test --no-parallel` passes all 70 and every suite passes alone — so it
   only bites under swift-testing's parallel execution. Enabling it for the app
   alone would be worse than leaving it off for both, because then the seam
-  really would differ. Revisit on a newer toolchain.
+  really would differ.
+  - **Swift 6.4 no longer crashes** (re-tested 3 Oct 2026, Xcode 27.1): with
+    the feature on, three parallel `swift test` runs passed all 485 tests. So
+    it is off now by choice, not because it cannot be on. Turning it on is
+    its own change: every `nonisolated async` function then runs on its
+    caller's actor, so anything heavy that `BleatUI` reaches that way —
+    decoding a reply, parsing a transcript — has to be marked `@concurrent`
+    first or it moves onto the main actor.
 - **`.defaultIsolation(MainActor.self)` is on `BleatUI` only.** `BleatKit` is a
   transport and domain library whose work belongs off the main actor, and the
   console tool links it with no main actor in sight. Isolation there is

@@ -30,6 +30,12 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
     private let client = LockedBox<UnsafeTransfer<SSHClient>?>(nil)
     /// Collapses concurrent first calls into a single dial.
     private let dialing = LockedBox<Task<UnsafeTransfer<SSHClient>, any Error>?>(nil)
+    /// Set by `disconnect()`, for good. A transport failure only invalidates,
+    /// and the next command dials again; a disconnect means the owner has let
+    /// go, and a command still holding this transport must not dial a session
+    /// nobody will close. (Found in review: backgrounding mid-way through a
+    /// pane's opening chain re-dialled, takeover included.)
+    private let isClosed = LockedBox(false)
 
     /// - Parameters:
     ///   - herdrPath: Absolute path is the safe default — a non-login shell
@@ -66,6 +72,7 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
     /// deliberately re-entrant: a failed connection is discarded and the next
     /// call dials again.
     private func connected() async throws -> SSHClient {
+        if isClosed.current { throw TransportError.channelClosed }
         if let existing = client.current { return existing.value }
 
         let task = dialing.withLock { inFlight -> Task<UnsafeTransfer<SSHClient>, any Error> in
@@ -75,15 +82,28 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
             return task
         }
 
+        let connection: UnsafeTransfer<SSHClient>
         do {
-            let connection = try await task.value
-            client.withLock { $0 = connection }
-            dialing.withLock { $0 = nil }
-            return connection.value
+            connection = try await task.value
         } catch {
-            dialing.withLock { $0 = nil }
+            dialing.withLock { if $0 == task { $0 = nil } }
             throw error
         }
+        // Installed only if this dial is still the one in flight. A
+        // `disconnect()` that ran during the handshake has taken it away — and
+        // a newer dial may have started since — so the client is closed
+        // rather than installed over either.
+        let installed = dialing.withLock { inFlight -> Bool in
+            guard inFlight == task, !isClosed.current else { return false }
+            inFlight = nil
+            client.withLock { $0 = connection }
+            return true
+        }
+        guard installed else {
+            try? await connection.value.close()
+            throw TransportError.channelClosed
+        }
+        return connection.value
     }
 
     private func dial() async throws -> SSHClient {
@@ -160,8 +180,12 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
         sessionBox.withLock { $0 = session }
     }
 
-    /// Drops the connection. The next call reconnects.
+    /// Drops the connection, for good: every later command throws
+    /// `TransportError.channelClosed` rather than dialling again. A dropped
+    /// connection is recovered by the owner making a new transport, which is
+    /// what `ConnectionStore` does.
     public func disconnect() async {
+        isClosed.withLock { $0 = true }
         // Cancel first: a dial still in flight would otherwise install its
         // client after this returns, leaving the transport connected when the
         // caller asked for the opposite (iOS backgrounding does exactly this).

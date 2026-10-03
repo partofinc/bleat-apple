@@ -159,7 +159,8 @@ settings on each side, and why, are in [`docs/concurrency.md`](docs/concurrency.
 
 ## Conventions
 
-- Swift 6.2, strict concurrency, `Sendable` everywhere in BleatKit.
+- Swift 6.4 toolchain (Xcode 27.1), Swift 6 language mode, strict concurrency,
+  `Sendable` everywhere in BleatKit.
 - One type per file. Folders by feature, not by kind.
 - `async/await` only; no Combine, no callbacks.
 - Errors are typed: `HerdrError` (host said no), `TransportError` (network),

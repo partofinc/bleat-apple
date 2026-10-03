@@ -112,9 +112,14 @@ extension WatchLink: WCSessionDelegate {
         guard activationState == .activated else { return }
         // The dictionary is property-list values; only the decoded peers cross.
         let incoming = WatchWire.peers(from: session.receivedApplicationContext)
-        Task { @MainActor in
-            if let incoming { self.peers?.mirror(incoming) }
-            await self.refreshPeers()
+        // In order with `didReceiveApplicationContext`: unstructured tasks
+        // have no ordering between them, and an older host list mirrored
+        // after a newer one would stand until the next push.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if let incoming { self.peers?.mirror(incoming) }
+                Task { await self.refreshPeers() }
+            }
         }
     }
 
@@ -123,7 +128,9 @@ extension WatchLink: WCSessionDelegate {
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
         guard let incoming = WatchWire.peers(from: applicationContext) else { return }
-        Task { @MainActor in self.peers?.mirror(incoming) }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.peers?.mirror(incoming) }
+        }
     }
 }
 #endif

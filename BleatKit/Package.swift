@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 import PackageDescription
 
 /// Mirrors what the Xcode targets set, so a file behaves the same whichever
@@ -15,8 +15,10 @@ import PackageDescription
 /// the app alone would have been worse than leaving it off for both: the seam
 /// would differ in exactly the way this comment exists to prevent.
 ///
-/// Revisit on a newer toolchain; the feature is wanted, it just cannot be
-/// enabled honestly today.
+/// Swift 6.4 no longer crashes (three parallel runs, all 485 passing, 3 Oct
+/// 2026), so it is off now by choice: turning it on moves every `nonisolated
+/// async` call onto its caller's actor, and wants its own change. See
+/// docs/concurrency.md.
 let sharedSwiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility"),
 ]
@@ -32,7 +34,7 @@ let package = Package(
         .executable(name: "bleat", targets: ["bleat"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.8.0"),
+        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.12.1"),
         // A real VT100/xterm emulator, and the reason there is no hand-rolled
         // one: `terminal.frame` payloads carry cursor positioning and
         // synchronized-output markers *inside* the bytes, so anything that

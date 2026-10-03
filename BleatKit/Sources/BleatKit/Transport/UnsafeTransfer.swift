@@ -14,8 +14,11 @@ import Foundation
 /// opening a channel only reads it. **If reconnect support is ever added,
 /// channel opens must be serialized first.**
 ///
-/// This is the only unchecked escape hatch in the package. Do not reach for it
-/// to silence a warning on our own types — make those genuinely `Sendable`.
+/// The package's other unchecked conformances are types that guard their own
+/// state with a lock — `LockedBox` and what is built on it, `SSHTransport`,
+/// `SSHStream`, `PinningHostKeyValidator`. This one guards nothing, so do not
+/// reach for it to silence a warning on our own types — make those genuinely
+/// `Sendable`.
 struct UnsafeTransfer<Value>: @unchecked Sendable {
     let value: Value
     init(_ value: Value) { self.value = value }

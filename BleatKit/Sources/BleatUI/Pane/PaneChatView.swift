@@ -162,7 +162,7 @@ private struct ChatTurn: View {
                 }
                 Spacer(minLength: 0)
                 if let timestamp = entry.timestamp {
-                    Text(timestamp.formatted(date: .omitted, time: .shortened))
+                    Text(timestamp, format: .dateTime.hour().minute())
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

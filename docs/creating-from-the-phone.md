@@ -515,7 +515,8 @@ question.
   host's sessions, a session's workspaces, a workspace's agents. It used to be
   leading on three of them and moved when Stop took the session screen's
   leading corner; one place for the whole drill-down beats two. The host
-  screen's gear and the host list's key took the leading corner in exchange,
+  screen's gear (Pair Another Device since 3 Oct 2026) and the host list's key
+  took the leading corner in exchange,
   and the agents screen has a lone `ToolbarSpacer` before its plus, which is
   all that puts a single item on that side.
 - **A bar button's confirmation is attached to the button, not to the screen**

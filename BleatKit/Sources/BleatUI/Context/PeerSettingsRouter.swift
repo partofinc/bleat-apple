@@ -5,7 +5,7 @@ import Observation
 ///
 /// A router rather than a screen's `@State`, for the reason `unpair` is one:
 /// the sheet is raised from two screens that are in the navigation stack at the
-/// same time — a swipe on the peer list, and the gear on a peer's own screen —
+/// same time — a swipe on the peer list, and the load bar on a peer's screens —
 /// and a `.sheet` on each would be two presentations of one intent. SwiftUI
 /// raises whichever it reaches first and the other silently does nothing.
 @Observable

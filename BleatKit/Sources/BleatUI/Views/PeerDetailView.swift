@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Only the sessions. Everything *about* the host — who it logs in as, its host
 /// key, where it answers, what it runs, and whether this phone is still paired
-/// with it — is in `PeerSettingsView` behind the gear. None of it changes
+/// with it — is in `PeerSettingsView`, opened by tapping the load bar. None of it changes
 /// between visits and none of it is what the user came for; keeping it under
 /// the list pushed the sessions up against the top of the screen and made a
 /// two-item list look like a header for a page of settings.
@@ -16,8 +16,6 @@ import SwiftUI
 /// `HostLoadSection`.
 struct PeerDetailView: View {
     @Environment(AppContext.self) private var context
-    /// Published by `PeerSettingsFlow`, which presents the sheet at the root.
-    @Environment(\.peerSettingsNamespace) private var settingsNamespace
     /// Always current: `RouteView` looks the peer up by host key on every body
     /// evaluation and hands the stored value in, so an edit in the settings
     /// sheet is reflected without this screen tracking the store itself — and a
@@ -30,6 +28,10 @@ struct PeerDetailView: View {
     /// is now running on someone's Mac.
     @State private var newSession: NewSessionModel
     @State private var isNaming = false
+    /// The pairing code for another device. A sheet of this screen's own: the
+    /// settings sheet has the same button, but the two are never on screen
+    /// at once.
+    @State private var isInviting = false
     /// Whether this screen has been on screen before, so a return to it can be
     /// told from the first arrival.
     @State private var hasAppeared = false
@@ -117,11 +119,14 @@ struct PeerDetailView: View {
         .yieldsToPairing(whileBusy: newSession.isStarting, presenting: $isNaming)
         #elseif !os(watchOS)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Settings", systemImage: "gearshape") { context.peerSettings.show(peer) }
-                    .matchedZoomSource(peer.hostKey, in: settingsNamespace)
-            }
+            ToolbarItem(placement: .primaryAction) { pairButton }
         }
+        #endif
+        #if !os(watchOS)
+        .sheet(isPresented: $isInviting) { InviteView(peer: peer) }
+        // A `bleat://` link arriving while the code is up is this phone being
+        // paired, not pairing; closing the code withdraws its key.
+        .yieldsToPairing(whileBusy: false, presenting: $isInviting)
         #endif
         .hostLoadBar(for: peer)
         .sessionControl(control, on: peer) { _ in await sessions.load(for: peer) }
@@ -151,22 +156,20 @@ struct PeerDetailView: View {
         await context.hostLoad.refresh(for: peer, force: force)
     }
 
+    #if !os(watchOS)
+    private var pairButton: some View {
+        Button("Pair Another Device", systemImage: "qrcode") { isInviting = true }
+    }
+    #endif
+
     #if os(iOS)
     /// **The plus is on the trailing side on every screen that has one** —
     /// here, the session's and the workspace's — so the thumb finds it in one
-    /// place all the way down the drill-down. Settings takes the other corner.
+    /// place all the way down the drill-down. Pairing another device takes
+    /// the other corner; the settings are behind the load bar.
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) {
-            // Through the router rather than a local `@State` sheet: the peer
-            // list behind this screen opens the same settings from a swipe, and
-            // two `.sheet` modifiers on one intent is a presentation SwiftUI
-            // silently drops. See `PeerSettingsFlow`.
-            Button("Settings", systemImage: "gearshape") {
-                context.peerSettings.show(peer)
-            }
-            .matchedZoomSource(peer.hostKey, in: settingsNamespace)
-        }
+        ToolbarItem(placement: .bottomBar) { pairButton }
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("Add Session", systemImage: "plus") {
@@ -198,8 +201,8 @@ struct PeerDetailView: View {
     }
 }
 
-/// The host could not be reached. Everything that would help diagnose it is a
-/// tap away behind the gear.
+/// The host could not be reached, so there is no load bar to tap; the
+/// settings are a swipe on the host's row in the list.
 #Preview("Unreachable", traits: .sampleData) {
     NavigationStack {
         PeerDetailView(

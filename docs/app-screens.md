@@ -292,7 +292,8 @@ carries a bar with how busy it is — see the next section.)
 `PeerDetailView` used to be a `Form` with the sessions on top and four sections
 of pairing detail under them — user, `herdr` path, host key fingerprint,
 addresses, device marker, unpair. It is the sessions and a bottom bar now, and
-the rest is `PeerSettingsView` behind the gear.
+the rest is `PeerSettingsView` behind the load bar (behind a gear until
+3 Oct 2026).
 
 - **It is a `RemoteListView` like the workspaces and agents screens.** The
   section it used to be drew its spinner *in a row* on purpose, so the details
@@ -303,7 +304,7 @@ the rest is `PeerSettingsView` behind the gear.
   deleted with it; `SessionLink` and `SessionRow` are unchanged.
 - **`PeerSettingsRouter` is the third root-level router, for the third time for
   the same reason.** The sheet is opened from a swipe on the peer list *and*
-  from the gear on a peer's own screen, and those two are in the navigation
+  from the load bar on a peer's own screens, and those two are in the navigation
   stack at the same time — a `.sheet` on each would be two presentations of one
   intent, of which SwiftUI raises whichever it reaches first and silently drops
   the other. `PeerSettingsFlow` presents it at the root beside `.unpairFlow()`
@@ -336,16 +337,23 @@ the rest is `PeerSettingsView` behind the gear.
   sheet cannot be dismissed mid-swap: this is the only place the outcome is
   reported. See **Starting a session** in
   [`creating-from-the-phone.md`](creating-from-the-phone.md) for the command.
-- **The gear zooms.** `matchedTransitionSource` on the gear, `.zoom` on the
-  sheet, keyed by host key so it grows out of the gear for *that* host. The
-  namespace cannot be local: the sheet is presented at the root and the gear is
-  two screens down, so `PeerSettingsFlow` declares it and publishes it through
-  `EnvironmentValues.peerSettingsNamespace`. Optional, because a `Namespace.ID`
-  cannot be minted outside a `@Namespace` — a preview of `PeerDetailView` alone
-  has none, and the swipe on the peer list has no gear on screen to grow from.
-  A zoom with an absent source falls back to a plain presentation.
-  **`.zoom` is unavailable on macOS** while `matchedTransitionSource` is not, so
-  the platform branch lives in `zoomTransition` rather than at each call site.
+- **The load bar opens the settings; the gear is gone** (3 Oct 2026, asked
+  for). The bar is the host, so tapping it — on the host's screen, a
+  session's or a workspace's — opens what is known about it, and the gear's
+  corner went to **Pair Another Device** (a QR). With no connection there is
+  no bar, so an unreachable host's settings are the swipe on its row in the
+  list — the one case where they are a step further away.
+- **The sheet zooms out of the bar.** `matchedTransitionSource` on the bar,
+  `.zoom` on the sheet, keyed by host key so it grows out of the bar for
+  *that* host. The namespace cannot be local: the sheet is presented at the
+  root and the bar is two or more screens down, so `PeerSettingsFlow`
+  declares it and publishes it through `EnvironmentValues.peerSettingsNamespace`.
+  Optional, because a `Namespace.ID` cannot be minted outside a `@Namespace` —
+  a preview of `PeerDetailView` alone has none, and the swipe on the peer list
+  has no bar on screen to grow from. A zoom with an absent source falls back
+  to a plain presentation. **`.zoom` is unavailable on macOS** while
+  `matchedTransitionSource` is not, so the platform branch lives in
+  `zoomTransition` rather than at each call site.
 
 ## What a host says about itself (Phase 3, 1 Oct 2026)
 

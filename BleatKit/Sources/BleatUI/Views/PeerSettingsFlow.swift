@@ -11,7 +11,7 @@ struct PeerSettingsFlow: ViewModifier {
     @Environment(AppContext.self) private var context
     /// Declared here because the presentation is here — see
     /// `EnvironmentValues.peerSettingsNamespace` for why it is published
-    /// downwards rather than declared by the screen holding the gear.
+    /// downwards rather than declared by the screen holding the load bar.
     @Namespace private var namespace
 
     func body(content: Content) -> some View {
@@ -21,7 +21,7 @@ struct PeerSettingsFlow: ViewModifier {
             .sheet(item: $router.peer, onDismiss: startPendingUnpair) { host in
                 PeerSettingsView(hostKey: host.id)
                     // Keyed by host key rather than a constant, so the sheet
-                    // grows out of the gear belonging to *this* host. A swipe
+                    // grows out of the load bar belonging to *this* host. A swipe
                     // on the peer list opens the same sheet with no source on
                     // screen, which is a plain presentation.
                     .zoomTransition(from: host.id, in: namespace)

@@ -47,7 +47,7 @@ public struct PeersView: View {
                     Button("Unpair", systemImage: "trash", role: .destructive) {
                         context.unpair.ask(about: peer)
                     }
-                    // The same sheet the gear on the host's own screen opens,
+                    // The same sheet the load bar on the host's screens opens,
                     // through the same router — the two screens are in the
                     // stack at once, and a `.sheet` on each would be two
                     // presentations of one intent.

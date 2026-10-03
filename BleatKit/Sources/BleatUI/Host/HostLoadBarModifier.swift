@@ -24,19 +24,35 @@ import SwiftUI
 /// On the host's screen, a session's and a workspace's. **Not on a pane**:
 /// layout there is the stream's size, and a bar that comes and goes with the
 /// connection would resize the pty on someone's Mac.
+///
+/// **Tapping it opens the host's settings**, on all three screens: the bar is
+/// the host, and what is known about it is behind it. Through the router, as
+/// the swipe on the peer list is — two `.sheet`s on one intent is a
+/// presentation SwiftUI silently drops. See `PeerSettingsFlow`. With no
+/// connection there is no bar, and the settings are the swipe on the host's
+/// row.
 struct HostLoadBarModifier: ViewModifier {
     @Environment(AppContext.self) private var context
+    /// Published by `PeerSettingsFlow`, so the sheet grows out of the bar.
+    @Environment(\.peerSettingsNamespace) private var settingsNamespace
     let peer: PairedPeer
 
     func body(content: Content) -> some View {
         content
             .safeAreaBar(edge: .bottom) {
                 if !WatchLayout.isHere, let load = context.hostLoad.load(for: peer) {
-                    HostLoadBar(
-                        load: load,
-                        login: "\(peer.username)@\(peer.name)",
-                        machine: peer.hostInfo?.shortModel
-                    )
+                    Button {
+                        context.peerSettings.show(peer)
+                    } label: {
+                        HostLoadBar(
+                            load: load,
+                            login: "\(peer.username)@\(peer.name)",
+                            machine: peer.hostInfo?.shortModel
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens \(peer.name)'s settings")
+                    .matchedZoomSource(peer.hostKey, in: settingsNamespace)
                 }
             }
             // On the watch too, where the bar draws nothing and the reading

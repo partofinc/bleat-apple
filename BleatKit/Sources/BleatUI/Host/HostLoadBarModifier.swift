@@ -44,7 +44,11 @@ struct HostLoadBarModifier: ViewModifier {
                     Button {
                         context.peerSettings.show(peer)
                     } label: {
-                        HostLoadBar(load: load)
+                        HostLoadBar(
+                            load: load,
+                            login: "\(peer.username)@\(peer.name)",
+                            machine: peer.hostInfo?.shortModel
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens \(peer.name)'s settings")

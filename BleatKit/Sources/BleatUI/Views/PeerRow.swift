@@ -14,21 +14,9 @@ struct PeerRow: View {
                 .frame(width: 32)
                 .accessibilityHidden(true)
             VStack(alignment: .leading) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: "\(peer.username)@\(peer.name)")
-                        .font(.headline)
-                        .lineLimit(1)
-                        // The login is what tells two rows apart; the
-                        // machine beside it gives way first.
-                        .layoutPriority(1)
-                    if let model {
-                        Spacer(minLength: 8)
-                        Text(model)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
+                Text(peer.name)
+                    .font(.headline)
+                    .lineLimit(1)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -40,16 +28,10 @@ struct PeerRow: View {
         }
     }
 
-    /// The machine, trailing the login. Not on a watch, where the login alone
-    /// fills the line.
-    private var model: String? {
-        WatchLayout.isHere ? nil : peer.hostInfo?.shortModel
-    }
-
     /// What the host last said it runs. Until it has said — a peer paired and
     /// never connected to — where it is, which is all that is known.
     private var detail: String {
-        peer.hostInfo?.system ?? address
+        peer.hostInfo?.system ?? "\(peer.username)@\(address)"
     }
 
     /// The address it last answered on, falling back to the first it knows.

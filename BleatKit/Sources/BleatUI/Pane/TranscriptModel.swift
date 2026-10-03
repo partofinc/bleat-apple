@@ -169,6 +169,9 @@ final class TranscriptModel {
 
             status = agent.agentStatus
             let entries = await Self.parse(output)
+            // Checked again: parsing suspends, and a newer read may have
+            // landed while this one was being parsed. (Found in review.)
+            guard generation == self.generation else { return }
             guard !entries.isEmpty else {
                 // The command succeeds and prints nothing both when there is no
                 // file and when the tail held no prose. Neither is an error —

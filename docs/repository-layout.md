@@ -107,8 +107,9 @@ with an unstripped build:
   refuses a rebuild with any.
 - **Verified on both boards**, 3 Oct 2026: `bleat inspect` and `bleat keys
   list` on `mika` and on `adam` from the one binary.
-- **Drop the patch when the SDK sets `MI_NO_OPT_ARCH`**, and keep
-  `mimalloc_version` in the script equal to the SDK's pin until then.
+- **Drop the patch when the SDK sets `MI_NO_OPT_ARCH`** — reported as
+  [swiftlang/swift-docker#604](https://github.com/swiftlang/swift-docker/issues/604)
+  — and keep `mimalloc_version` in the script equal to the SDK's pin until then.
 
 What the port needed, each found by the compiler rather than by reading:
 

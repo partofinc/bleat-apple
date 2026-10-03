@@ -55,7 +55,7 @@ struct ColorSchemeTests {
     private func styles(_ view: (Box) -> some View) -> (on: UIUserInterfaceStyle, off: UIUserInterfaceStyle) {
         let box = Box()
         let host = UIHostingController(rootView: view(box))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
+        let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
         window.overrideUserInterfaceStyle = .light
         window.rootViewController = host
         window.makeKeyAndVisible()

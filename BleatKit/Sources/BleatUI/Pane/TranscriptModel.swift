@@ -168,7 +168,10 @@ final class TranscriptModel {
             guard generation == self.generation else { return }
 
             status = agent.agentStatus
-            let entries = Transcript.entries(from: Data(output.utf8))
+            let entries = await Self.parse(output)
+            // Checked again: parsing suspends, and a newer read may have
+            // landed while this one was being parsed. (Found in review.)
+            guard generation == self.generation else { return }
             guard !entries.isEmpty else {
                 // The command succeeds and prints nothing both when there is no
                 // file and when the tail held no prose. Neither is an error —
@@ -242,5 +245,14 @@ extension TranscriptModel {
             // transition, over cellular, for a handful of new turns.
             try? await Task.sleep(for: .seconds(3))
         }
+    }
+}
+
+extension TranscriptModel {
+    /// Up to 128 KB of JSON lines, with a date parsed on each: off the main
+    /// actor, where a long conversation would hold up the screen.
+    @concurrent
+    nonisolated static func parse(_ output: String) async -> [TranscriptEntry] {
+        Transcript.entries(from: Data(output.utf8))
     }
 }

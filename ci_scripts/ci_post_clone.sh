@@ -32,8 +32,8 @@ cd "${CI_PRIMARY_REPOSITORY_PATH:?set by Xcode Cloud; run this from a workflow}/
 swift test
 
 # **A release build, because a debug one cannot see this class of failure.**
-# `swift-frontend` 6.3.3 segfaults optimising BleatUI unless `RemoteList` writes
-# its deinit out — see the comment on it — and nothing in the ordinary loop
+# `swift-frontend` 6.3.3 segfaulted optimising BleatUI unless `RemoteList` wrote
+# its deinit out — see the comment on it; 6.4 does not — and nothing in the ordinary loop
 # would notice: `swift build`, `swift test` and every debug run on a device are
 # green either way. The first thing it breaks is the archive, which is the last
 # step before TestFlight and the slowest place to find out.

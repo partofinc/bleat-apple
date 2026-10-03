@@ -146,12 +146,19 @@ public final class WatchRelayHost: NSObject {
         _ name: String,
         onExpiry: @escaping @MainActor () -> Void = {}
     ) -> UIBackgroundTaskIdentifier {
-        var held = UIBackgroundTaskIdentifier.invalid
-        held = UIApplication.shared.beginBackgroundTask(withName: name) {
+        // A box rather than a `var`: the handler needs the identifier the
+        // call returns, and a captured `var` assigned afterwards is a mutation
+        // after capture by a sendable closure. Main-actor, as the handler is.
+        let held = HeldTask()
+        held.id = UIApplication.shared.beginBackgroundTask(withName: name) {
             onExpiry()
-            UIApplication.shared.endBackgroundTask(held)
+            UIApplication.shared.endBackgroundTask(held.id)
         }
-        return held
+        return held.id
+    }
+
+    private final class HeldTask {
+        var id = UIBackgroundTaskIdentifier.invalid
     }
 
     private func letSleep(_ held: UIBackgroundTaskIdentifier) {

@@ -42,6 +42,9 @@ final class RemoteList<Item: Sendable> {
     /// every debug run on a device are all green with it removed. What it
     /// actually blocks is archiving the app — TestFlight and the App Store.
     /// Reproduce in six seconds with `swift build -c release --target BleatUI`.
+    ///
+    /// Swift 6.4 builds it without this (re-tested 3 Oct 2026); it stays until
+    /// an archive has been made without it. See docs/concurrency.md.
     deinit {}
 
     init(

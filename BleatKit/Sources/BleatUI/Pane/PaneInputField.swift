@@ -31,15 +31,16 @@ struct PaneInputField: View {
             .frame(maxHeight: .infinity)
             .background(.fill.tertiary, in: .capsule)
 
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title)
-                    .frame(maxHeight: .infinity)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-            .disabled(!canSend)
-            .accessibilityLabel("Send")
+            Button("Send", systemImage: "arrow.up.circle.fill", action: send)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                // The row is a fixed height, and the bar allows type up to
+                // accessibility1, where `.title` would overflow into the keys.
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                .frame(maxHeight: .infinity)
+                .buttonStyle(.plain)
+                .foregroundStyle(canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                .disabled(!canSend)
         }
     }
 

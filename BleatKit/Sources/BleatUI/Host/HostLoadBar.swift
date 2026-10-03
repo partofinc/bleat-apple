@@ -49,6 +49,8 @@ struct HostLoadBar: View {
                     if let cpuText = isCompact ? compactCPUText : cpuText {
                         Image(systemName: "cpu")
                             .foregroundStyle(.secondary)
+                            // The text beside it says "Processor".
+                            .accessibilityHidden(true)
                         Text(cpuText)
                             .accessibilityLabel("Processor")
                             .accessibilityValue(cpuText)
@@ -57,6 +59,7 @@ struct HostLoadBar: View {
                     if let temperatureText {
                         Image(systemName: "thermometer.medium")
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text(temperatureText)
                             .accessibilityLabel("Temperature")
                             .accessibilityValue(temperatureText)

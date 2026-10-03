@@ -84,7 +84,7 @@ struct PreviewSmokeTests {
         }
         Self.windows.removeAll()
 
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        let window = TestWindow.make(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = UIHostingController(rootView: view.environment(context))
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
@@ -221,10 +221,11 @@ struct PreviewSmokeTests {
     /// should say so. See `Package.swift` for the destination.
     @Test(
         "the root renders expanded",
-        .enabled(
-            if: UIDevice.current.userInterfaceIdiom == .pad,
-            "the expanded column layout needs an iPad destination"
-        )
+        // The async form: the device's idiom is main-actor state, and the
+        // `if:` condition is evaluated from a sendable closure off it.
+        .enabled("the expanded column layout needs an iPad destination") {
+            await UIDevice.current.userInterfaceIdiom == .pad
+        }
     )
     func rootExpanded() async {
         let context = sampleContext()

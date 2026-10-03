@@ -66,14 +66,18 @@ public final class Reachability {
                 || path.usesInterfaceType(.loopback)
             // Hops to the main actor because the value is read from view
             // bodies; `NWPathMonitor` calls back on its own queue.
-            Task { @MainActor [weak self] in
-                self?.link.onLocalLink = local
+            // `DispatchQueue.main.async`, not `Task { @MainActor }`, so the
+            // updates land in the order they arrived: Wi-Fi, cellular, Wi-Fi
+            // in quick succession could otherwise leave the middle one
+            // standing. See `LocalNetworkAccess` for the same rule.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.link.onLocalLink = local }
             }
         }
         tunnelMonitor.pathUpdateHandler = { [weak self] path in
             let tunnel = path.status == .satisfied
-            Task { @MainActor [weak self] in
-                self?.link.tunnelActive = tunnel
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.link.tunnelActive = tunnel }
             }
         }
         monitor.start(queue: queue)

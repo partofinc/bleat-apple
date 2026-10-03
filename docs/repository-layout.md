@@ -6,9 +6,21 @@ House layout, matching the other projects in `~/Developer`: code lives in a
 local Swift package, the `.xcodeproj` holds only targets, and the app target is
 a thin shell.
 
+**`App/` is a synchronized group of both app targets**, and the watch excepts
+only `BleatApp.swift`. So anything else put in `App/` joins the watch app too:
+the icon, the asset catalog and the privacy manifest, on purpose. **No Swift
+file but `BleatApp.swift` belongs there** — a second one would be compiled into
+the watch as well, and code belongs in the package anyway.
+
+**`App/PrivacyInfo.xcprivacy`** declares no tracking, no collected data, and
+the one required-reason API the app uses: `UserDefaults` (`@AppStorage` in
+`PaneKeyBar`), reason `CA92.1`. App Store Connect checks it at submission and
+TestFlight does not, so a new API from Apple's required-reason list needs its
+line here before it ships. Added 3 Oct 2026.
+
 ```
 Bleat.xcodeproj             # two app targets; sources join via synchronized groups
-App/                        # @main App struct and little else
+App/                        # @main App struct, icon, assets, PrivacyInfo.xcprivacy
 Watch/                      # the watch app's @main; shares App/'s icon and assets
   AppIcon.icon/             # layered Icon Composer document; joins the target by existing
 Design/icon.swift           # generates the icon's layers — run it, never edit the PNGs

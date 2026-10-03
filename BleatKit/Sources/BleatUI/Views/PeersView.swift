@@ -44,9 +44,13 @@ public struct PeersView: View {
                     // full swipe reaches, which is what `onDelete` did here
                     // before: opening a confirmation is safe to trigger by
                     // accident in a way that unpairing would not be.
-                    Button("Unpair", systemImage: "trash", role: .destructive) {
+                    // Tinted, not `role: .destructive`: in a swipe action that
+                    // role animates the row out on tap, and it stayed gone
+                    // when the confirmation was cancelled. See `SessionLink`.
+                    Button("Unpair", systemImage: "trash") {
                         context.unpair.ask(about: peer)
                     }
+                    .tint(.red)
                     // The same sheet the load bar on the host's screens opens,
                     // through the same router — the two screens are in the
                     // stack at once, and a `.sheet` on each would be two

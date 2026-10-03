@@ -7,7 +7,7 @@
 - **Citadel forces macOS 15 / iOS 18.** Every stdin-capable API (`withExec`,
   `withPTY`, `withTTY`) is `@available(macOS 15.0, *)`; only the read-only
   `executeCommandStream` works below that. The package platforms were raised
-  to match.
+  to match; they are 26 now, well above it.
 - Auth: ed25519 key, parsed with `Curve25519.Signing.PrivateKey(sshEd25519:)`.
   Stored in Keychain (Phase 2) or a file under `~/.bleat/` for the console tool.
 - Host key: trust-on-first-use, pinned per `host:port` in `~/.bleat/known_hosts`

@@ -193,7 +193,12 @@ public final class ConnectionStore {
         }
 
         if let pending = connecting, pending.hostKey == peer.hostKey {
-            return try await pending.task.value
+            let joined = try await pending.task.value
+            // Released during the handshake: the caller that started the dial
+            // closes it and throws, and a caller that joined must not walk off
+            // with the closed connection either. (Found in review.)
+            guard !pending.task.isCancelled else { throw CancellationError() }
+            return joined
         }
 
         // **From here to `connecting` being set there is no suspension, and

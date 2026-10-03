@@ -22,6 +22,9 @@ struct WorkspaceRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(workspace.label), \(workspace.agentStatus.rawValue)")
+        // The label replaces the combined one, so the pane count is read as
+        // the value rather than lost.
+        .accessibilityValue(Text("^[\(workspace.paneCount) pane](inflect: true)"))
     }
 }
 

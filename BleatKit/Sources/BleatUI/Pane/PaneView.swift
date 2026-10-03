@@ -22,7 +22,7 @@ struct PaneView: View {
 
     @State private var model: PaneModel
     @State private var transcript: TranscriptModel
-    @State private var mode: PaneMode = .chat
+    @State private var mode: PaneMode
     /// Whether the terminal has ever been asked for on this screen.
     ///
     /// It gates *mounting* the terminal, not showing it. Chat is the default,
@@ -30,7 +30,7 @@ struct PaneView: View {
     /// channel on someone's Mac, their input, and an `stty` that reflows their
     /// pane — for every agent screen that is opened and read. Once asked for it
     /// stays mounted, for the reasons in the body.
-    @State private var terminalWasAskedFor = false
+    @State private var terminalWasAskedFor: Bool
 
     init(
         peer: PairedPeer,

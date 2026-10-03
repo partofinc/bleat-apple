@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Used where a callback thread has to release async waiters — the writer
 /// becoming available, or a close being requested. Opening twice is harmless.
-final class AsyncGate: @unchecked Sendable {
+final class AsyncGate: Sendable {
     private enum State {
         case closed([CheckedContinuation<Void, Never>])
         case open

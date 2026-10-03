@@ -51,10 +51,13 @@ public enum HostStatusProbe {
     ///   throws on a non-zero exit, and the last read failing is ordinary.
     /// - `/proc/device-tree/model` ends in a NUL and no newline, so it is
     ///   stripped and given one, or the next line is glued to it.
+    /// - `$2`, when set, leaves out the processor sample: the one read that
+    ///   takes a second, and the one pairing has no use for.
     static let script = """
         exec 2>/dev/null
         PATH=/usr/bin:/bin:/usr/sbin:/sbin
         h=$1
+        i=$2
         p() { sed "s/^/\(prefix)$1:/"; }
         uname -srm | p uname
         [ -n "$h" ] && "$h" --version | p herdr
@@ -69,7 +72,7 @@ public enum HostStatusProbe {
           sysctl -n kern.boottime | p boottime
           date +%s | p now
           vm_stat | p vm_stat
-          iostat -n0 -c 2 -w 1 | p iostat
+          [ -z "$i" ] && iostat -n0 -c 2 -w 1 | p iostat
           ;;
         Linux)
           cat /etc/os-release | p os-release
@@ -81,9 +84,11 @@ public enum HostStatusProbe {
           for z in /sys/class/thermal/thermal_zone*; do
             echo "$(cat "$z/type") $(cat "$z/temp")"
           done | p thermal
-          head -n 1 /proc/stat | p stat
-          sleep 1
-          head -n 1 /proc/stat | p stat
+          if [ -z "$i" ]; then
+            head -n 1 /proc/stat | p stat
+            sleep 1
+            head -n 1 /proc/stat | p stat
+          fi
           ;;
         esac
         true
@@ -98,8 +103,12 @@ public enum HostStatusProbe {
     /// script is POSIX: `case`, a function, `$(…)`. Wrapped like this, the
     /// login shell only has to understand a single-quoted string — which zsh,
     /// bash and fish all do. Run under zsh, bash, dash and macOS's `sh`.
-    public static func command(herdrPath: String?) -> String {
-        "/bin/sh -c '\(script)' sh \(quote(herdrPath ?? ""))"
+    ///
+    /// - Parameter sampling: false leaves out the processor's usage, which
+    ///   costs a second of waiting on the host. Pairing asks only what the
+    ///   host is, and the user is watching a spinner while it does.
+    public static func command(herdrPath: String?, sampling: Bool = true) -> String {
+        "/bin/sh -c '\(script)' sh \(quote(herdrPath ?? ""))" + (sampling ? "" : " info")
     }
 
     /// Reads a reply. Lines without the prefix are ignored, and so is anything

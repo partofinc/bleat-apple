@@ -164,5 +164,49 @@ struct HostStatusProbeTests {
         #expect(command.hasPrefix("/bin/sh -c '"))
         #expect(command.hasSuffix("' sh '/opt/homebrew/bin/herdr'"))
         #expect(HostStatusProbe.command(herdrPath: nil).hasSuffix("' sh ''"))
+        #expect(HostStatusProbe.command(herdrPath: nil, sampling: false).hasSuffix("' sh '' info"))
+    }
+
+    /// A re-pair asks the host what it is, and that is laid over the record
+    /// rather than replacing it.
+    @Test("a re-pair's report lays over what was known")
+    func repairLaysOver() throws {
+        var known = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "adam", username: "pi", endpoints: [Endpoint(host: "adam.local")]
+        )
+        known.hostInfo = HostInfo(system: "Debian GNU/Linux 13 (trixie)", model: "Raspberry Pi Compute Module 5 Rev 1.0")
+        var fresh = PairedPeer(
+            hostKey: "ssh-ed25519 AAAA", name: "adam", username: "pi", endpoints: [Endpoint(host: "adam.local")]
+        )
+        fresh.hostInfo = HostInfo(kernel: "Linux 6.18.50+rpt-rpi-2712")
+        let merged = try known.merging(fresh).hostInfo
+        #expect(merged?.system == "Debian GNU/Linux 13 (trixie)")
+        #expect(merged?.kernel == "Linux 6.18.50+rpt-rpi-2712")
+
+        // A re-pair whose probe said nothing keeps the record as it was.
+        fresh.hostInfo = nil
+        #expect(try known.merging(fresh).hostInfo == known.hostInfo)
+    }
+}
+
+/// Pairing asks the host what it is after the point of no return, so the
+/// question has to come back whether or not the host answers.
+@Suite("Asking within a deadline")
+struct DeadlineTests {
+    @Test("an answer in time is the answer")
+    func inTime() async {
+        #expect(await PairingClient.first(within: .seconds(5)) { 7 } == 7)
+    }
+
+    /// The work here never ends by itself, as a command on a stalled mount
+    /// would not; the race still returns at the deadline.
+    @Test("work that never finishes gives way at the deadline")
+    func overran() async {
+        let started = ContinuousClock.now
+        let answer: Int? = await PairingClient.first(within: .milliseconds(100)) {
+            while true { await Task.yield() }
+        }
+        #expect(answer == nil)
+        #expect(ContinuousClock.now - started < .seconds(2))
     }
 }

@@ -73,8 +73,6 @@ public struct PairingClient: Sendable {
             await close(connection.transport, deviceSession.current)
             throw error
         }
-        await close(connection.transport, deviceSession.current)
-
         var peer = PairedPeer(payload: payload)
         peer.herdrPath = redemption.herdrPath
         peer.lastGoodEndpoint = connection.endpoint
@@ -91,11 +89,79 @@ public struct PairingClient: Sendable {
         // something rescanning fixes. `PeerRegistry.all()` tolerates a *missing*
         // file but not an undecodable one, which is the realistic way this
         // fails — and the user needs to be told the host half succeeded.
+        //
+        // Saved **before** the host is asked what it is, and that order is
+        // the point: the probe is a shell command on someone else's machine,
+        // and one that stalled here would leave a key on the host and no
+        // record of it on the phone.
+        let saved: PairedPeer
         do {
-            return try peers.save(peer)
+            saved = try peers.save(peer)
         } catch {
+            await close(connection.transport, deviceSession.current)
             throw PairingError.peerNotRecorded(String(describing: error))
         }
+
+        // What the host is, over the device session while it is still open,
+        // so the new host arrives in the list with its mark and system rather
+        // than waiting for the first time someone opens it. Best effort, and
+        // bounded: closing the sessions is what ends a probe that overran.
+        let info = await hostInfo(over: deviceSession.current, herdrPath: redemption.herdrPath)
+        await close(connection.transport, deviceSession.current)
+        guard let info,
+              (try? peers.recordHostInfo(info, forHostKey: saved.hostKey)) == true,
+              let recorded = try? peers.peer(hostKey: saved.hostKey)
+        else { return saved }
+        return recorded
+    }
+
+    /// How long pairing waits for the host to say what it is. The probe
+    /// without its processor sample takes a few dozen milliseconds; this is
+    /// for a host whose `$HOME` sits on a mount that has stopped answering.
+    static let hostInfoDeadline: Duration = .seconds(5)
+
+    /// Asks the host what it is, without the second-long processor sample.
+    /// Nil when there is no session or nothing came back.
+    ///
+    /// **Raced against a deadline rather than awaited**, because nothing
+    /// shorter would end it: `run(shell:)` has no timeout, and a task group
+    /// waits for every child before it returns. Whichever finishes first is
+    /// the answer; the caller then closes the session, which fails the
+    /// command if it is still running.
+    private func hostInfo(over session: SSHTransport?, herdrPath: String) async -> HostInfo? {
+        guard let session else { return nil }
+        let command = HostStatusProbe.command(herdrPath: herdrPath, sampling: false)
+        return await Self.first(within: Self.hostInfoDeadline) {
+            guard let output = try? await session.run(shell: command) else { return nil }
+            let info = HostStatusProbe.status(fromOutput: output).info
+            return info.isEmpty ? nil : info
+        }
+    }
+
+    /// `work`'s answer, or nil once `limit` has passed, without waiting for
+    /// `work` to notice. Internal for a test.
+    static func first<T: Sendable>(
+        within limit: Duration,
+        _ work: @escaping @Sendable () async -> T?
+    ) async -> T? {
+        let (answers, continuation) = AsyncStream.makeStream(of: T?.self)
+        let worker = Task {
+            continuation.yield(await work())
+            continuation.finish()
+        }
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            continuation.yield(nil)
+            continuation.finish()
+        }
+        var answer: T?
+        for await first in answers {
+            answer = first
+            break
+        }
+        timer.cancel()
+        worker.cancel()
+        return answer
     }
 
     /// Both sessions, on every path out. `defer` cannot await, so this is

@@ -227,8 +227,10 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         // from all of them.
         merged.createdSessions = union(createdSessions, other.createdSessions)
         merged.startedSessions = union(startedSessions, other.startedSessions)
-        // A re-pair comes from a QR, which says nothing about the machine.
-        merged.hostInfo = other.hostInfo ?? hostInfo
+        // A re-pair asks the host what it is as it pairs; laid over what was
+        // known field by field, as every other report is, so a part of the
+        // probe that did not answer this time erases nothing.
+        merged.hostInfo = other.hostInfo.map { hostInfo?.updated(with: $0) ?? $0 } ?? hostInfo
         return merged
     }
 

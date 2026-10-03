@@ -187,3 +187,51 @@ What the port needed, each found by the compiler rather than by reading:
 note said "outside this package" — that predates the package having more than
 one target. The intent was never to contaminate the transport layer, which a
 separate target satisfies.)
+
+## Working in this repository
+
+Moved here from `CLAUDE.md`, which keeps the one-line rules.
+
+- **The package is named `BleatKit`, not `bleat`, and the reason is a
+  filesystem collision.** It used to be `bleat`, against an `.xcodeproj` named
+  `Bleat` — and macOS is case-insensitive, so Xcode's two intermediates
+  directories, `Intermediates.noindex/bleat.build` (the package) and
+  `Bleat.build` (the project), were **the same directory**. Verified by inode:
+  both `stat` calls returned `298112417`. The app target's own build directory
+  therefore sat inside the package's, alongside `BleatKit.build` and
+  `BleatUI.build`. Reproduced from a clean `-derivedDataPath`, so it was
+  structural rather than a corrupted cache. Renaming the package separates them
+  — the executable *product* is still `bleat`, so the CLI is unchanged.
+  - The autocreated package scheme is `BleatKit-Package` now, and it resolves
+    only from `BleatKit/`, not from the project.
+  - Two schemes still differ only in case (`bleat`, the tool, and `Bleat`, the
+    app). That is tolerable where the build directories were not, but it is
+    worth knowing when something in Xcode behaves oddly.
+
+- **`git add -A` can silently strip `Support/Info.plist`'s comments, because
+  Xcode rewrites that file.** Caught in review, 30 Sept 2026: a commit that
+  touched only doc comments also deleted the 25-line XML comment explaining why
+  that plist exists at all — the two keys that cannot be build settings, the
+  `PairingPayload.urlScheme` coupling no test can assert, and why
+  `NSBonjourServices` is not optional. The keys themselves survived; only the
+  reasoning went, which is the worse loss in a file nobody reads twice.
+  - **`xcodebuild build` is not the culprit** — reproduced with a scratch
+    `-derivedDataPath` and the file's md5 was unchanged. It is the **open
+    Xcode**, which normalises a plist it manages, and plist serialisation drops
+    comments. Same family as the DerivedData note below: the GUI and the command
+    line both think they own things in here.
+  - So **stage paths deliberately in this repo rather than `-A`**, and if the
+    plist does appear in `git status` unexpectedly, diff it before staging:
+    `PlistBuddy -c Print` on both versions says whether any *key* really moved.
+
+- **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
+  Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the
+  open Xcode is using. Interleaving configurations and destinations there —
+  Debug simulator, Debug device, Release device, in one sitting — leaves the
+  build database and the products on disk out of step, and the first thing that
+  notices is **previews**, which JIT-link per-file object files:
+  `FailedToLaunchAppError` wrapping `ShellCouldNotValidatePathExists: Could not
+  validate that build product path exists to link: …/BleatUI.build/
+  Objects-normal/arm64/AgentLink.o`. The file was there; the build description
+  disagreed. It cost a 2.2 GB DerivedData deletion and a full rebuild to clear.
+  Build into a scratch path instead, and let Xcode keep its own.

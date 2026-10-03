@@ -121,6 +121,18 @@ button on a host's screen, and **Pair another device** in its settings.
   included. The enrollment line is checked before the device keys, and the
   redeeming device installs its key before deleting the line, so a line seen
   gone with no new key beside it a moment later was not taken by a redemption.
+- **Every read of the file takes the lock, and is one read.** Each
+  write-back to `authorized_keys` empties the file before filling it, so an
+  unlocked read can see nothing — `bleat pair` shrugs that off because its
+  next poll is a tenth of a second away. Here it would be final: the watch
+  would end with the key still live, reported as used or removed. So
+  `Invitation` reads `listCommand` (locked) and takes the enrollment line and
+  the device keys from that one snapshot. (Found in review.)
+- **The key is minted before it is installed** (`prepare`, then `install`),
+  so a screen closed while the key is going in still knows which line to
+  withdraw — and does, whether or not the install was confirmed. That
+  cancellation is not handed to `ConnectionStore.handle`, which would close
+  the connection the screens behind the sheet are using. (Found in review.)
 - **The append is read back** before the code is shown. A code with no key
   behind it would fail on the other device for five minutes, blaming nothing.
 - **A dropped connection does not end the code.** The key is still on the

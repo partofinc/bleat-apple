@@ -41,7 +41,7 @@ public struct Invitation: Sendable, Equatable {
     public let deadline: Date
     /// Device keys on the host before the code was shown, so a redemption is
     /// judged on a *new* one appearing — the rule `bleat pair` follows.
-    let devicesBefore: Set<String>
+    private(set) var devicesBefore: Set<String>
 
     /// For a caller that has these already — a preview. `open(for:on:)` is
     /// the way to get one with a key behind it.
@@ -67,54 +67,68 @@ public struct Invitation: Sendable, Equatable {
         case withdrawn
     }
 
-    /// Installs the enrollment key and builds the code.
-    ///
-    /// - Parameters:
-    ///   - peer: The host, as this device knows it. Its endpoints go into the
-    ///     code as they stand — the host's own report plus anything added by
-    ///     hand — and its host key is the pin the other device will check.
-    ///   - runner: A shell on the host, authenticated as this device.
+    /// Installs the enrollment key and builds the code: `prepare`, then
+    /// `install`.
     public static func open(
         for peer: PairedPeer,
         on runner: any ShellRunner,
         now: Date = Date()
     ) async throws -> Invitation {
+        try await prepare(for: peer, now: now).install(on: runner)
+    }
+
+    /// Mints the key and the code, touching nothing on the host.
+    ///
+    /// Apart from `install` so a caller holds the marker **before** anything
+    /// is written: cancelled part way through installing, it can still
+    /// withdraw a line it never saw confirmed.
+    ///
+    /// - Parameter peer: The host, as this device knows it. Its endpoints go
+    ///   into the code as they stand — the host's own report plus anything
+    ///   added by hand — and its host key is the pin the other device will
+    ///   check.
+    public static func prepare(for peer: PairedPeer, now: Date = Date()) throws -> Invitation {
         guard !peer.endpoints.isEmpty else {
             throw PairingError.enrollmentIncomplete("this host has no address to put in the code")
         }
-        let devicesBefore = try await deviceMarkers(on: runner)
+        return Invitation(
+            payload: PairingPayload(
+                name: peer.name,
+                username: peer.username,
+                endpoints: peer.endpoints,
+                enrollmentSeed: SSHKeyPair().rawRepresentation,
+                hostKey: peer.hostKey
+            ),
+            marker: AuthorizedKeys.enrollmentMarker(),
+            deadline: now.addingTimeInterval(window)
+        )
+    }
 
-        let enrollment = SSHKeyPair()
-        let marker = AuthorizedKeys.enrollmentMarker()
-        let deadline = now.addingTimeInterval(window)
+    /// Writes the key to the host and confirms it is there.
+    ///
+    /// - Parameter runner: A shell on the host, authenticated as this device.
+    /// - Returns: This invitation, knowing which device keys were already
+    ///   on the host.
+    public func install(on runner: any ShellRunner) async throws -> Invitation {
+        let before = try await Self.snapshot(on: runner)
         let line = AuthorizedKeys.enrollmentLine(
-            publicKeyLine: enrollment.authorizedKeyLine(comment: ""),
+            publicKeyLine: try payload.enrollmentKey().authorizedKeyLine(comment: ""),
             marker: marker,
-            expiresAt: deadline.addingTimeInterval(expiryGrace)
+            expiresAt: deadline.addingTimeInterval(Self.expiryGrace)
         )
         _ = try await runner.run(shell: AuthorizedKeys.appendCommand(line: line))
 
         // An append that exited 0 and wrote nothing would show a code that
         // can never work, for five minutes. Read it back, as `Enrollment`
         // does its own key.
-        guard try await contains(marker, on: runner) else {
+        guard try await Self.snapshot(on: runner).markers.contains(marker.value) else {
             throw PairingError.enrollmentIncomplete(
                 "the enrollment key did not appear in \(AuthorizedKeys.path)"
             )
         }
-
-        return Invitation(
-            payload: PairingPayload(
-                name: peer.name,
-                username: peer.username,
-                endpoints: peer.endpoints,
-                enrollmentSeed: enrollment.rawRepresentation,
-                hostKey: peer.hostKey
-            ),
-            marker: marker,
-            deadline: deadline,
-            devicesBefore: devicesBefore
-        )
+        var installed = self
+        installed.devicesBefore = before.devices
+        return installed
     }
 
     /// The code, as `bleat pair` would print it.
@@ -122,14 +136,16 @@ public struct Invitation: Sendable, Equatable {
 
     /// Where things stand on the host.
     ///
-    /// The enrollment line is checked **before** the device keys, and the
-    /// order is what makes `withdrawn` trustworthy: the other device installs
-    /// its own key before it deletes the enrollment line, so a line seen gone
-    /// with no new key beside it a moment later was not taken by a redemption.
+    /// **One locked read of the file**, and both are load-bearing. Every
+    /// write-back to `authorized_keys` empties the file before it fills it,
+    /// so an unlocked read can land in that instant and see nothing — which
+    /// here would end the watch with the key still live, reported as used or
+    /// removed. One read, rather than one for the line and one for the device
+    /// keys, so the two answers come from the same file.
     public func state(on runner: any ShellRunner) async throws -> State {
-        guard try await !Self.contains(marker, on: runner) else { return .waiting }
-        let devices = try await Self.deviceMarkers(on: runner)
-        return devices.subtracting(devicesBefore).isEmpty ? .withdrawn : .redeemed
+        let now = try await Self.snapshot(on: runner)
+        if now.markers.contains(marker.value) { return .waiting }
+        return now.devices.subtracting(devicesBefore).isEmpty ? .withdrawn : .redeemed
     }
 
     /// Removes the enrollment line. Idempotent: removing a line already gone
@@ -139,24 +155,17 @@ public struct Invitation: Sendable, Equatable {
         _ = try await runner.run(shell: AuthorizedKeys.removeCommand(marker: marker))
     }
 
-    private static func contains(
-        _ marker: AuthorizedKeys.Marker,
+    /// The marker on every Bleat line, read under the lock the writers take.
+    private static func snapshot(
         on runner: any ShellRunner
-    ) async throws -> Bool {
-        let answer = try await runner.run(shell: AuthorizedKeys.containsCommand(marker: marker))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        // "Present" unless the host plainly says otherwise. Read wrongly the
-        // other way, a key still live would be reported as used or withdrawn,
-        // and the screen would stop watching it.
-        return answer != "no"
-    }
-
-    private static func deviceMarkers(on runner: any ShellRunner) async throws -> Set<String> {
-        let output = try await runner.run(shell: AuthorizedKeys.listDeviceMarkersCommand())
-        return Set(
+    ) async throws -> (markers: Set<String>, devices: Set<String>) {
+        let output = try await runner.run(shell: AuthorizedKeys.listCommand())
+        // The comment is the line's last field; the listing matched it.
+        let markers = Set(
             output.split(whereSeparator: \.isNewline)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { $0.hasPrefix(AuthorizedKeys.markerPrefix) }
+                .compactMap { $0.split(whereSeparator: \.isWhitespace).last.map(String.init) }
         )
+        let devicePrefix = "\(AuthorizedKeys.markerPrefix)-device-"
+        return (markers, markers.filter { $0.hasPrefix(devicePrefix) })
     }
 }

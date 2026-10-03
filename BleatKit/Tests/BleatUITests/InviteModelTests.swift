@@ -15,35 +15,50 @@ struct InviteModelTests {
     /// key is there, and which device keys are.
     private nonisolated final class Host: ShellRunner, @unchecked Sendable {
         private let lock = NSLock()
-        private var enrollment = false
+        /// The one-time key's marker while its line is in the file.
+        private var enrollment: String?
         private var devices: Set<String> = ["bleat-device-thisphone"]
         private var removals = 0
+        /// Held until released, to stand for an install still in flight.
+        private var holdAppend = false
+        private var appendGate: CheckedContinuation<Void, Never>?
 
-        var isEnrollmentPresent: Bool { lock.withLock { enrollment } }
+        var isEnrollmentPresent: Bool { lock.withLock { enrollment != nil } }
         var removed: Int { lock.withLock { removals } }
+        var isAppendWaiting: Bool { lock.withLock { appendGate != nil } }
+
+        func holdAppends() { lock.withLock { holdAppend = true } }
+        func releaseAppend() { lock.withLock { appendGate }?.resume() }
 
         /// The other device's swap: its own key in, then the one-time key out.
         func redeem() {
             lock.withLock {
                 devices.insert("bleat-device-otherphone")
-                enrollment = false
+                enrollment = nil
             }
         }
 
         func run(shell command: String) async throws -> String {
-            lock.withLock {
-                if command == AuthorizedKeys.listDeviceMarkersCommand() {
-                    return devices.sorted().joined(separator: "\n")
+            if command == AuthorizedKeys.listCommand() {
+                return lock.withLock {
+                    let lines = devices.sorted().map { "ssh-ed25519 AAAA \($0)" }
+                        + (enrollment.map { ["restrict,expiry-time=\"20990101000000Z\" ssh-ed25519 BBBB \($0)"] } ?? [])
+                    return lines.joined(separator: "\n") + "\n"
                 }
-                if command.hasPrefix("grep -q -E") { return enrollment ? "yes\n" : "no\n" }
-                if command.contains("restrict,expiry-time=") {
-                    enrollment = true
-                } else {
-                    enrollment = false
+            }
+            if let marker = command.firstMatch(of: /bleat-enroll-[0-9a-f]+/).map({ String($0.output) }),
+               command.contains("restrict,expiry-time=") {
+                if lock.withLock({ holdAppend }) {
+                    await withCheckedContinuation { gate in lock.withLock { appendGate = gate } }
+                }
+                lock.withLock { enrollment = marker }
+            } else {
+                lock.withLock {
+                    enrollment = nil
                     removals += 1
                 }
-                return ""
             }
+            return ""
         }
     }
 
@@ -136,6 +151,29 @@ struct InviteModelTests {
         host.redeem()
         await run.value
         #expect(model.phase == .redeemed)
+    }
+
+    /// Closed while the key was going in: the line may land after the screen
+    /// has gone, so it is withdrawn regardless — and the cancellation is not
+    /// handed on as a broken connection.
+    @Test("closing the screen while the code is being made removes the key")
+    func cancelledWhileOpening() async throws {
+        let host = Host()
+        host.holdAppends()
+        let model = InviteModel()
+        var handled = 0
+        let run = Task {
+            await model.run(
+                peer: .preview, shell: { host }, handle: { _ in handled += 1 },
+                pollInterval: .milliseconds(10)
+            )
+        }
+        try await waitUntil { host.isAppendWaiting }
+        run.cancel()
+        host.releaseAppend()
+        await run.value
+        try await waitUntil { !host.isEnrollmentPresent && host.removed >= 1 }
+        #expect(handled == 0)
     }
 
     @Test("a key that could not be installed is a failure, with nothing to remove")

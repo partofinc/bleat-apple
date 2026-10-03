@@ -9,7 +9,8 @@ import Observation
 /// from nothing.
 ///
 /// **It never dials.** A reading is taken only over a connection that is
-/// already up, and shown only while that connection still is. Two reasons, and
+/// already up and usable as it stands (`ConnectionStore.liveShell`), and
+/// shown only while that connection still is. Two reasons, and
 /// the second is the one that bites: this is a glance nobody should pay a
 /// handshake for — and a screen drawn in a preview or a test has no
 /// connection, so a read that was willing to open one would dial a real host
@@ -91,34 +92,32 @@ public final class HostLoadStore {
     /// - Parameter force: read even though the last reading is fresh. A screen
     ///   appearing passes false; a pull-to-refresh passes true.
     func refresh(for peer: PairedPeer, force: Bool = false) async {
-        guard let live = connections.connectionID(for: peer) else { return }
+        // **Over the connection as it stands, or not at all.** Not
+        // `shell(for:)`, which re-dials when the network has changed since the
+        // dial: the read then raced the screen's own list load into a dial,
+        // and a reply over the new connection, tagged with the old one, was
+        // dropped as stale — the bar stayed empty until a pull-to-refresh.
+        // Now the list's load does the re-dial, and the new connection's
+        // number is what asks for a reading (`HostLoadBarModifier`).
+        guard let (shell, connection) = connections.liveShell(for: peer) else { return }
         if !force {
-            if let refreshing, refreshing.hostKey == peer.hostKey, refreshing.connection == live { return }
-            if reading?.hostKey == peer.hostKey, reading?.connection == live,
+            if let refreshing, refreshing.hostKey == peer.hostKey, refreshing.connection == connection { return }
+            if reading?.hostKey == peer.hostKey, reading?.connection == connection,
                let readAt, .now - readAt < Self.fresh { return }
         }
         generation += 1
         let generation = generation
-        refreshing = (peer.hostKey, live)
+        refreshing = (peer.hostKey, connection)
         defer { if generation == self.generation { refreshing = nil } }
 
-        // **The connection is read again once the shell is in hand**, because
-        // asking for it can replace the one checked above: `ConnectionStore`
-        // re-dials when the network has changed since its dial — a tunnel
-        // coming up just after the first connection is the usual case. Tagged
-        // with the one it was asked about, the reply then looked stale on
-        // arrival and was dropped, and the bar stayed empty until a
-        // pull-to-refresh.
-        guard let shell = try? await connections.shell(for: peer),
-              let connection = connections.connectionID(for: peer),
-              let output = try? await shell.run(shell: HostStatusProbe.command(herdrPath: peer.herdrPath)),
+        guard let output = try? await shell.run(shell: HostStatusProbe.command(herdrPath: peer.herdrPath)),
               generation == self.generation
         else { return }
         let status = HostStatusProbe.status(fromOutput: output)
         peers.recordHostInfo(status.info, for: peer)
         // A reply with nothing in it is not news that the host has no memory.
         // And one that outlived its connection is about a moment that has
-        // gone: the shell re-dials, so the reply can come back over a new one.
+        // gone: the list's load can replace the connection while this runs.
         guard connections.connectionID(for: peer) == connection else { return }
         if status.load.isEmpty, let reading, reading.hostKey == peer.hostKey,
            reading.connection == connection, !reading.load.isEmpty { return }

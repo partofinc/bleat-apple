@@ -151,6 +151,30 @@ public final class ConnectionStore {
         try await connected(for: peer, session: nil).link
     }
 
+    /// A shell on the live connection to this peer, with that connection's
+    /// number — or nil, rather than a dial, when there is none or it could not
+    /// be reused as it stands.
+    ///
+    /// **For work that must never be the reason for a dial**: reading the
+    /// host's load. `shell(for:)` re-dials when the network has changed since
+    /// the dial, and a load read that went through it raced the screen's own
+    /// list load into `connected(for:)`, where two callers can each release and
+    /// each dial before either has set `connecting` — and the second install
+    /// orphans the first connection on the host. (Found in review.) Here the
+    /// list's load does the re-dial, and the new number is what asks for the
+    /// reading. Synchronous, so the shell and its number cannot disagree.
+    public func liveShell(for peer: PairedPeer) -> (shell: any ShellRunner, connection: Int)? {
+        guard let live = current,
+              ConnectionPolicy.canReuse(
+                  cachedHostKey: live.hostKey,
+                  cachedLink: live.link,
+                  for: peer,
+                  link: reachability.link
+              )
+        else { return nil }
+        return (live.connected.link, live.id)
+    }
+
     /// The one dial, shared by both. Everything about joining, cancelling and
     /// not leaking a transport lives here rather than being written twice.
     private func connected(

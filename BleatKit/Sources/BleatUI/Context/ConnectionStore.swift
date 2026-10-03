@@ -196,23 +196,42 @@ public final class ConnectionStore {
             return try await pending.task.value
         }
 
-        await release()
-
+        // **From here to `connecting` being set there is no suspension, and
+        // that is what makes this the one dial.** This used to `await
+        // release()` first, and a release suspends — it disconnects the old
+        // connection and waits for the endpoint refresh. A second caller
+        // arriving in that window found neither a live connection nor a dial
+        // in flight, released nothing and dialled too; both installed, and the
+        // first install was overwritten without being closed — an SSH session
+        // left open on the host with nothing referring to it. After a network
+        // change, a pull-to-refresh overlapping a screen's own `.task` load was
+        // enough; so was the host's load read, until it stopped dialling.
+        // (Found in review.) So the old state is taken synchronously and
+        // closed *inside* the dial's task, which a caller arriving meanwhile
+        // joins. Anything that can throw comes before the detach, so a failure
+        // leaves the store as it found it.
         let task: Task<Connection, any Error>
         if let relay {
             // Nothing is dialled: the phone connects when the first command
             // reaches it, and that command is what reports a host that cannot
             // be reached.
             let transport = RelayTransport(hostKey: peer.hostKey, session: session, channel: relay)
+            let previous = detach()
             task = Task {
-                Connection(
+                await self.close(previous)
+                return Connection(
                     client: HerdrClient(transport: transport), link: transport,
                     endpoint: nil, discoveredHerdrPath: nil
                 )
             }
         } else {
             let deviceKey = try peers.deviceKey()
+            let previous = detach()
             task = Task {
+                await self.close(previous)
+                // Released while the old one was closing: not worth a dial
+                // nobody is waiting for.
+                try Task.checkCancellation()
                 let connected = try await PeerConnection.connect(
                     to: peer, deviceKey: deviceKey, link: link, session: session
                 )
@@ -291,25 +310,40 @@ public final class ConnectionStore {
     /// Closes whatever is open, including a dial that has not finished.
     /// Idempotent.
     public func release() async {
-        // **Everything this call is responsible for is taken before the first
-        // suspension, and that ordering is the whole of its correctness.**
-        // This awaits the endpoint refresh, which is bounded only by an
-        // already-running SSH command — the `tailscale` probe carries a five
-        // second watchdog — and a release is started from a screen going away
-        // rather than from something anybody waits on. So a *later* caller can
-        // dial and install a connection inside that window. The old order read
-        // `connecting` and `current` after the await and closed whatever it
-        // found there, which by then could be a brand new connection to a
-        // different host: the user backs out of one Mac, picks another within
-        // a few seconds, and its list screens fail against a transport this
-        // call disconnected from under them.
-        //
-        // Reading them first, and clearing them first, makes that impossible —
-        // a dial that starts afterwards begins from a clean slate and is
-        // invisible here. Cancelling `pending` before suspending matters for
-        // the same reason: `connected(for:)` re-checks `task.isCancelled`
-        // before installing, and that check is only worth anything if the
-        // cancellation has already happened.
+        await close(detach())
+    }
+
+    /// What one release is responsible for, taken out of the store.
+    private struct Detached {
+        let pending: Task<Connection, any Error>?
+        let live: Live?
+        let refresh: Task<Void, Never>?
+    }
+
+    /// The half of a release that must not suspend: takes the dial in flight,
+    /// the live connection and the endpoint refresh, and clears them.
+    ///
+    /// **Everything a release is responsible for is taken before its first
+    /// suspension, and that ordering is the whole of its correctness.**
+    /// Closing awaits the endpoint refresh, which is bounded only by an
+    /// already-running SSH command — the `tailscale` probe carries a five
+    /// second watchdog — and a release is started from a screen going away
+    /// rather than from something anybody waits on. So a *later* caller can
+    /// dial and install a connection inside that window. The old order read
+    /// `connecting` and `current` after the await and closed whatever it
+    /// found there, which by then could be a brand new connection to a
+    /// different host: the user backs out of one Mac, picks another within
+    /// a few seconds, and its list screens fail against a transport this
+    /// call disconnected from under them.
+    ///
+    /// Reading them first, and clearing them first, makes that impossible —
+    /// a dial that starts afterwards begins from a clean slate and is
+    /// invisible here. Cancelling the pending dial before suspending matters
+    /// for the same reason: `connected(for:)` re-checks `task.isCancelled`
+    /// before installing, and that check is only worth anything if the
+    /// cancellation has already happened. And `connected(for:)` relies on
+    /// this being synchronous to set its own dial before anyone else looks.
+    private func detach() -> Detached {
         let pending = connecting
         connecting = nil
         pending?.task.cancel()
@@ -321,19 +355,24 @@ public final class ConnectionStore {
         let refreshing = refresh
         refresh = nil
         refreshing?.cancel()
+        return Detached(pending: pending?.task, live: live, refresh: refreshing)
+    }
+
+    /// The half that waits: sees each thing `detach` took through to closed.
+    private func close(_ detached: Detached) async {
         // Awaited, not abandoned: the cancellation checks inside the probe only
         // help if nothing is mid-command when the transport goes away, and the
         // wait is bounded by one already-running command.
-        await refreshing?.value
+        await detached.refresh?.value
 
         // Awaited rather than abandoned: cancellation does not stop the
         // handshake, so the only way to be sure nothing is left open is to see
         // what it produced.
-        if let connected = try? await pending?.task.value {
+        if let connected = try? await detached.pending?.value {
             await connected.link.disconnect()
         }
 
-        guard let live else { return }
+        guard let live = detached.live else { return }
         await live.connected.link.disconnect()
     }
 }

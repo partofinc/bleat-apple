@@ -47,6 +47,21 @@ prompts, guesses, or trusts anything on first sight.
   reason — `connected(for:)` re-checks `task.isCancelled` before installing,
   and that check is only worth anything if the cancellation has already
   happened.
+- **A dial claims its place before it closes the old connection.**
+  `connected(for:)` used to `await release()` and only then set
+  `connecting` — and a release suspends, disconnecting the old connection.
+  A second caller arriving in that window found no connection and no dial in
+  flight, so it dialled too; both installed, and the first was overwritten
+  without being closed: an SSH session left open on the host with nothing
+  referring to it. After a network change, a pull-to-refresh overlapping a
+  screen's own `.task` load was enough, and so was the host's load read until
+  it stopped dialling (found in review of the load-on-connect change, not
+  observed). Now `detach()` takes the old state synchronously, the dial's own
+  task closes it before dialling, and `connecting` is set before the first
+  suspension, so the second caller joins. `release()` is `close(detach())`.
+  `RelayedStoreTests.concurrentCallersShareOneDial` pins it — the relay's
+  `.release` is the suspension — and failed on the old code with a third
+  connection where there should be a second.
 - **A cached connection is keyed by link state as well as host key.** It is
   raced once and then pinned to the address that won, so one made on Wi-Fi
   against a `.local` name can only fail after the phone moves to cellular —
@@ -429,7 +444,8 @@ and a `HostLoad`.
       `connected(for:)` after a network change: each released, each dialled
       before either had set `connecting`, and the second install orphaned the
       first SSH session on the host. (Found in review, not observed.) A load
-      read that cannot dial cannot race one.
+      read that cannot dial cannot race one — and `connected(for:)` itself
+      now cannot be raced either; see the store's bullets above.
   - **Best effort and silent.** A failed read keeps the last reading. It does
     not call `ConnectionStore.handle`: the list above reports the same dropped
     connection, and two loads each releasing it would have the slower tear down

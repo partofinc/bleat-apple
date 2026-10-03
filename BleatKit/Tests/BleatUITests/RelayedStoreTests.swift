@@ -104,6 +104,29 @@ struct RelayedStoreTests {
         #expect(connections.connectionID(for: peer) != first)
     }
 
+    /// Closing the old connection is the suspension the race lived in: here
+    /// it is the `.release` sent to the phone. Both callers used to find no
+    /// connection and no dial in flight there, and each installed its own —
+    /// the first overwritten without being closed. On a phone that is an SSH
+    /// session left open on the host.
+    @Test("two screens asking for another host at once share one connection")
+    func concurrentCallersShareOneDial() async throws {
+        let phone = Phone()
+        let (connections, _) = stores(phone)
+        let old = PairedPeer.preview
+        let new = PairedPeer.previewSparse
+
+        _ = try await connections.shell(for: old)
+        let before = try #require(connections.connectionID(for: old))
+        async let list = connections.client(for: new)
+        async let load = connections.shell(for: new)
+        _ = try await (list, load)
+        #expect(connections.connectionID(for: new) == before + 1)
+
+        await connections.release()
+        #expect(phone.asked == [.release(hostKey: old.hostKey), .release(hostKey: new.hostKey)])
+    }
+
     @Test("herdr refusing a command does not end the connection")
     func herdrErrorKeepsTheConnection() async throws {
         let phone = Phone()

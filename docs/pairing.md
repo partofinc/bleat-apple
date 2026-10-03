@@ -409,7 +409,11 @@ one lies:
 After step 5, and before the sessions close, the phone asks the host what it
 is — `HostStatusProbe` without its second-long processor sample — and stores
 that on the new record, so the host list can show it straight away. A host
-that does not answer is paired all the same.
+that does not answer is paired all the same. **The record is saved before the
+probe runs, and the probe races a five-second deadline** — closing the
+sessions ends one that overran. Without both, a host whose `$HOME` sits on a
+stalled mount would leave this device's key installed and no record of it on
+the phone. (Found in review.)
 
 Every failure before step 5 leaves the enrollment key live, so the user scans
 again rather than walking to the Mac.

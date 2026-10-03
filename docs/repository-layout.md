@@ -40,6 +40,7 @@ BleatKit/                   # the local Swift package
     *.json                  # captured CLI outputs for decoding tests
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
+Scripts/build-linux.sh      # the console tool for aarch64 Linux, ARMv8.0 and up
 ```
 
 **`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule
@@ -63,16 +64,51 @@ not because anything needs macOS.
 swiftly use 6.4.0      # the swift.org toolchain — Xcode's cannot use a Swift SDK
 swift sdk install https://download.swift.org/swift-6.4.0-release/static-sdk/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
     --checksum 47d2fd89eebfdf9eb4d536b6710414297f755c17926cdebc4742c08982b40a9e
-cd BleatKit && ~/.swiftly/bin/swift build -c release --product bleat \
-    --swift-sdk aarch64-swift-linux-musl --scratch-path <scratch> -Xswiftc -gnone -Xlinker -s
+Scripts/build-linux.sh <scratch>    # prints the binary's path
 ```
 
 The SDK version must match the compiler exactly, and its URL spells the version
-`6.4.0` — the `6.4` form 404s. The result is statically linked, stripped, 59 MB
-(mostly Foundation's ICU data), and runs on any aarch64 Linux. `scp` it to
+`6.4.0` — the `6.4` form 404s, though the compiler calls itself `6.4`. The
+result is statically linked, stripped, 62 MB (mostly Foundation's ICU data),
+and runs on any aarch64 Linux from ARMv8.0 up. `scp` it to
 `~/.local/bin/bleat`. Apple's `container` CLI is no route here: fetching its VM
 init image from ghcr.io reads the login keychain, which is locked in an SSH
 session.
+
+**The stock SDK's binaries need ARMv8.1, so the script patches a copy of it
+(3 Oct 2026).** The first build ran on `adam`, a CM5 (Cortex-A76, ARMv8.2).
+On `mika`, a CM4 (Cortex-A72, ARMv8.0, `Features: fp asimd evtstrm crc32
+cpuid`), the same binary exited 132 — SIGILL — before `main`. gdb on the host,
+with an unstripped build:
+
+```
+=> 0x185cdf4 <_mi_options_init+24>:	ldaddal	x8, x8, [x9]
+#2  _mi_options_init () at /home/build-user/source/mimalloc/src/options.c:176
+#4  0x000000000182d330 in libc_start_init ()
+```
+
+- **The static SDK swaps musl's allocator for mimalloc**, as one `mimalloc.o`
+  member of its `libc.a` (swiftlang/swift-docker,
+  `swift-ci/sdks/static-linux/scripts/build.sh`). mimalloc 2.2 turns on
+  `-march=armv8.1-a` for arm64 unless `MI_NO_OPT_ARCH` is set
+  (`CMakeLists.txt:149`), and that script does not set it — so its LSE
+  atomics (`ldaddal`, `casal`, `swp`) are inline, with no CPU check. Any
+  binary the stock SDK makes fails the same way on a Pi 4 or CM4.
+- **Nothing else in the binary has the problem.** Every inline LSE instruction
+  in an unstripped build was in mimalloc; the Swift runtime and our code reach
+  LSE only through the `__aarch64_*` outline helpers, which test the CPU at
+  run time. The 72 left in the stripped binary are those helpers.
+- **The script rebuilds mimalloc for ARMv8.0** — the SDK's own CMake flags
+  plus `-DMI_NO_OPT_ARCH=ON`, with the swiftly clang, which is the same LLVM
+  commit the SDK was built with — and replaces the member in an APFS clone of
+  the installed SDK, built against with `--swift-sdks-path`. The installed SDK
+  is never touched. The rebuilt object exports and imports exactly the
+  original's symbols; the original had 379 LSE instructions and the script
+  refuses a rebuild with any.
+- **Verified on both boards**, 3 Oct 2026: `bleat inspect` and `bleat keys
+  list` on `mika` and on `adam` from the one binary.
+- **Drop the patch when the SDK sets `MI_NO_OPT_ARCH`**, and keep
+  `mimalloc_version` in the script equal to the SDK's pin until then.
 
 What the port needed, each found by the compiler rather than by reading:
 

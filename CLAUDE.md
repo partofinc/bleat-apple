@@ -55,7 +55,7 @@ shipped once, written down so it does not ship twice.
 | [`docs/creating-from-the-phone.md`](docs/creating-from-the-phone.md) | starting, stopping and deleting sessions; workspaces; agents (including `agent_not_ready`); tabs; terminal rows — with the 0.9.3 re-measurement |
 | [`docs/pane-view.md`](docs/pane-view.md) | pane sizing (`--cols` crops), the phone session, scrolling, the terminal always holding the pane, the key bar, typing, the keychain dead end, the repaint investigation |
 | [`docs/console-tool.md`](docs/console-tool.md) | `bleat` commands: `pair`, `redeem`, `keys`, and the `authorized_keys` anchoring rules |
-| [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build and what the port needed |
+| [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build, the SDK's ARMv8.1 allocator and what the port needed |
 | [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, why approachable concurrency is off |
 | [`docs/app-icon.md`](docs/app-icon.md) | the icon, `Design/icon.swift`, and authoring a `.icon` by hand |
 | [`docs/phase-history.md`](docs/phase-history.md) | how each phase gate was verified |
@@ -79,6 +79,7 @@ BleatKit/                   # the local Swift package
   Fixtures/                 # schema.json + captured CLI output (source of truth)
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
+Scripts/build-linux.sh      # the console tool for aarch64 Linux, ARMv8.0 and up
 docs/                       # the detail behind this file
 ```
 
@@ -115,6 +116,10 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
   from `BleatKit/`, or the simulator test run.
 - **Command-line `xcodebuild` passes `-derivedDataPath`** to a scratch
   directory, or it corrupts the DerivedData the open Xcode uses.
+- **Build the Linux tool with `Scripts/build-linux.sh`, not a bare
+  `swift build`.** The stock static SDK's allocator is ARMv8.1 code, and its
+  binaries die with SIGILL before `main` on a Pi 4 or CM4.
+  ([layout](docs/repository-layout.md))
 - **`RemoteList`'s empty `deinit` must stay**: without it the optimiser
   segfaults and only the archive fails. ([concurrency](docs/concurrency.md))
 

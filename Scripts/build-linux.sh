@@ -83,9 +83,11 @@ EOF
         -DMI_NO_OPT_ARCH=ON >/dev/null
     ninja -C "$src/build" >/dev/null
 
-    # LDADD, CAS, SWP and the rest of LSE: none may be left inline.
+    # LDADD, CAS, SWP and the rest of LSE: none may be left inline. An atomic
+    # whose result is unused disassembles as its ST* alias (STADDL), and CASP
+    # is the pair form.
     lse=$("$bin/llvm-objdump" -d "$src/build/mimalloc.o" |
-        grep -cE '\s(cas|swp|ldadd|ldclr|ldset|ldeor|ldsmax|ldsmin|ldumax|ldumin)(a|l|al)?[bhw]?\s' || true)
+        grep -cE '\s((casp?|swp|ldadd|ldclr|ldset|ldeor|ldsmax|ldsmin|ldumax|ldumin)(a|l|al)?[bhw]?|st(add|clr|set|eor|smax|smin|umax|umin)l?[bhw]?)\s' || true)
     if [[ $lse != 0 ]]; then
         echo "error: the rebuilt mimalloc.o still has $lse LSE instructions" >&2
         exit 1

@@ -394,6 +394,11 @@ one lies:
    that exited 0 without removing anything would hang the tool while the phone
    claimed success.
 
+After step 5, and before the sessions close, the phone asks the host what it
+is — `HostStatusProbe` without its second-long processor sample — and stores
+that on the new record, so the host list can show it straight away. A host
+that does not answer is paired all the same.
+
 Every failure before step 5 leaves the enrollment key live, so the user scans
 again rather than walking to the Mac.
 

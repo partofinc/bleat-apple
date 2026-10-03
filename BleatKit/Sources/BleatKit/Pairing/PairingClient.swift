@@ -73,9 +73,16 @@ public struct PairingClient: Sendable {
             await close(connection.transport, deviceSession.current)
             throw error
         }
+        // What the host is, over the device session while it is still open,
+        // so the new host arrives in the list with its mark and system rather
+        // than waiting for the first time someone opens it. Best effort: the
+        // pairing has already succeeded, and a host that will not say is an
+        // ordinary answer.
+        let info = await hostInfo(over: deviceSession.current, herdrPath: redemption.herdrPath)
         await close(connection.transport, deviceSession.current)
 
         var peer = PairedPeer(payload: payload)
+        peer.hostInfo = info
         peer.herdrPath = redemption.herdrPath
         peer.lastGoodEndpoint = connection.endpoint
         // Kept so unpairing can name the line it leaves behind if it cannot
@@ -96,6 +103,18 @@ public struct PairingClient: Sendable {
         } catch {
             throw PairingError.peerNotRecorded(String(describing: error))
         }
+    }
+
+    /// Asks the host what it is, without the second-long processor sample.
+    /// Nil when there is no session or nothing came back.
+    private func hostInfo(over session: SSHTransport?, herdrPath: String) async -> HostInfo? {
+        guard let session,
+              let output = try? await session.run(
+                  shell: HostStatusProbe.command(herdrPath: herdrPath, sampling: false)
+              )
+        else { return nil }
+        let info = HostStatusProbe.status(fromOutput: output).info
+        return info.isEmpty ? nil : info
     }
 
     /// Both sessions, on every path out. `defer` cannot await, so this is

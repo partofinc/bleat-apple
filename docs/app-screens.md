@@ -367,6 +367,12 @@ and a `HostLoad`.
     kind of machine in front of the name, and the system (`macOS 27.0.1`) where
     `user@address` used to be. A peer that has never been connected to has said
     nothing yet, so its row keeps `user@address` and a generic mark.
+  - **Pairing asks too** (3 Oct 2026), so a host arrives in the list already
+    saying what it is. `PairingClient` runs the probe over the device session
+    before closing it, with `sampling: false`: the processor sample is the
+    one read that waits a second, and pairing has no use for a load. Best
+    effort — the pairing has succeeded by then. A re-pair lays its report
+    over the record (`PairedPeer.merging`) rather than replacing it.
   - **The load bar is headed by `user@name`, with the machine trailing it**
     in secondary (`pi@adam … Raspberry Pi CM5`), so the numbers under it say
     whose they are. Not on the watch, where the screen's title already does.

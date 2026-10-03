@@ -401,11 +401,26 @@ and a `HostLoad`.
     (`ConnectionStore.connectionID`), not just to the host: the app releases
     its connection in the background, and matched on the host alone an
     hour-old reading came back as live when the same host was dialled again.
-    (Found in review.) So each screen asks for a reading *after* its own list has
-    loaded, which is what brought the connection up. This is also what keeps
-    previews and the render tests off the network: they have no connection, so
-    a read willing to open one would dial a real host from the canvas.
-    `PreviewSmokeTests.hostLoadBar` pins it.
+    (Found in review.) That also keeps previews and the render tests off the
+    network: they have no connection, so a read willing to open one would dial
+    a real host from the canvas. `PreviewSmokeTests.hostLoadBar` pins it.
+  - **A reading is asked for each time a connection comes up**:
+    `hostLoadBar(for:)` carries `.task(id: connectionID)`, on the watch as
+    well. Each screen also asks after its own list loads, which covers a pop
+    back to it; a read in flight on the same connection, or one under ten
+    seconds old, turns the extra asks away.
+    - **Fixed 3 Oct 2026, reported from a phone:** arriving on a host, the bar
+      stayed empty until a pull-to-refresh. A reading used to be tagged with
+      the connection that was live when it was asked for. But asking for the
+      shell can replace that connection — `ConnectionStore` re-dials when the
+      network has changed since its dial, and a tunnel coming up just after
+      the first connection is the usual case. So the reply came back over the
+      new connection, looked stale, and was dropped, and nothing asked again.
+      The reading is now tagged with the connection read *after* the shell is
+      in hand, the in-flight check is per connection, and the new
+      connection's number starting a read of its own covers whatever is left.
+      Not reproduced on a simulator, which cannot bring a tunnel up under a
+      connection: the race is read from the code.
   - **Best effort and silent.** A failed read keeps the last reading. It does
     not call `ConnectionStore.handle`: the list above reports the same dropped
     connection, and two loads each releasing it would have the slower tear down

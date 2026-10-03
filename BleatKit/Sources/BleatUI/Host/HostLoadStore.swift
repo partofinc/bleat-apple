@@ -13,8 +13,8 @@ import Observation
 /// the second is the one that bites: this is a glance nobody should pay a
 /// handshake for — and a screen drawn in a preview or a test has no
 /// connection, so a read that was willing to open one would dial a real host
-/// from the canvas. The screens ask for a reading *after* their own list has
-/// loaded, which is what brought the connection up.
+/// from the canvas. `HostLoadBarModifier` asks for a reading each time a
+/// connection to the host comes up — whichever screen's list brought it up.
 ///
 /// **Best effort, and silent when it fails.** The list above the bar is loaded
 /// over the same connection and already says when the host cannot be reached.
@@ -29,9 +29,13 @@ public final class HostLoadStore {
     /// come back on screen as if it were live.
     private var reading: (hostKey: String, connection: Int?, load: HostLoad)?
     private var readAt: ContinuousClock.Instant?
-    /// The host a read is in flight for, so three screens pushed in a second
-    /// do not each start one.
-    private var refreshing: String?
+    /// The host, and the connection, a read is in flight for — so three
+    /// screens pushed in a second do not each start one.
+    ///
+    /// **The connection is part of it.** A read stuck on a connection that has
+    /// just been replaced must not turn away the read for the new one: its
+    /// reply is dropped as stale, and nothing would ask again.
+    private var refreshing: (hostKey: String, connection: Int)?
     /// Bumped by every read, so a slow one cannot land over a newer one.
     private var generation = 0
     #if DEBUG
@@ -73,7 +77,7 @@ public final class HostLoadStore {
     /// for the connection; asked on `refreshing` alone, the row was inserted
     /// and taken away again on every appearance of every screen.
     func isAwaitingFirstReading(for peer: PairedPeer) -> Bool {
-        guard refreshing == peer.hostKey else { return false }
+        guard refreshing?.hostKey == peer.hostKey else { return false }
         guard let reading, reading.hostKey == peer.hostKey else { return true }
         return reading.connection != connections.connectionID(for: peer)
     }
@@ -87,20 +91,28 @@ public final class HostLoadStore {
     /// - Parameter force: read even though the last reading is fresh. A screen
     ///   appearing passes false; a pull-to-refresh passes true.
     func refresh(for peer: PairedPeer, force: Bool = false) async {
-        guard let connection = connections.connectionID(for: peer) else { return }
+        guard let live = connections.connectionID(for: peer) else { return }
         if !force {
-            guard refreshing != peer.hostKey else { return }
-            if reading?.hostKey == peer.hostKey, reading?.connection == connection,
+            if let refreshing, refreshing.hostKey == peer.hostKey, refreshing.connection == live { return }
+            if reading?.hostKey == peer.hostKey, reading?.connection == live,
                let readAt, .now - readAt < Self.fresh { return }
         }
         generation += 1
         let generation = generation
-        refreshing = peer.hostKey
+        refreshing = (peer.hostKey, live)
         defer { if generation == self.generation { refreshing = nil } }
 
-        guard let output = try? await connections.shell(for: peer)
-            .run(shell: HostStatusProbe.command(herdrPath: peer.herdrPath)),
-            generation == self.generation
+        // **The connection is read again once the shell is in hand**, because
+        // asking for it can replace the one checked above: `ConnectionStore`
+        // re-dials when the network has changed since its dial — a tunnel
+        // coming up just after the first connection is the usual case. Tagged
+        // with the one it was asked about, the reply then looked stale on
+        // arrival and was dropped, and the bar stayed empty until a
+        // pull-to-refresh.
+        guard let shell = try? await connections.shell(for: peer),
+              let connection = connections.connectionID(for: peer),
+              let output = try? await shell.run(shell: HostStatusProbe.command(herdrPath: peer.herdrPath)),
+              generation == self.generation
         else { return }
         let status = HostStatusProbe.status(fromOutput: output)
         peers.recordHostInfo(status.info, for: peer)

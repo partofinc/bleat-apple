@@ -82,7 +82,7 @@ public struct RootView: View {
         // evaluated and its `onOpenURL` would never fire.
         .pairingFlow()
         // And here, for the third time and the same reason: a swipe on the
-        // peer list and the gear on a peer's own screen open one sheet.
+        // peer list and the load bar under a peer's screens open one sheet.
         .peerSettingsSheet()
     }
 

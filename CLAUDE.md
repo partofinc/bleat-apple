@@ -49,7 +49,7 @@ shipped once, written down so it does not ship twice.
 |---|---|
 | [`docs/herdr-facts.md`](docs/herdr-facts.md) | herdr's two command families, envelopes, errors on stderr, agent states, the pane stream protocol |
 | [`docs/ssh-transport.md`](docs/ssh-transport.md) | Citadel, host keys, session selection by command prefix, clean detach |
-| [`docs/pairing.md`](docs/pairing.md) | the enrollment-key swap, peer identity, the QR, endpoint discovery and refresh, Tailscale, addresses by hand, local network permission, unpairing, endpoint selection |
+| [`docs/pairing.md`](docs/pairing.md) | the enrollment-key swap, pairing another device from a paired one, peer identity, the QR, endpoint discovery and refresh, Tailscale, addresses by hand, local network permission, unpairing, endpoint selection |
 | [`docs/app-screens.md`](docs/app-screens.md) | `ConnectionStore`, the list screens, the iPad split view, the host screen, what a host says about itself (stored info, the live load bar), previews, the pairing UI |
 | [`docs/watch.md`](docs/watch.md) | the watch app: why it relays through the phone, `RelayTransport`, the phone's `WatchRelayHost`, the mirrored host list, what is and is not on the watch, driving a simulator with `DebugLaunch` |
 | [`docs/creating-from-the-phone.md`](docs/creating-from-the-phone.md) | starting, stopping and deleting sessions; workspaces; agents (including `agent_not_ready`); tabs; terminal rows — with the 0.9.3 re-measurement |

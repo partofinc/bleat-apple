@@ -27,7 +27,8 @@ import Foundation
 /// Only the third layer is unconditional, which is why it is not optional.
 enum Pair {
     /// How long the QR is good for, and how long the tool waits.
-    static let defaultWindow: TimeInterval = 5 * 60
+    /// Shared with `Invitation`, which is this command run from a phone.
+    static let defaultWindow: TimeInterval = Invitation.window
 
     /// Extra life on the sshd-side deadline, beyond the tool's own.
     ///
@@ -35,7 +36,7 @@ enum Pair {
     /// mid-swap when it ends; expiring the key underneath it would strand the
     /// pairing with the device key half-installed. The tool removes the line at
     /// its own deadline anyway, so this only applies when the tool is gone.
-    static let expiryGrace: TimeInterval = 60
+    static let expiryGrace: TimeInterval = Invitation.expiryGrace
 
     static func run(options: Options) throws {
         let port = options.port ?? 22

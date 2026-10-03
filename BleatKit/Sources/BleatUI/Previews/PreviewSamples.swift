@@ -223,4 +223,19 @@ extension Pane {
     }
 }
 
+extension Invitation {
+    /// A code for the everyday peer, with five minutes on it and no key on
+    /// any host behind it.
+    static var preview: Invitation {
+        let peer = PairedPeer.preview
+        return Invitation(
+            payload: PairingPayload(
+                name: peer.name, username: peer.username, endpoints: peer.endpoints,
+                enrollmentSeed: SSHKeyPair().rawRepresentation, hostKey: peer.hostKey
+            ),
+            marker: AuthorizedKeys.enrollmentMarker(),
+            deadline: .now.addingTimeInterval(Invitation.window)
+        )
+    }
+}
 #endif

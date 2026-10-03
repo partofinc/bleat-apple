@@ -8,7 +8,7 @@ import SwiftUI
 /// A sheet rather than a section under the sessions. What the user came for is
 /// the list of sessions; this is what makes a connection problem diagnosable
 /// once that list has failed, and none of it changes between visits. Reached
-/// from the gear on the host's own screen and from a swipe on the peer list,
+/// by tapping the load bar under a host's screens and from a swipe on the peer list,
 /// both through `PeerSettingsRouter` — see `PeerSettingsFlow` for why one
 /// presentation rather than two.
 struct PeerSettingsView: View {
@@ -19,6 +19,7 @@ struct PeerSettingsView: View {
     /// captured value would go stale on the first one.
     let hostKey: String
     @State private var addingEndpoint = false
+    @State private var invitingDevice = false
 
     var body: some View {
         NavigationStack {
@@ -130,6 +131,16 @@ struct PeerSettingsView: View {
                 Text("Bleat asks \(peer.name) for its addresses each time it connects, so this list keeps itself up to date. Add one the host cannot know about itself — a VPN name that only resolves on this phone, or a port forward.")
             }
 
+            #if !os(watchOS)
+            // `bleat pair` from here: this device is already trusted, so it
+            // can install the one-time key itself.
+            Section {
+                Button("Pair another device", systemImage: "qrcode") { invitingDevice = true }
+            } footer: {
+                Text("Shows a one-time code that another device scans to pair with \(peer.name). Nothing has to be run on \(peer.name).")
+            }
+            #endif
+
             // The other half of pairing, and the half that has to be visible.
             // A swipe on the peer list unpairs too, but a swipe has nowhere to
             // say what unpairing does — and what it does is decide whether this
@@ -152,6 +163,9 @@ struct PeerSettingsView: View {
             }
         }
         .sheet(isPresented: $addingEndpoint) { AddEndpointView(peer: peer) }
+        #if !os(watchOS)
+        .sheet(isPresented: $invitingDevice) { InviteView(peer: peer) }
+        #endif
     }
 
     /// Reachable: the sheet is open when the host is unpaired from underneath

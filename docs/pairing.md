@@ -92,6 +92,56 @@ self-destructs regardless of outcome.
 Encode the raw 32-byte seed, not an OpenSSH PEM: ~150 bytes of payload instead
 of ~600, which is a materially easier scan.
 
+## Pairing another device from a paired one (3 Oct 2026)
+
+`bleat pair` without the terminal. A device that is already paired is already
+trusted by the host, and it knows everything the tool would put in the code —
+the host key, the user, the addresses the host reported — so it installs the
+enrollment key itself, over its own connection, and shows the code. The other
+device redeems it with the ordinary pairing sheet, or `bleat redeem` with the
+copied link; `Enrollment` cannot tell the two kinds of code apart.
+
+`Invitation` in `BleatKit` is the host side, run over a `ShellRunner`;
+`InviteModel` and `InviteView` in `BleatUI` are the screen. It is the QR
+button on a host's screen, and **Pair another device** in its settings.
+
+- **The same three layers keep the key from outliving the pairing**, moved
+  across. Closing the screen withdraws it (from a task of its own, since the
+  one watching it has been cancelled). The deadline withdraws it. And the line
+  carries `restrict,expiry-time=`, so **sshd** refuses it after the window
+  plus the grace whatever happened to the phone — killed, flat, offline. The
+  window and grace are `Invitation.window` and `.expiryGrace`, which
+  `bleat pair` now reads too.
+- **It does not sweep other enrollment keys**, where `bleat pair` does. On
+  the host a stale key is the tool's own leftover; from a phone another
+  `bleat-enroll-` line may be a pairing in progress at the keyboard or on a
+  second phone, and sweeping it would end that pairing.
+- **"Gone with no new device key" is reported as removed, not as paired.**
+  `bleat pair` run at the host sweeps every enrollment key, this one
+  included. The enrollment line is checked before the device keys, and the
+  redeeming device installs its key before deleting the line, so a line seen
+  gone with no new key beside it a moment later was not taken by a redemption.
+- **The append is read back** before the code is shown. A code with no key
+  behind it would fail on the other device for five minutes, blaming nothing.
+- **A dropped connection does not end the code.** The key is still on the
+  host; each poll asks `ConnectionStore` for a shell, which re-dials, and
+  only the deadline ends the wait. One poll a second, against the tool's ten:
+  this is an exec channel over whatever network the phone is on.
+- **The code is drawn at correction level M**, not L as in the terminal: a
+  phone screen held to another phone's camera catches glare.
+- **The link can be copied, for `bleat redeem` on a computer**, and the screen
+  says it holds the key. It is the same trade `bleat pair` makes when it falls
+  back to printing the link.
+- **The code carries the peer's endpoints as this device has them**, the
+  host's own report plus anything added by hand. An address only this phone
+  can resolve costs the other device one slot in its race.
+
+Tested against a real shell and a real `authorized_keys`
+(`InvitationShellTests`): open, a full redemption by `Enrollment.redeem`,
+withdraw, a sweep at the host, and two codes at once. The model's polling,
+cancelling, deadline and dropped connection are `InviteModelTests`. **Not yet
+run end to end between two real devices.**
+
 ## A peer is a host key, not an address
 
 **The peer's identity is its SSH host key.** The same machine presents the same

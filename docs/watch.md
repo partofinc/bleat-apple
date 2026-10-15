@@ -161,9 +161,33 @@ Not on the watch:
 
 - pairing, unpairing, the device key, a host's settings and addresses — these
   belong to the device that holds the key;
+- showing a QR to pair another device (decided 3 Oct 2026, below);
 - the terminal;
 - creating a session, a workspace or an agent. The forms are iOS-only files
   and each needs text entry designed for a watch.
+
+### No pairing QR on the watch
+
+Decided 3 Oct 2026, when the phone gained "Pair Another Device"
+([pairing](pairing.md)). Not for the reasons that come to mind first:
+
+- **The screen is big enough.** A typical invitation is about 69 modules
+  across with its margin, roughly 5 px a module on a 41 mm watch; the worst
+  case, every address a host has, is about 81. A phone camera reads that.
+- **The missing encoder is not the reason either.** `InviteView` draws with
+  CoreImage's QR generator, which watchOS lacks — that is why the file is
+  `#if !os(watchOS)` — but `QREncoder` in `BleatProcess` is pure Swift and
+  could move into `BleatKit`.
+- **The reason is that the phone does the work anyway.** An invitation is a key
+  written into the host's `authorized_keys` and then watched for redemption
+  once a second. The watch has no SSH, so both would be relayed through the
+  phone — which must therefore be nearby, and has the bigger screen. A watch
+  screen would add an encoder port and a per-second relay loop to have the
+  phone work while you look at your wrist.
+
+If it is wanted later, say to pair without taking the phone out: move the
+encoder into `BleatKit`, drive `Invitation` over `RelayTransport`, add the
+screen.
 
 ### Everything is in the list
 

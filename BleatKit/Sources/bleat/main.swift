@@ -152,11 +152,17 @@ func describe(_ error: HostArgumentError) -> String {
 }
 
 let argv = Array(CommandLine.arguments.dropFirst())
-guard let command = argv.first else { print(usage); exit(0) }
-// Asked for, so exit 0; a mistyped command also prints the usage, but exits 2.
-if ["help", "-h", "--help"].contains(command) { print(usage); exit(0) }
+// Asked for, so stdout and exit 0. Anywhere on the line, not only first:
+// `pair` ignores positionals, so `bleat pair --help` would otherwise install
+// an enrollment key and show a live code.
+if argv.isEmpty || argv.first == "help" || argv.contains("-h") || argv.contains("--help") {
+    print(usage)
+    exit(0)
+}
 // The bare number, so an installer or a Homebrew `test do` can compare it.
-if ["--version", "version"].contains(command) { print(bleatVersion); exit(0) }
+// Only the flag: a bare `version` could be a host's name.
+if argv.first == "--version" { print(bleatVersion); exit(0) }
+let command = argv[0]
 var options = parse(Array(argv.dropFirst()))
 
 do {
@@ -214,8 +220,10 @@ do {
     // Before choosing a transport, which for the local herdr may start a
     // login shell: a mistyped command is answered with the usage, not with
     // the outcome of looking for herdr.
+    // stderr: this is an error, and a script capturing stdout must not
+    // mistake the usage for output.
     guard ["sessions", "workspaces", "agents", "schema", "attach"].contains(command) else {
-        print(usage)
+        FileHandle.standardError.write(Data(("bleat: unknown command '\(command)'\n\n" + usage + "\n").utf8))
         exit(2)
     }
 

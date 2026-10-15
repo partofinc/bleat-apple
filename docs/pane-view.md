@@ -353,6 +353,12 @@ front of each of those was a step on every visit for the one screen whose job
 is to act. Decided by the user; the cost is stated here so it is not
 rediscovered as a surprise.
 
+- **Nothing shows who holds the pane — a known gap (15 Oct 2026).**
+  CLAUDE.md's architecture rule says to surface who holds control, and Phase
+  3 lists a takeover indicator; neither is met. When the terminal always takes
+  the pane, the person it is taken from is at the Mac, not on the phone, so an
+  indicator on the phone answers the less urgent question. Recorded so it is
+  not described as shipped: an early README and store listing did.
 - **Whoever is typing at the Mac loses input** the moment the terminal is
   chosen, with nothing on the phone asking first. The confirmation used to be
   the whole safety story; now choosing the terminal *is* the gesture. The chat

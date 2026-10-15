@@ -30,9 +30,11 @@ a process.** There is no account, no relay and no server of ours in between.
 - **A live terminal.** Panes render through a real VT100/xterm emulator
   ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)), so an agent's
   screen looks the way it does at your desk.
-- **Answer from anywhere.** Approve, send a prompt, or type into the pane, with
-  a key bar for Esc, Ctrl, Tab, the arrows and quick y/n. Bleat shows who holds
-  control of a pane and takes it over only when you ask.
+- **Answer from anywhere.** Answer a tool approval, send a prompt, or type into
+  the pane, with the arrows, Esc and Return above the keyboard and a menu of
+  shortcuts (⌃C, Tab, ⇧Tab, …). Bleat holds a pane only while its terminal is
+  on screen: showing the terminal takes control, and switching to the chat or
+  leaving gives it back. It does not yet show who else holds a pane.
 - **Start and stop work.** Sessions, workspaces, agents and tabs, from the phone.
 - **iPad and Apple Watch.** A split view on iPad. On the watch, your hosts,
   sessions, workspaces and agents, relayed through the phone.

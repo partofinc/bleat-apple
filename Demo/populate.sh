@@ -19,19 +19,30 @@ workspace() {    # workspace <label> <cwd> → prints the root pane id
         python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])'
 }
 
+# The app titles a pane by its terminal title, which a shell sets only at its
+# prompt; a program started from it keeps whatever was set last. So each one
+# names itself first.
+run() {    # run <pane> <title> <command>
+    herdr pane run "$1" "printf '\\033]0;%s\\007' '$2'; $3"
+}
+
+# The workspace herdr starts with.
+first=$(herdr workspace list | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["workspaces"][0]["workspace_id"])')
+herdr workspace rename "$first" home >/dev/null
+
 web=~/projects/web-app
 # A real server, and a client polling it, so the log moves.
 pane=$(workspace "web-app" "$web")
-herdr pane run "$pane" "python3 -m http.server 3000 --bind 127.0.0.1 --directory public"
+run "$pane" "web server" "python3 -m http.server 3000 --bind 127.0.0.1 --directory public"
 pane=$(workspace "traffic" "$web")
-herdr pane run "$pane" "./scripts/traffic.sh"
+run "$pane" "traffic" "./scripts/traffic.sh"
 
 # A test suite that reruns, so a pane goes from busy to finished and back.
 pane=$(workspace "tests" "$web")
-herdr pane run "$pane" "./scripts/watch-tests.sh"
+run "$pane" "test suite" "./scripts/watch-tests.sh"
 
 pane=$(workspace "system" ~)
-herdr pane run "$pane" "htop"
+run "$pane" "htop" "htop"
 
 # A shell at its prompt with something to look at, for typing.
 pane=$(workspace "notes" "$web")

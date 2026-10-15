@@ -29,8 +29,13 @@ first run was a plain build, so the first archive is build 2 or later.
 Scripts/release-cli.sh 1.0.0 [--draft] [--skip-tap]
 ```
 
-It refuses a tree with changes, a version that disagrees with
-`BleatKit/Sources/bleat/Version.swift`, and a `cli-` tag on another commit.
+It refuses a tree with changes, a commit not on `origin/main`, a version that
+disagrees with `BleatKit/Sources/bleat/Version.swift`, and a `cli-` tag on
+another commit. **It is safe to rerun** for the same version: an existing
+release has its assets replaced, and an unchanged formula is not committed.
+**`--draft` skips the tap and pushes no tag**: a draft's assets cannot be
+downloaded, so a formula pointing at them would break every install.
+Notarization is judged by notarytool's JSON `status`, not its exit code.
 Assets have **no version in their names** (`bleat-macos-universal.tar.gz`,
 `bleat-linux-aarch64.tar.gz`, `bleat-linux-x86_64.tar.gz`, `SHA256SUMS`), so
 `Scripts/install.sh` can use `releases/latest/download/…`. That needs the tool's

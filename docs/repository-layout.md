@@ -52,7 +52,7 @@ BleatKit/                   # the local Swift package
     *.json                  # captured CLI outputs for decoding tests
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
-Scripts/build-linux.sh      # the console tool for aarch64 Linux, ARMv8.0 and up
+Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
 ```
 
 **`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule
@@ -76,13 +76,17 @@ not because anything needs macOS.
 swiftly use 6.4.0      # the swift.org toolchain — Xcode's cannot use a Swift SDK
 swift sdk install https://download.swift.org/swift-6.4.0-release/static-sdk/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
     --checksum 47d2fd89eebfdf9eb4d536b6710414297f755c17926cdebc4742c08982b40a9e
-Scripts/build-linux.sh <scratch>    # prints the binary's path
+Scripts/build-linux.sh <scratch>            # aarch64; prints the binary's path
+Scripts/build-linux.sh <scratch> x86_64     # the same for x86_64
 ```
 
 The SDK version must match the compiler exactly, and its URL spells the version
 `6.4.0` — the `6.4` form 404s, though the compiler calls itself `6.4`. The
 result is statically linked, stripped, 62 MB (mostly Foundation's ICU data),
-and runs on any aarch64 Linux from ARMv8.0 up. `scp` it to
+and runs on any aarch64 Linux from ARMv8.0 up. **x86_64 uses the installed SDK
+unpatched** (added 15 Oct 2026): mimalloc 2.2.4's CMakeLists adds an
+architecture flag on arm64 only, so the stock x86_64 allocator was built for
+the SDK's own baseline. Not yet run on real x86_64 hardware. `scp` it to
 `~/.local/bin/bleat`. Apple's `container` CLI is no route here: fetching its VM
 init image from ghcr.io reads the login keychain, which is locked in an SSH
 session.

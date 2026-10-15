@@ -1,0 +1,43 @@
+# fly deploy --config Demo/fly.toml --dockerfile Demo/Dockerfile Demo
+app = "bleat-demo"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # The name the phone dials, written into every pairing code.
+  DEMO_ENDPOINT = "bleat-demo.fly.dev:22"
+
+[[mounts]]
+  source = "bleat_demo_data"
+  destination = "/data"
+
+# SSH: raw TCP, which needs the app's dedicated IPv4 (shared IPv4 is HTTP only).
+[[services]]
+  protocol = "tcp"
+  internal_port = 22
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[services.ports]]
+    port = 22
+
+# The pairing page, behind Fly's TLS.
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

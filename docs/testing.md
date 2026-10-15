@@ -47,3 +47,12 @@ Note that `NSHomeDirectory()` **ignores `$HOME`** on macOS — it reads the pass
 entry — so `PeerRegistry.standard()` and `HostRegistry.standard()` still write to
 the real `~/.bleat/` under a scratch `HOME`. Pass an explicit directory when that
 matters.
+
+## `bleat redeem` writes to the real `~/.bleat`, on Linux too
+
+`FileKeyStore` and `PeerRegistry` find `~/.bleat` through `NSHomeDirectory()`,
+which ignores `HOME` on macOS *and* on Linux (found 15 Oct 2026 testing the
+demo host from `mika`: `HOME=$tmp bleat redeem` wrote `/home/pi/.bleat`). To
+test the phone's side without touching a machine's own state, use a machine
+with no `~/.bleat` and delete it afterwards, after `bleat unpair` has taken the
+key back off the host.

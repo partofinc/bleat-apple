@@ -1,0 +1,21 @@
+# Keys only, one account. The host key lives on the volume so a redeploy
+# does not change it: the app pins it at pairing, and a new one would look
+# like an impostor to every paired device.
+Port 22
+HostKey /data/ssh/ssh_host_ed25519_key
+PermitRootLogin no
+AllowUsers demo
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+PermitTunnel no
+GatewayPorts no
+PrintMotd no
+ClientAliveInterval 30
+ClientAliveCountMax 4
+MaxSessions 32
+Subsystem sftp internal-sftp

@@ -56,7 +56,7 @@ shipped once, written down so it does not ship twice.
 | [`docs/pane-view.md`](docs/pane-view.md) | pane sizing (`--cols` crops), the phone session, scrolling, the terminal always holding the pane, the key bar, typing, the keychain dead end, the repaint investigation |
 | [`docs/console-tool.md`](docs/console-tool.md) | `bleat` commands: `pair`, `redeem`, `keys`, and the `authorized_keys` anchoring rules |
 | [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build, the SDK's ARMv8.1 allocator and what the port needed |
-| [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, why approachable concurrency is off |
+| [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, approachable concurrency and what is `@concurrent` |
 | [`docs/app-icon.md`](docs/app-icon.md) | the icon, `Design/icon.swift`, and authoring a `.icon` by hand |
 | [`docs/testing.md`](docs/testing.md) | a scratch herdr session, a scratch sshd, testing pairing without touching your own keys |
 | [`docs/phase-history.md`](docs/phase-history.md) | how each phase gate was verified |
@@ -127,8 +127,10 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
 
 ## Concurrency settings
 
-`SWIFT_APPROACHABLE_CONCURRENCY` is off on both sides, deliberately. The
-settings on each side, and why, are in [`docs/concurrency.md`](docs/concurrency.md).
+`SWIFT_APPROACHABLE_CONCURRENCY` is on, on both sides: a `nonisolated async`
+function runs on its caller's actor, so work that must leave the main actor
+says `@concurrent`. The settings on each side, and why, are in
+[`docs/concurrency.md`](docs/concurrency.md).
 
 ## Architecture rules
 

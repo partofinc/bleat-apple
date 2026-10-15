@@ -33,10 +33,14 @@ public final class RelayTransport: PeerLink {
         try await run(args, inSession: sessionBox.current)
     }
 
+    @concurrent
     public func run(_ args: [String], inSession session: String?) async throws -> Data {
         try await Self.output(of: .herdr(hostKey: hostKey, args: args, session: session), over: channel)
     }
 
+    /// `@concurrent`: the reply is decoded to a `String`, and on the watch it
+    /// can be an agent's whole conversation.
+    @concurrent
     public func run(shell command: String) async throws -> String {
         let stdout = try await Self.output(of: .shell(hostKey: hostKey, command: command), over: channel)
         return String(decoding: stdout, as: UTF8.self)
@@ -55,6 +59,10 @@ public final class RelayTransport: PeerLink {
 
     /// One request and its reply, decoded. A `.failed` reply is thrown as the
     /// error it carries.
+    ///
+    /// `@concurrent`: the watch's screens call this from the main actor, and
+    /// the reply can be an agent's whole conversation to decode.
+    @concurrent
     public static func send(_ request: RelayRequest, over channel: Channel) async throws -> RelayReply {
         let reply = try await channel(try JSONEncoder().encode(request))
         guard let decoded = try? JSONDecoder().decode(RelayReply.self, from: reply) else {

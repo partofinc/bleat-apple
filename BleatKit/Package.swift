@@ -6,21 +6,16 @@ import PackageDescription
 /// they drift, a `nonisolated func f() async` can run on a different executor
 /// depending on which side compiled it.
 ///
-/// `NonisolatedNonsendingByDefault` (the package half of
-/// `SWIFT_APPROACHABLE_CONCURRENCY`) is deliberately **absent**, and the Xcode
-/// targets leave that setting off to match. Enabling it reproducibly segfaults
-/// the test bundle on Swift 6.3.3: `swift test` dies with signal 11, while
-/// `swift test --no-parallel` passes all 70 and every suite passes on its own —
-/// so it only bites under swift-testing's parallel execution. Turning it on for
-/// the app alone would have been worse than leaving it off for both: the seam
-/// would differ in exactly the way this comment exists to prevent.
-///
-/// Swift 6.4 no longer crashes (three parallel runs, all 485 passing, 3 Oct
-/// 2026), so it is off now by choice: turning it on moves every `nonisolated
-/// async` call onto its caller's actor, and wants its own change. See
+/// `NonisolatedNonsendingByDefault` and `InferIsolatedConformances` are the
+/// package half of `SWIFT_APPROACHABLE_CONCURRENCY`, which the Xcode targets
+/// set. With them a `nonisolated async` function runs on its caller's actor,
+/// so work that has to leave the main actor says `@concurrent`. Off until
+/// Swift 6.4: on 6.3.3 the first one segfaulted the parallel test run. See
 /// docs/concurrency.md.
 let sharedSwiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
 ]
 
 let package = Package(

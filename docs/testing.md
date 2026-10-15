@@ -10,6 +10,16 @@
   `script -q /dev/null herdr session attach bleat-test &`. A client command
   alone will not autostart a server; it returns `server_not_running`.
 - Tear it down with `herdr session stop <name>` when finished.
+- **From inside a herdr pane** — where an agent runs — that recipe fails
+  twice over (15 Oct 2026). The inherited `HERDR_*` variables make herdr
+  refuse with "recursion detected", and `HERDR_SOCKET_PATH` also pins every
+  client command to the *enclosing* session whatever `HERDR_SESSION` says —
+  so a read meant for the scratch session reads yours. And `script`'s pty
+  has no size, which herdr rejects as "a zero-sized grid". Both at once:
+  `env -u HERDR_BIN_PATH -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION
+  -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID script -q
+  /dev/null sh -c 'stty cols 120 rows 40; exec herdr session attach
+  bleat-test'`, and the same `env -u …` on every command aimed at it.
 
 To exercise the SSH path without changing system settings, generate a host key
 and a client key, write an `sshd_config` with `StrictModes no` and

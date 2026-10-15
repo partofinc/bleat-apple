@@ -225,8 +225,15 @@ extension WatchRelayHost: WCSessionDelegate {
         // The handler is the system's and is called exactly once, from here.
         nonisolated(unsafe) let reply = replyHandler
         Task { @MainActor in
-            reply(WatchWire.pack(await self.answer(messageData)))
+            reply(await Self.pack(await self.answer(messageData)))
         }
+    }
+
+    /// Deflated off the main actor: the reply can be an agent's whole
+    /// conversation, and this is the phone's UI thread otherwise.
+    @concurrent
+    private nonisolated static func pack(_ reply: Data) async -> Data {
+        WatchWire.pack(reply)
     }
 
     public nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {

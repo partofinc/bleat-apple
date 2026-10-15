@@ -24,6 +24,10 @@ public struct PairingClient: Sendable {
     /// - Returns: The stored record. For a machine that was already paired this
     ///   is the **merge**, carrying the endpoints it was reachable at before as
     ///   well as the one just scanned.
+    ///
+    /// `@concurrent` because the caller is the pairing screen, and this
+    /// generates a key and drives two SSH handshakes.
+    @concurrent
     public func pair(withCode code: String) async throws -> PairedPeer {
         let payload = try PairingPayload(urlString: code)
         let enrollmentKey = try payload.enrollmentKey()

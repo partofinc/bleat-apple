@@ -279,6 +279,11 @@ public enum EndpointDiscovery {
     ///   mDNS name" — non-empty, so it would be written, and every interface
     ///   and tunnel address the host had previously reported would be pruned
     ///   against it.
+    ///
+    /// `@concurrent`: the caller is a host's screen, and the report parses
+    /// `ifconfig` and decodes `tailscale status --json`, which grows with the
+    /// tailnet.
+    @concurrent
     public static func probe(
         _ shell: any ShellRunner,
         port: Int = Endpoint.defaultPort

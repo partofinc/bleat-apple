@@ -6,5 +6,5 @@
 // `Scripts/release-cli.sh` refuses to publish unless its tag is `cli-` plus
 // this string. Not `v…`: a `v` tag starts the app's Xcode Cloud release.
 #if !os(iOS)
-let bleatVersion = "1.0.0"
+let bleatVersion = "1.0.1"
 #endif

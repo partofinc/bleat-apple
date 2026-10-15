@@ -77,8 +77,9 @@ enum Keys {
         print("\(count) can log in as \(NSUserName()) with a full shell — the same")
         print("access your own key gives.")
         print("")
-        print("Unpairing on the phone does not remove that key, and a phone that is")
-        print("lost, sold or wiped keeps it. Only this removes it:")
+        print("Unpairing in the app removes its key, but only when it can reach this")
+        print("machine. A phone that is lost, sold or wiped, or that forgot this")
+        print("machine without removing its key, keeps it. This removes it from here:")
         print("")
         // A concrete marker only when there is exactly one — with two phones
         // paired, naming either one is naming an arbitrary one, and the user

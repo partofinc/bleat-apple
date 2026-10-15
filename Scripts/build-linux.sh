@@ -27,6 +27,10 @@ mimalloc_sha256=754a98de5e2912fddbeaf24830f982b4540992f1bab4a0a8796ee118e0752bda
 
 work=${1:?usage: Scripts/build-linux.sh <work-dir> [aarch64|x86_64]}
 arch=${2:-aarch64}
+if (( $# > 2 )); then
+    echo "error: unexpected argument(s): ${*:3}" >&2
+    exit 2
+fi
 case $arch in
     aarch64|x86_64) ;;
     *) echo "error: unknown architecture '$arch' (aarch64 or x86_64)" >&2; exit 2 ;;
@@ -47,19 +51,33 @@ if [[ ! -d $installed ]]; then
     exit 1
 fi
 
+# Both architectures build from a directory holding exactly one bundle, so
+# the triple cannot match another static-linux SDK installed beside this one.
+build() {    # build <triple> <sdks-dir> <scratch>
+    echo "== bleat ($1)"
+    (cd "$repo/BleatKit" && "$bin/swift" build -c release --product bleat \
+        --swift-sdk "$1" --swift-sdks-path "$2" \
+        --scratch-path "$3" -Xswiftc -gnone -Xlinker -s)
+    echo "$3/release/bleat"
+}
+
+# x86_64 needs no patch, so it builds from an untouched clone of the bundle.
+if [[ $arch == x86_64 ]]; then
+    stock=$work/sdks-stock
+    if [[ ! -d $stock/$bundle ]]; then
+        rm -rf "$stock"
+        mkdir -p "$stock"
+        cp -c -R "$installed" "$stock/"     # an APFS clone: instant, and no extra space
+    fi
+    build x86_64-swift-linux-musl "$stock" "$work/build-x86_64"
+    exit 0
+fi
+
+# From here on, aarch64 only: a copy of the SDK with mimalloc rebuilt.
 sdks=$work/sdks
 sdk=$sdks/$bundle
 sysroot=$sdk/swift-${swift_version}-RELEASE_static-linux-0.1.0/swift-linux-musl/musl-1.2.5.sdk/aarch64
 marker=$sdk/.armv8.0-mimalloc-$mimalloc_version
-
-if [[ $arch == x86_64 ]]; then
-    echo "== bleat (x86_64)"
-    (cd "$repo/BleatKit" && "$bin/swift" build -c release --product bleat \
-        --swift-sdk x86_64-swift-linux-musl \
-        --scratch-path "$work/build-x86_64" -Xswiftc -gnone -Xlinker -s)
-    echo "$work/build-x86_64/release/bleat"
-    exit 0
-fi
 
 if [[ ! -f $marker ]]; then
     echo "== copying the SDK"
@@ -116,8 +134,4 @@ EOF
     touch "$marker"
 fi
 
-echo "== bleat"
-(cd "$repo/BleatKit" && "$bin/swift" build -c release --product bleat \
-    --swift-sdk aarch64-swift-linux-musl --swift-sdks-path "$sdks" \
-    --scratch-path "$work/build" -Xswiftc -gnone -Xlinker -s)
-echo "$work/build/release/bleat"
+build aarch64-swift-linux-musl "$sdks" "$work/build"

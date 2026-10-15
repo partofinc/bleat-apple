@@ -52,7 +52,7 @@ BleatKit/                   # the local Swift package
     *.json                  # captured CLI outputs for decoding tests
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
-Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up) or x86_64
+Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
 ```
 
 **`BleatProcess` exists because `Foundation.Process` does not on iOS.** The rule

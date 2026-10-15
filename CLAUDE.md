@@ -81,7 +81,7 @@ BleatKit/                   # the local Swift package
   Fixtures/                 # schema.json + captured CLI output (source of truth)
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
-Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up) or x86_64
+Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
 Scripts/release-cli.sh      # publishes the tool: GitHub release + Homebrew formula (docs/releasing.md)
 Scripts/install.sh          # what users pipe into sh to install the tool
 docs/                       # the detail behind this file

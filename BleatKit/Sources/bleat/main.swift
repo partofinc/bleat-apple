@@ -16,7 +16,7 @@ Hosts:
   bleat hosts list
   bleat hosts remove <name>
 
-Against a host (omit <host> to use the local herdr):
+Against a host (omit <host> to use the local herdr; --herdr PATH says which herdr):
   bleat sessions   [host]
   bleat workspaces [host] [--session NAME]
   bleat agents     [host] [--session NAME]
@@ -116,15 +116,22 @@ let registry = HostRegistry.standard()
 ///
 /// With no host the local `herdr` is used, which is what makes the tool usable
 /// on the machine running Herdr without inventing a loopback SSH hop.
-func makeTransport(_ selection: HostSelection, session: String?) throws -> any HerdrTransport {
+///
+/// `--herdr` names the herdr to run on either side: here, or on a saved host
+/// over its stored path. The local one is otherwise found by `LocalHerdr`.
+func makeTransport(_ selection: HostSelection, session: String?, herdrPath: String?) throws -> any HerdrTransport {
     switch selection {
     case .local:
-        return LocalProcessTransport(session: session)
+        guard let path = LocalHerdr.resolve(herdrPath) else {
+            fail(herdrPath.map { "bleat: no herdr at '\($0)' and none by that name on PATH." }
+                ?? "bleat: herdr is not on PATH, and a login shell ($SHELL -l) did not find it either. Pass --herdr PATH.")
+        }
+        return LocalProcessTransport(executable: URL(fileURLWithPath: path), session: session)
     case .saved(let entry):
         return SSHTransport(
             host: try entry.host(),
             privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath),
-            herdrPath: entry.herdrPath,
+            herdrPath: herdrPath ?? entry.herdrPath,
             session: session ?? entry.session
         )
     }
@@ -198,12 +205,20 @@ do {
         exit(0)
     }
 
+    // Before choosing a transport, which for the local herdr may start a
+    // login shell: a mistyped command is answered with the usage, not with
+    // the outcome of looking for herdr.
+    guard ["sessions", "workspaces", "agents", "schema", "attach"].contains(command) else {
+        print(usage)
+        exit(2)
+    }
+
     let (selection, rest) = try HostArguments.resolve(
         positional: options.positional,
         expectsTarget: command == "attach",
         hosts: try registry.all()
     )
-    let client = HerdrClient(transport: try makeTransport(selection, session: options.session))
+    let client = HerdrClient(transport: try makeTransport(selection, session: options.session, herdrPath: options.herdrPath))
 
     switch command {
     case "sessions":

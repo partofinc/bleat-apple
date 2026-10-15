@@ -17,7 +17,12 @@ bleat keys revoke <marker>                # take a paired phone's access back
 
 Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.
 That is what makes the tool usable *on* the Herdr machine without a loopback SSH
-hop, and it is how the stack is exercised in development. Naming a saved host
+hop, and it is how the stack is exercised in development. The local `herdr` is
+the first on `bleat`'s own `PATH`, else what a login shell finds (as `bleat
+pair` finds it, bounded at 10 s). `--herdr` says which: a path, or a bare name
+looked up on `PATH`; with a saved host it overrides the stored path. It used
+to default to `/opt/homebrew/bin/herdr`, which held only on the Mac — on the
+Pis every local command failed with "the file doesn't exist". Naming a saved host
 switches to `SSHTransport` behind the same `HerdrTransport` protocol — no caller
 above the transport changed when SSH landed.
 

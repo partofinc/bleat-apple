@@ -43,15 +43,19 @@ behaviour when it moves across the seam.
   - **It leaves at the transport and the client's entry points**, so a call
     pays one hop, and everything heavy between the socket and the decoded value
     is on the far side of it:
-    - `SSHTransport.execute`, where every chunk of output is appended, and
+    - `SSHTransport.execute`, where every chunk of output is appended,
       `run(shell:)`, which decodes it to a `String` (a transcript tail is a few
-      hundred KB);
+      hundred KB), and `openStream`;
     - `HerdrClient`'s `enveloped` and `clientSide` — the run and the decode
       together, on every list poll — and `paneText`;
-    - `RelayTransport.send` and `run(shell:)` on the watch, and
+    - `RelayTransport.send` and both `run`s on the watch, and
       `RelayResponder.reply` and `WatchRelayHost.pack` on the phone: a relayed
       conversation, encoded, deflated and decoded;
     - `PairingClient.pair`: a key and two SSH handshakes;
+    - `EndpointDiscovery.probe`: `ifconfig` and `tailscale status --json`,
+      which grows with the tailnet;
+    - in the console tool, `Attach.run`, so the frame loop's blocking writes
+      to stdout are not on the main queue its SIGWINCH source uses;
     - `LocalProcessTransport.run`, which blocks a thread until `herdr` exits.
     `TranscriptModel.parse` was already `@concurrent`.
   - **What stays on the caller is small:**

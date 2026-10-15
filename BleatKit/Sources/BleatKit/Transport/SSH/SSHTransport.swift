@@ -288,6 +288,7 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
         return stdout
     }
 
+    @concurrent
     public func openStream(_ args: [String]) async throws -> any HerdrStream {
         let connection = try await connected()
         return await SSHStream(client: connection, command: command(for: args), args: args)

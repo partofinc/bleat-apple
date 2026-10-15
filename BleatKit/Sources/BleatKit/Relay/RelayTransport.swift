@@ -33,6 +33,7 @@ public final class RelayTransport: PeerLink {
         try await run(args, inSession: sessionBox.current)
     }
 
+    @concurrent
     public func run(_ args: [String], inSession session: String?) async throws -> Data {
         try await Self.output(of: .herdr(hostKey: hostKey, args: args, session: session), over: channel)
     }

@@ -15,6 +15,7 @@ enum Attach {
     /// Ctrl-] — the detach key, same as telnet.
     static let detachByte: UInt8 = 0x1D
 
+    @concurrent
     static func run(
         client: HerdrClient,
         target: String,

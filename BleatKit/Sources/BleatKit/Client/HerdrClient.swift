@@ -57,8 +57,8 @@ public struct HerdrClient: Sendable {
     /// Unlike the commands above this one is client-side: it needs an explicit
     /// `--json` and returns an unenveloped payload.
     public func sessions() async throws -> [SessionInfo] {
-        let data = try await transport.run(["session", "list", "--json"])
-        return try await decode(SessionList.self, from: data, command: ["session", "list"]).sessions
+        let list: SessionList = try await clientSide(["session", "list", "--json"], command: ["session", "list"])
+        return list.sessions
     }
 
     /// Stops a running session.
@@ -78,8 +78,7 @@ public struct HerdrClient: Sendable {
     ///   answers with its usage line rather than stopping anything.
     @discardableResult
     public func stopSession(named name: SessionName) async throws -> SessionChange {
-        let data = try await transport.run(["session", "stop", name.text, "--json"])
-        return try await decode(SessionChange.self, from: data, command: ["session", "stop"])
+        try await clientSide(["session", "stop", name.text, "--json"], command: ["session", "stop"])
     }
 
     /// Deletes a **stopped** session, and its directory with it.
@@ -93,8 +92,7 @@ public struct HerdrClient: Sendable {
     /// honest confirmation is the session being gone from `session list`.
     @discardableResult
     public func deleteSession(named name: SessionName) async throws -> SessionChange {
-        let data = try await transport.run(["session", "delete", name.text, "--json"])
-        return try await decode(SessionChange.self, from: data, command: ["session", "delete"])
+        try await clientSide(["session", "delete", name.text, "--json"], command: ["session", "delete"])
     }
 
     // MARK: - Creating
@@ -258,6 +256,7 @@ public struct HerdrClient: Sendable {
     ///   *last* N lines and silently gives fewer when the buffer holds fewer,
     ///   so this is a ceiling rather than a request that can fail. `pane read`
     ///   caps around 1000 lines whatever is asked for.
+    @concurrent
     public func paneText(target: String, lines: Int = 400) async throws -> [String] {
         let data = try await transport.run([
             "pane", "read", target,
@@ -307,19 +306,30 @@ public struct HerdrClient: Sendable {
 
     // MARK: - Decoding
 
+    // **`@concurrent`, the run and the decode together.** Callers are mostly
+    // screens on the main actor, and a nonisolated async function now runs on
+    // its caller's: this is where a list poll's bytes are read and decoded, so
+    // this is where it leaves, once per call.
+
+    @concurrent
     private func enveloped<T: Decodable & Sendable>(_ args: [String]) async throws -> T {
         let data = try await transport.run(args)
-        return try await decode(HerdrEnvelope<T>.self, from: data, command: args).result
+        return try decode(HerdrEnvelope<T>.self, from: data, command: args).result
     }
 
-    /// Off the caller's actor: a workspace or agent list is decoded on every
-    /// poll, and the caller is usually a screen on the main actor.
+    /// The client-side family (`session …`): asked with `--json`, answered
+    /// without an envelope.
     @concurrent
-    private func decode<T: Decodable & Sendable>(
+    private func clientSide<T: Decodable & Sendable>(_ args: [String], command: [String]) async throws -> T {
+        let data = try await transport.run(args)
+        return try decode(T.self, from: data, command: command)
+    }
+
+    private func decode<T: Decodable>(
         _ type: T.Type,
         from data: Data,
         command: [String]
-    ) async throws -> T {
+    ) throws -> T {
         do {
             return try decoder.decode(type, from: data)
         } catch {

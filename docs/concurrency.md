@@ -40,17 +40,30 @@ behaviour when it moves across the seam.
   A `nonisolated async` function now runs on its caller's actor, which from a
   screen is the main actor. **Work that has to leave says `@concurrent`**;
   `nonisolated` alone no longer moves anything off the main thread.
-  - What was marked when it went on, because each is reached from the main
-    actor and does real work: `HerdrClient.decode` (every list poll),
-    `PairingClient.pair` (a key and two SSH handshakes), `RelayResponder.reply`
-    and `RelayTransport.send` (a relayed conversation, encoded on the phone and
-    decoded on the watch), `TranscriptModel.parse`, and
-    `LocalProcessTransport.run`, which blocks a thread until `herdr` exits.
-  - Everything else in `BleatKit` that is `async` only awaits: SSH and
-    `WCSession` callbacks resume wherever they were awaited, and that costs the
-    main actor nothing.
-  - The features are checked with `#if hasFeature(…)` rather than trusted: a
-    misspelled upcoming feature compiles clean and stays off.
+  - **It leaves at the transport and the client's entry points**, so a call
+    pays one hop, and everything heavy between the socket and the decoded value
+    is on the far side of it:
+    - `SSHTransport.execute`, where every chunk of output is appended, and
+      `run(shell:)`, which decodes it to a `String` (a transcript tail is a few
+      hundred KB);
+    - `HerdrClient`'s `enveloped` and `clientSide` — the run and the decode
+      together, on every list poll — and `paneText`;
+    - `RelayTransport.send` and `run(shell:)` on the watch, and
+      `RelayResponder.reply` and `WatchRelayHost.pack` on the phone: a relayed
+      conversation, encoded, deflated and decoded;
+    - `PairingClient.pair`: a key and two SSH handshakes;
+    - `LocalProcessTransport.run`, which blocks a thread until `herdr` exits.
+    `TranscriptModel.parse` was already `@concurrent`.
+  - **What stays on the caller is small:**
+    sorting a workspace or agent list of tens of rows after it arrives, and
+    the code that only awaits — SSH and `WCSession` callbacks resume where
+    they were awaited. A new `nonisolated async` function in `BleatKit` that
+    reads, decodes or loops over a reply needs `@concurrent`; nothing else
+    will take it off the main actor.
+  - **The features are checked, not trusted.** `ApproachableConcurrency.swift`
+    in `BleatKit` and `BleatUI` is an `#error` unless `hasFeature` reports
+    both on: a misspelled `.enableUpcomingFeature` compiles clean and leaves
+    the feature off. (Tried: misspelling it fails the build there.)
   - **Off until Swift 6.4.** On 6.3.3 `NonisolatedNonsendingByDefault`
     reproducibly segfaulted the test bundle: `swift test` died with signal 11,
     while `swift test --no-parallel` passed all 70 and every suite passed alone.

@@ -37,6 +37,9 @@ public final class RelayTransport: PeerLink {
         try await Self.output(of: .herdr(hostKey: hostKey, args: args, session: session), over: channel)
     }
 
+    /// `@concurrent`: the reply is decoded to a `String`, and on the watch it
+    /// can be an agent's whole conversation.
+    @concurrent
     public func run(shell command: String) async throws -> String {
         let stdout = try await Self.output(of: .shell(hostKey: hostKey, command: command), over: channel)
         return String(decoding: stdout, as: UTF8.self)

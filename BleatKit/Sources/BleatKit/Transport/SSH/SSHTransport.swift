@@ -255,9 +255,13 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
     ///   callers describe failure differently — a `herdr` command that was
     ///   reached and said no, against a shell command that did not do what it
     ///   was told — and nothing else about the channel differs.
+    ///
+    /// `@concurrent`: every chunk of output is appended here, and the caller
+    /// is usually on the main actor — a transcript tail is a few hundred KB.
+    @concurrent
     private func execute(
         _ commandLine: String,
-        onFailure: (Int32, Data) -> any Error
+        onFailure: @Sendable (Int32, Data) -> any Error
     ) async throws -> Data {
         let connection = try await connected()
         var stdout = Data(), stderr = Data()
@@ -295,6 +299,8 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
 /// conformance sits on the transport so both kinds of work share one
 /// connection, one dial and one host key check.
 extension SSHTransport: ShellRunner {
+    /// `@concurrent` so the decode to `String` stays off the caller's actor too.
+    @concurrent
     public func run(shell command: String) async throws -> String {
         let stdout = try await execute(command) { exitCode, stderr in
             ShellError(

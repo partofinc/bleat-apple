@@ -23,7 +23,7 @@ Read the phase gates before proposing work outside them.
 |---|---|---|
 | **1 — Pipe** ✅ | Platform-agnostic Swift package `BleatKit` + macOS console tool `bleat` | From a Mac terminal: connect over SSH, list sessions/workspaces/agents, attach to a pane, see live frames, send input, resize, detach cleanly. No UI code. |
 | **2 — Read-only app** ✅ | Xcode project, SwiftUI iOS app | Hosts → session → workspaces → agents (blocked on top) → live pane view (SwiftTerm). No input yet. Runs on a real phone over Tailscale. |
-| **3 — Control** | Input + release | Keyboard with accessory row (Esc, Ctrl, Tab, arrows, y/n), prompt composer via `agent prompt`, takeover indicator, reconnect on foreground. TestFlight, then App Store. |
+| **3 — Control** | Input + release | Keyboard with accessory row (Esc, Ctrl, Tab, arrows, y/n), prompt composer via `agent prompt`, takeover indicator, reconnect on foreground. TestFlight, then App Store. As built: arrows, Esc, Return and a shortcut menu, no Ctrl or y/n keys; always takeover, no indicator yet ([pane view](docs/pane-view.md)). |
 
 Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
 push notifications, Live Activities, multi-account badges.

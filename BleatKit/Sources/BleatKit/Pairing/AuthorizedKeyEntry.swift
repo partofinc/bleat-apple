@@ -5,9 +5,9 @@ extension AuthorizedKeys {
     ///
     /// This is what makes revocation possible at all. Everything else in
     /// `AuthorizedKeys` writes; this reads, so a user can be shown what their
-    /// machine still lets in and pick what to remove. Unpairing on a phone
-    /// drops the phone's own record and cannot reach the host, so the file is
-    /// the only place that knows.
+    /// machine still lets in and pick what to remove. Unpairing removes a key
+    /// only from a device that can still connect with it; for a lost, wiped
+    /// or forgotten device the file is the only place that knows.
     public struct Entry: Sendable, Hashable, Identifiable {
         public let marker: Marker
         /// `SHA256:…` for the key on this line — the string the user can

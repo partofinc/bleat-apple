@@ -4,12 +4,13 @@ import Foundation
 
 /// `bleat keys` — what this machine still lets in, and how to take it back.
 ///
-/// The other half of pairing, and the half that had nowhere to live. A phone
-/// that unpairs drops its own record; it cannot reach the host, and often
-/// cannot connect at all by then — a phone that was lost, sold or wiped
-/// certainly cannot. So the `bleat-device-…` line stays in
-/// `~/.ssh/authorized_keys`, granting a full shell, with nothing on either
-/// machine that shows it or removes it.
+/// The other half of pairing: the host's side of revocation. Unpairing from
+/// a device (the app, or `bleat unpair`) removes its key, but only by
+/// connecting with it and only when that key is in `~/.ssh/authorized_keys`.
+/// A device that was lost, sold or wiped never connects again, and "Forget
+/// without removing the key" leaves the line on purpose. Then the
+/// `bleat-device-…` line stays, granting a full shell, and this is what shows
+/// it and removes it.
 ///
 /// Deliberately local-only. Every other command in this tool takes an optional
 /// host and reaches it over SSH; this one edits the file that decides who may
@@ -77,9 +78,10 @@ enum Keys {
         print("\(count) can log in as \(NSUserName()) with a full shell — the same")
         print("access your own key gives.")
         print("")
-        print("Unpairing in the app removes its key, but only when it can reach this")
-        print("machine. A phone that is lost, sold or wiped, or that forgot this")
-        print("machine without removing its key, keeps it. This removes it from here:")
+        print("Unpairing on a device removes its key only when it can connect and")
+        print("finds the key in ~/.ssh/authorized_keys. A device that is lost, sold")
+        print("or wiped, or that forgot this machine without removing its key, keeps")
+        print("it. This removes it from here:")
         print("")
         // A concrete marker only when there is exactly one — with two phones
         // paired, naming either one is naming an arbitrary one, and the user

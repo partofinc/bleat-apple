@@ -76,10 +76,14 @@ bleat keys list
 bleat keys revoke <marker>...
 ```
 
-The other half of pairing. A phone that unpairs drops its own record; it cannot
-reach the host, and a phone that was lost or wiped cannot do anything at all.
-So the host's `authorized_keys` is the only place that knows what may still log
-in, and until this existed there was nothing that showed it or removed it.
+The other half of pairing. Unpairing from a device — the app, or `bleat
+unpair` — removes its key, but only by connecting with that key, and only when
+sshd reads it from `~/.ssh/authorized_keys` (see **Unpairing** in
+`docs/pairing.md`). A device that was lost or wiped never connects again, and
+"Forget without removing the key" leaves the line deliberately. For those, the
+host's `authorized_keys` is the only place that knows what may still log in, and
+this is what shows it and removes it. (Until 15 Oct 2026 `keys list` said
+unpairing never removed the key, a leftover from before unpairing learned to.)
 
 - **Local only, and not by omission.** Every other command takes an optional
   `[host]` and reaches it over SSH. This one edits the file that decides who

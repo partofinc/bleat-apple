@@ -13,7 +13,14 @@ bleat attach     [host] w1:p1 [--takeover] [--cols N] [--rows M]
 bleat schema     [host] > BleatKit/Fixtures/schema.json
 bleat keys list                           # what this machine still lets in
 bleat keys revoke <marker>                # take a paired phone's access back
+bleat --version                           # the bare number, e.g. 1.0.0
 ```
+
+**The tool's version is `bleatVersion` in `Sources/bleat/Version.swift`**, separate
+from the app's `MARKETING_VERSION`. A release is tagged `cli-<version>`, never
+`v…`, because a `v` tag starts the app's Xcode Cloud release workflow.
+`bleat help` prints the usage and exits 0; a mistyped command prints it and
+exits 2.
 
 Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.
 That is what makes the tool usable *on* the Herdr machine without a loopback SSH

@@ -47,8 +47,14 @@ no GitHub releases.
   `--show-bin-path`: it moved from `apple/` to `out/` in 6.4.
 - **Linux** is `Scripts/build-linux.sh`, once per architecture.
 - **Signing is optional.** `BLEAT_SIGN_IDENTITY` (a Developer ID Application
-  identity) signs with the hardened runtime; `BLEAT_NOTARY_PROFILE` (from
-  `xcrun notarytool store-credentials`) notarizes. Without them the binary keeps
+  identity) signs with the hardened runtime. Notarization authenticates with
+  the App Store Connect API key (`BLEAT_NOTARY_KEY`, `_KEY_ID`, `_ISSUER`) or a
+  `notarytool store-credentials` profile (`BLEAT_NOTARY_PROFILE`). **Prefer the
+  key:** a profile lives in the keychain, and from a shell that cannot show a
+  prompt notarytool says the profile does not exist (15 Oct 2026: stored and
+  used fine, then "No Keychain password item found" minutes later, and
+  re-storing failed with "User interaction is not allowed"). `codesign` kept
+  working throughout. Without them the binary keeps
   an ad-hoc signature. Homebrew and `install.sh` both download with curl, which
   sets no quarantine flag, so an ad-hoc binary runs; one downloaded in a browser
   is stopped by Gatekeeper. A command-line tool cannot be stapled.

@@ -159,11 +159,42 @@ the command line:
 
 Not on the watch:
 
-- pairing, unpairing, the device key, a host's settings and addresses — these
-  belong to the device that holds the key;
+- pairing, inviting another device, unpairing, the device key, a host's
+  settings and addresses — these belong to the device that holds the key, and
+  the watch holds none (why that rules out the invitation QR is below);
 - the terminal;
 - creating a session, a workspace or an agent. The forms are iOS-only files
   and each needs text entry designed for a watch.
+
+### No pairing QR on the watch
+
+Decided 3 Oct 2026, when the phone gained **Pair another device** — the QR
+button on a host's screen, and the row in its settings
+([pairing](pairing.md)). Not for the reasons that come to mind first:
+
+- **The screen is probably big enough.** Estimated, not measured:
+  [pairing](pairing.md) pins the level L sizes, and the invitation draws at
+  level M, which comes to roughly 69 modules across with the quiet zone, about
+  81 for a host with every address. Inside `InviteView`'s 16 pt of padding on
+  a 41 mm watch that is about 4 px a module, 3.5 at worst — likely readable,
+  untested.
+- **The missing encoder is not the reason either.** `InviteView` draws with
+  CoreImage's QR generator, which watchOS lacks — that is why the file is
+  `#if !os(watchOS)`. `QREncoder` is pure Swift, but it is written as the
+  console tool's encoder: `#if !os(iOS)` in `BleatProcess`, with a header
+  that says the app never links it. Moving it means rewriting that framing,
+  not only the file's location.
+- **The reason is that the phone does the work anyway.** An invitation is a key
+  written into the host's `authorized_keys` and then watched for redemption
+  once a second. The watch has no SSH, so both go through the phone over the
+  relay, which needs the phone reachable with Bleat running. The watch
+  would be a second screen for work the phone does.
+
+If it is wanted later, say to pair with the phone in another room: the relay
+already carries shell commands (`RelayRequest.shell`), and `InviteModel` takes
+its shell from `ConnectionStore`, so the host side needs nothing new. The work
+is the encoder (above), a watch version of `InviteView`, and handing it the
+watch's `ConnectionStore` shell.
 
 ### Everything is in the list
 

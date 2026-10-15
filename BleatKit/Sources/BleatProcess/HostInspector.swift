@@ -191,7 +191,9 @@ public struct HostInspector: Sendable {
         // The command as well as the reading of it: `HerdrLookup.command`
         // resolves `$SHELL` itself, so this is the same question the phone
         // asks over SSH rather than a local restatement of it.
-        guard let output = run("/bin/sh", ["-c", HerdrLookup.command]) else { return nil }
+        // Bounded: a profile that waits on something (an agent unlock, a
+        // network mount) would otherwise hang every command that asks.
+        guard let output = run("/bin/sh", ["-c", HerdrLookup.command], timeout: 10) else { return nil }
         return HerdrLookup.path(inOutput: output)
     }
 

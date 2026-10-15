@@ -19,8 +19,12 @@
 #
 # Signing is optional. With BLEAT_SIGN_IDENTITY set to a "Developer ID
 # Application: …" identity, the macOS binary is signed with the hardened
-# runtime and, with BLEAT_NOTARY_PROFILE naming a `notarytool store-credentials`
-# profile, notarized. Without them it ships with the linker's ad-hoc signature,
+# runtime, and notarized with either an App Store Connect API key
+# (BLEAT_NOTARY_KEY, the .p8 path, with BLEAT_NOTARY_KEY_ID and
+# BLEAT_NOTARY_ISSUER) or BLEAT_NOTARY_PROFILE, a `notarytool
+# store-credentials` profile. The key needs no keychain: a profile lives in
+# one, and from a shell that cannot show a prompt notarytool reports the
+# profile missing ("No Keychain password item found"). Without them it ships with the linker's ad-hoc signature,
 # which Homebrew and `install.sh` accept, since neither marks a download as
 # quarantined. A browser download of an unsigned build is blocked by Gatekeeper.
 #
@@ -97,20 +101,28 @@ strip -x "$mac"
 if [[ -n ${BLEAT_SIGN_IDENTITY:-} ]]; then
     codesign --force --options runtime --timestamp --sign "$BLEAT_SIGN_IDENTITY" "$mac"
     codesign --verify --strict --verbose=2 "$mac"
-    if [[ -n ${BLEAT_NOTARY_PROFILE:-} ]]; then
+    if [[ -n ${BLEAT_NOTARY_KEY:-} ]]; then
+        notary_auth=(--key "$BLEAT_NOTARY_KEY" --key-id "${BLEAT_NOTARY_KEY_ID:?with BLEAT_NOTARY_KEY}" \
+            --issuer "${BLEAT_NOTARY_ISSUER:?with BLEAT_NOTARY_KEY}")
+    elif [[ -n ${BLEAT_NOTARY_PROFILE:-} ]]; then
+        notary_auth=(--keychain-profile "$BLEAT_NOTARY_PROFILE")
+    else
+        notary_auth=()
+    fi
+    if (( ${#notary_auth[@]} > 0 )); then
         # notarytool takes a zip, not a bare binary. A command-line tool
         # cannot be stapled; Gatekeeper checks its ticket online instead.
         # Its exit status is not the verdict, so the status is read.
         ditto -c -k "$mac" "$work/notarize.zip"
         verdict=$(xcrun notarytool submit "$work/notarize.zip" \
-            --keychain-profile "$BLEAT_NOTARY_PROFILE" --wait --output-format json |
+            "${notary_auth[@]}" --wait --output-format json |
             sed -nE 's/.*"status" *: *"([^"]+)".*/\1/p' | tail -1)
         if [[ $verdict != Accepted ]]; then
             echo "error: notarization says '${verdict:-nothing}', not Accepted; see notarytool log" >&2
             exit 1
         fi
     else
-        echo "warning: signed but not notarized (no BLEAT_NOTARY_PROFILE)" >&2
+        echo "warning: signed but not notarized (no BLEAT_NOTARY_KEY or BLEAT_NOTARY_PROFILE)" >&2
     fi
 else
     codesign --force --sign - "$mac"

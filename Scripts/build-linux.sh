@@ -1,8 +1,11 @@
 #!/bin/bash
-# Builds the console tool for aarch64 Linux as one static binary that runs on
-# ARMv8.0 — a Raspberry Pi 4 or CM4 as well as a Pi 5.
+# Builds the console tool for Linux as one static binary: aarch64 that runs on
+# ARMv8.0 — a Raspberry Pi 4 or CM4 as well as a Pi 5 — or x86_64.
 #
-#   Scripts/build-linux.sh <work-dir>
+#   Scripts/build-linux.sh <work-dir> [aarch64|x86_64]     # aarch64 by default
+#
+# x86_64 builds with the installed SDK as it is: mimalloc 2.2.4 adds an
+# architecture flag on arm64 only (its CMakeLists, MI_OPT_ARCH_FLAGS).
 #
 # The static Linux SDK replaces musl's allocator with mimalloc, and mimalloc
 # 2.2 builds for `-march=armv8.1-a` on arm64 unless told not to. Its LSE
@@ -22,7 +25,12 @@ bundle=swift-${swift_version}-RELEASE_static-linux-0.1.0.artifactbundle
 mimalloc_version=2.2.4
 mimalloc_sha256=754a98de5e2912fddbeaf24830f982b4540992f1bab4a0a8796ee118e0752bda
 
-work=${1:?usage: Scripts/build-linux.sh <work-dir>}
+work=${1:?usage: Scripts/build-linux.sh <work-dir> [aarch64|x86_64]}
+arch=${2:-aarch64}
+case $arch in
+    aarch64|x86_64) ;;
+    *) echo "error: unknown architecture '$arch' (aarch64 or x86_64)" >&2; exit 2 ;;
+esac
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -43,6 +51,15 @@ sdks=$work/sdks
 sdk=$sdks/$bundle
 sysroot=$sdk/swift-${swift_version}-RELEASE_static-linux-0.1.0/swift-linux-musl/musl-1.2.5.sdk/aarch64
 marker=$sdk/.armv8.0-mimalloc-$mimalloc_version
+
+if [[ $arch == x86_64 ]]; then
+    echo "== bleat (x86_64)"
+    (cd "$repo/BleatKit" && "$bin/swift" build -c release --product bleat \
+        --swift-sdk x86_64-swift-linux-musl \
+        --scratch-path "$work/build-x86_64" -Xswiftc -gnone -Xlinker -s)
+    echo "$work/build-x86_64/release/bleat"
+    exit 0
+fi
 
 if [[ ! -f $marker ]]; then
     echo "== copying the SDK"

@@ -1,4 +1,5 @@
-# fly deploy --config Demo/fly.toml --dockerfile Demo/Dockerfile Demo
+# cd Demo && fly deploy --app bleat-demo --remote-only --ha=false
+# The design and its reasoning: docs/demo-host.md.
 app = "bleat-demo"
 primary_region = "sjc"
 

@@ -8,7 +8,7 @@ ARG BLEAT_VERSION=1.0.1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       openssh-server ca-certificates curl python3 iptables util-linux procps \
-      htop less vim-tiny git qrencode tini \
+      htop less vim-tiny git qrencode tini sudo e2fsprogs \
  && rm -rf /var/lib/apt/lists/*
 
 # Both installers check their downloads against published checksums.
@@ -17,9 +17,15 @@ RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin s
       | BLEAT_VERSION=$BLEAT_VERSION BLEAT_INSTALL_DIR=/usr/local/bin sh \
  && herdr --version && bleat --version
 
-# Key-only logins, one account, no root.
+# Key-only logins, one account, no root. The pairing page runs as its own
+# user, which demo cannot signal or inspect, and may run exactly one command
+# as demo.
 RUN useradd --create-home --shell /bin/bash demo \
  && passwd --lock demo \
+ && useradd --system --home-dir /var/lib/pairpage --create-home --shell /usr/sbin/nologin pairpage \
+ && echo 'pairpage ALL=(demo) NOPASSWD: /usr/local/bin/bleat pair *' > /etc/sudoers.d/pairpage \
+ && chmod 440 /etc/sudoers.d/pairpage \
+ && visudo -cf /etc/sudoers.d/pairpage \
  && mkdir -p /run/sshd
 COPY sshd_config /etc/ssh/sshd_config
 COPY limits.conf /etc/security/limits.d/demo.conf

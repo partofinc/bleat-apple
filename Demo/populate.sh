@@ -14,6 +14,13 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 
+# Run again whenever the herdr client is restarted; the server may have
+# outlived it, so fill the session only once.
+if herdr workspace list | grep -q '"label": *"web-app"'; then
+    echo "demo: already populated"
+    exit 0
+fi
+
 workspace() {    # workspace <label> <cwd> → prints the root pane id
     herdr workspace create --label "$1" --cwd "$2" --no-focus |
         python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])'

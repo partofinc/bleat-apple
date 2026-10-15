@@ -38,19 +38,24 @@ fetch() {    # fetch <url> <file>
     else echo "bleat: needs curl or wget" >&2; exit 1; fi
 }
 
+# Checked before anything is fetched: missing, it would read as a checksum
+# mismatch, and a missing tool is not a tampered download.
+if command -v sha256sum >/dev/null 2>&1; then sha256() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else echo "bleat: needs sha256sum or shasum to check the download" >&2; exit 1; fi
+
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+# A signal ends the script, not just the cleanup: the EXIT trap still runs.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "Downloading $asset..."
 fetch "$base/$asset.tar.gz" "$tmp/$asset.tar.gz"
 fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS"
 
 expected=$(awk -v f="$asset.tar.gz" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
-if command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "$tmp/$asset.tar.gz" | cut -d' ' -f1)
-else
-    actual=$(shasum -a 256 "$tmp/$asset.tar.gz" | cut -d' ' -f1)
-fi
+actual=$(sha256 "$tmp/$asset.tar.gz")
 if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
     echo "bleat: checksum mismatch for $asset.tar.gz; nothing installed" >&2
     exit 1
@@ -66,7 +71,19 @@ mv "$dir/bleat.new" "$dir/bleat"
 echo "Installed bleat $("$dir/bleat" --version) to $dir/bleat"
 case ":$PATH:" in
     *":$dir:"*) ;;
-    *) echo "Note: $dir is not on your PATH. Add it, for example:"
-       echo "  echo 'export PATH=\"$dir:\$PATH\"' >> ~/.profile" ;;
+    *)  # The file the user's login shell reads: zsh (the macOS default) never
+        # reads ~/.profile, and bash skips it when ~/.bash_profile exists.
+        case $(basename "${SHELL:-sh}") in
+            zsh)  rc=~/.zshrc ;;
+            bash) if [ "$(uname -s)" = Darwin ] || [ -f ~/.bash_profile ]; then rc=~/.bash_profile; else rc=~/.bashrc; fi ;;
+            fish) rc= ;;
+            *)    rc=~/.profile ;;
+        esac
+        echo "Note: $dir is not on your PATH. Add it, then open a new terminal:"
+        if [ -n "$rc" ]; then
+            echo "  echo 'export PATH=\"$dir:\$PATH\"' >> $rc"
+        else
+            echo "  fish_add_path $dir"
+        fi ;;
 esac
 echo "Next: run 'bleat pair' and scan the code with the Bleat app."

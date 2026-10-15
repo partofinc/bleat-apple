@@ -17,8 +17,10 @@ import Foundation
 public enum DebugLaunch {
     /// `BLEAT_PAIR_CODE` redeems a pairing link. `BLEAT_OPEN` opens the first
     /// host and then, a path component at a time: a session, a workspace id, a
-    /// title for that workspace, and a pane target. An empty value stops at the
-    /// host's sessions.
+    /// title for that workspace, a pane target, a title for that pane (the
+    /// target if none: the list's row title is not known here), and `terminal`
+    /// to open it as a terminal row does rather than as an agent's chat. An
+    /// empty value stops at the host's sessions.
     public static func apply(to context: AppContext) async {
         let environment = ProcessInfo.processInfo.environment
         if let code = environment["BLEAT_PAIR_CODE"] {
@@ -50,7 +52,9 @@ public enum DebugLaunch {
         // A pane target holds a colon and no slash: `w1:p1`.
         await step()
         context.navigation.push(
-            .pane(peer: peer.hostKey, session: session, target: parts[3], title: parts[3])
+            .pane(peer: peer.hostKey, session: session, target: parts[3],
+                  title: parts.count > 4 ? parts[4] : parts[3],
+                  mode: parts.count > 5 && parts[5] == "terminal" ? .terminal : .chat)
         )
     }
 

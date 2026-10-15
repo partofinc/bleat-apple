@@ -38,6 +38,9 @@ public struct LocalProcessTransport: HerdrTransport {
         return env
     }
 
+    /// `@concurrent`: this blocks a thread until `herdr` exits, and that must
+    /// never be the caller's actor.
+    @concurrent
     public func run(_ args: [String]) async throws -> Data {
         let process = Process()
         process.executableURL = executable

@@ -31,6 +31,9 @@ public struct RelayResponder: Sendable {
         self.failed = failed
     }
 
+    /// `@concurrent`: the phone calls this from the main actor, and the reply
+    /// can be an agent's whole conversation to encode.
+    @concurrent
     public func reply(to request: Data) async -> Data {
         let reply: RelayReply
         do {

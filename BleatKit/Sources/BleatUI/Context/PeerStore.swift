@@ -60,7 +60,7 @@ public final class PeerStore {
 
     /// Pairs with a scanned code and records what came back.
     ///
-    /// `PairingClient.pair` is `nonisolated async`, so the SSH work runs off the
+    /// `PairingClient.pair` is `@concurrent`, so the SSH work runs off the
     /// main actor; only the reload afterwards is back here.
     ///
     /// - Throws: `PairingError`, which every case of describes itself well

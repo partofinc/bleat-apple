@@ -58,7 +58,7 @@ public struct HerdrClient: Sendable {
     /// `--json` and returns an unenveloped payload.
     public func sessions() async throws -> [SessionInfo] {
         let data = try await transport.run(["session", "list", "--json"])
-        return try decode(SessionList.self, from: data, command: ["session", "list"]).sessions
+        return try await decode(SessionList.self, from: data, command: ["session", "list"]).sessions
     }
 
     /// Stops a running session.
@@ -79,7 +79,7 @@ public struct HerdrClient: Sendable {
     @discardableResult
     public func stopSession(named name: SessionName) async throws -> SessionChange {
         let data = try await transport.run(["session", "stop", name.text, "--json"])
-        return try decode(SessionChange.self, from: data, command: ["session", "stop"])
+        return try await decode(SessionChange.self, from: data, command: ["session", "stop"])
     }
 
     /// Deletes a **stopped** session, and its directory with it.
@@ -94,7 +94,7 @@ public struct HerdrClient: Sendable {
     @discardableResult
     public func deleteSession(named name: SessionName) async throws -> SessionChange {
         let data = try await transport.run(["session", "delete", name.text, "--json"])
-        return try decode(SessionChange.self, from: data, command: ["session", "delete"])
+        return try await decode(SessionChange.self, from: data, command: ["session", "delete"])
     }
 
     // MARK: - Creating
@@ -309,14 +309,17 @@ public struct HerdrClient: Sendable {
 
     private func enveloped<T: Decodable & Sendable>(_ args: [String]) async throws -> T {
         let data = try await transport.run(args)
-        return try decode(HerdrEnvelope<T>.self, from: data, command: args).result
+        return try await decode(HerdrEnvelope<T>.self, from: data, command: args).result
     }
 
-    private func decode<T: Decodable>(
+    /// Off the caller's actor: a workspace or agent list is decoded on every
+    /// poll, and the caller is usually a screen on the main actor.
+    @concurrent
+    private func decode<T: Decodable & Sendable>(
         _ type: T.Type,
         from data: Data,
         command: [String]
-    ) throws -> T {
+    ) async throws -> T {
         do {
             return try decoder.decode(type, from: data)
         } catch {

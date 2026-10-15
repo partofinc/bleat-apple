@@ -55,6 +55,10 @@ public final class RelayTransport: PeerLink {
 
     /// One request and its reply, decoded. A `.failed` reply is thrown as the
     /// error it carries.
+    ///
+    /// `@concurrent`: the watch's screens call this from the main actor, and
+    /// the reply can be an agent's whole conversation to decode.
+    @concurrent
     public static func send(_ request: RelayRequest, over channel: Channel) async throws -> RelayReply {
         let reply = try await channel(try JSONEncoder().encode(request))
         guard let decoded = try? JSONDecoder().decode(RelayReply.self, from: reply) else {

@@ -8,10 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		9DECFFD3737B4877834F708D /* BleatUI in Frameworks */ = {isa = PBXBuildFile; productRef = BF272107744E47FD9B53DCC9 /* BleatUI */; };
-		D51B8BE6FD3343248EF259F5 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA6E6623F32448A79D178D4D /* BleatKit */; };
 		A7C000000000000000000001 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = A7C000000000000000000003 /* BleatKit */; };
 		A7C000000000000000000002 /* BleatUI in Frameworks */ = {isa = PBXBuildFile; productRef = A7C000000000000000000004 /* BleatUI */; };
 		A7C00000000000000000000D /* BleatWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A7C000000000000000000005 /* BleatWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D51B8BE6FD3343248EF259F5 /* BleatKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA6E6623F32448A79D178D4D /* BleatKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -274,6 +274,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -300,6 +301,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -340,39 +342,6 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
-		};
-		D8B9FB0A07DB4C5294E75561 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 4N6MH577X7;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Support/Info.plist;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Bleat reads the pairing code that \"bleat pair\" shows on the machine running Herdr. Nothing is recorded or sent anywhere.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
 		};
 		A7C000000000000000000011 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -436,6 +405,39 @@
 			};
 			name = Release;
 		};
+		D8B9FB0A07DB4C5294E75561 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 4N6MH577X7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Support/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Bleat reads the pairing code that \"bleat pair\" shows on the machine running Herdr. Nothing is recorded or sent anywhere.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Bleat connects over SSH to the Mac running Herdr. On your own network that Mac is a .local name or a local address, which iOS treats as a local network connection.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = team.partof.bleat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -476,14 +478,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		BF272107744E47FD9B53DCC9 /* BleatUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = BleatUI;
-		};
-		FA6E6623F32448A79D178D4D /* BleatKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = BleatKit;
-		};
 		A7C000000000000000000003 /* BleatKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BleatKit;
@@ -491,6 +485,14 @@
 		A7C000000000000000000004 /* BleatUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BleatUI;
+		};
+		BF272107744E47FD9B53DCC9 /* BleatUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BleatUI;
+		};
+		FA6E6623F32448A79D178D4D /* BleatKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BleatKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

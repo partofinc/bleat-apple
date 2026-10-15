@@ -187,7 +187,7 @@ public struct HostInspector: Sendable {
     /// connect. Two copies of "which line of this output is the path" would
     /// drift, and the way they would drift — a profile banner ending up in the
     /// stored path — is silent until the first herdr call fails.
-    func locateHerdr() -> String? {
+    public func locateHerdr() -> String? {
         // The command as well as the reading of it: `HerdrLookup.command`
         // resolves `$SHELL` itself, so this is the same question the phone
         // asks over SSH rather than a local restatement of it.

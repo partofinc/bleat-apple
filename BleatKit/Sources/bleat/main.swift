@@ -16,7 +16,7 @@ Hosts:
   bleat hosts list
   bleat hosts remove <name>
 
-Against a host (omit <host> to use the local herdr):
+Against a host (omit <host> to use the local herdr; --herdr PATH overrides the lookup):
   bleat sessions   [host]
   bleat workspaces [host] [--session NAME]
   bleat agents     [host] [--session NAME]
@@ -116,10 +116,17 @@ let registry = HostRegistry.standard()
 ///
 /// With no host the local `herdr` is used, which is what makes the tool usable
 /// on the machine running Herdr without inventing a loopback SSH hop.
-func makeTransport(_ selection: HostSelection, session: String?) throws -> any HerdrTransport {
+///
+/// The local `herdr` is found the way `bleat pair` finds it, through a login
+/// shell, because a fixed path is right on one machine: Homebrew's
+/// `/opt/homebrew/bin` is not where a Pi keeps it.
+func makeTransport(_ selection: HostSelection, session: String?, herdrPath: String?) throws -> any HerdrTransport {
     switch selection {
     case .local:
-        return LocalProcessTransport(session: session)
+        guard let path = herdrPath ?? HostInspector().locateHerdr() else {
+            fail("bleat: herdr is not on this machine's PATH. Pass --herdr PATH.")
+        }
+        return LocalProcessTransport(executable: URL(fileURLWithPath: path), session: session)
     case .saved(let entry):
         return SSHTransport(
             host: try entry.host(),
@@ -203,7 +210,7 @@ do {
         expectsTarget: command == "attach",
         hosts: try registry.all()
     )
-    let client = HerdrClient(transport: try makeTransport(selection, session: options.session))
+    let client = HerdrClient(transport: try makeTransport(selection, session: options.session, herdrPath: options.herdrPath))
 
     switch command {
     case "sessions":

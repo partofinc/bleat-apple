@@ -17,11 +17,12 @@ public struct LocalProcessTransport: HerdrTransport {
     private let session: String?
 
     /// - Parameters:
-    ///   - executable: Absolute path to `herdr`. A login shell may not have it
-    ///     on `PATH`, so an explicit path is the default posture.
+    ///   - executable: Absolute path to `herdr`. No default: where it lives
+    ///     differs per machine, and `HostInspector.locateHerdr()` asks a login
+    ///     shell, the same question the phone asks over SSH.
     ///   - session: Named session to talk to. Selection is by environment —
     ///     there is no `--session` flag on the API subcommands.
-    public init(executable: URL = URL(fileURLWithPath: "/opt/homebrew/bin/herdr"), session: String? = nil) {
+    public init(executable: URL, session: String? = nil) {
         self.executable = executable
         self.session = session
     }

@@ -114,7 +114,7 @@ reverse-engineered and every claim below was checked by rendering. Worth keeping
 - **Verified in the built product rather than assumed.** `xcrun assetutil
   --info Assets.car` lists seven `AppIcon` entries across `UIAppearanceLight`,
   `UIAppearanceDark` and `ISAppearanceTintable`, and `Info.plist` carries
-  `CFBundleIconName`. Installed on `rawillk.phone.pro` and `rawillk.pad.mini`.
+  `CFBundleIconName`. Installed on `kestrel.phone.pro` and `kestrel.pad.mini`.
 - **`AccentColor` is still unset, on purpose.** Coral is close enough to the red
   that Stop and Delete are tinted with that promoting it to the app-wide accent
   would blur the one distinction those swipes rely on. Which colour the *app*

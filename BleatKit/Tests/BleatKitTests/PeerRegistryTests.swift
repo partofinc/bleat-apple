@@ -19,7 +19,7 @@ struct PeerRegistryTests {
         PairedPeer(
             hostKey: key,
             name: "Mac",
-            username: "ravil",
+            username: "robin",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
             herdrPath: herdr
         )

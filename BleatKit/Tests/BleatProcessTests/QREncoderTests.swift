@@ -65,7 +65,7 @@ struct QREncoderTests {
 
     /// What the Raspberry Pi this was verified on offers.
     private var piURL: String {
-        get throws { try pairingURL(["adam.local", "192.168.11.67", "[2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c]"]) }
+        get throws { try pairingURL(["adam.local", "192.168.50.67", "[2001:db8:5ad0:0:2ecf:67ff:fec0:fa8c]"]) }
     }
 
     /// Each version filled to its exact capacity, so all forty are reached by
@@ -91,9 +91,9 @@ struct QREncoderTests {
     @Test("real pairing payloads come out the same size as CoreImage's")
     func pairingPayloadsSameSize() throws {
         let worst = try pairingURL([
-            "rawillkair.local", "[2a00:f3c:5ad0:0:c29:6db5:4a49:dc53]", "192.168.11.54",
-            "[fd74:e60:b537:4fb6:4bd:a9e4:d43:fc95]", "100.114.119.30",
-            "[fd7a:115c:a1e0::42a:771f]", "rawillk.tail2a3bab.ts.net",
+            "studio-mac.local", "[2001:db8:5ad0:0:c29:6db5:4a49:dc53]", "192.168.50.54",
+            "[fd74:e60:b537:4fb6:4bd:a9e4:d43:fc95]", "100.111.222.33",
+            "[fd7a:115c:a1e0::42a:abcd]", "kestrel.tailf00d42.ts.net",
         ])
         for url in [try piURL, worst] {
             let core = try #require(QRCodeGenerator.matrix(for: url, quietZone: 3))

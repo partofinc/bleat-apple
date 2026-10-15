@@ -21,7 +21,7 @@ struct StartedClaimTests {
 
     private func peerWith(_ registry: PeerRegistry, started: [String]) throws -> PairedPeer {
         var peer = PairedPeer(
-            hostKey: "ssh-ed25519 RECONCILE", name: "mac", username: "ravil", endpoints: []
+            hostKey: "ssh-ed25519 RECONCILE", name: "mac", username: "robin", endpoints: []
         )
         peer.startedSessions = started
         try registry.save(peer)

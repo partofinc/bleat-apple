@@ -243,7 +243,7 @@ struct AgentStartTests {
     /// reason `pi` failed to start.
     @Test("a line that merely contains the kind's letters is not a cause")
     func doesNotMatchOnASubstring() {
-        let pane = ["cat: /Users/ravil/api/keys: No such file or directory"]
+        let pane = ["cat: /Users/robin/api/keys: No such file or directory"]
         #expect(AgentStart.diagnosis(inPane: pane, kind: AgentKind("pi")) == nil)
         // And the same complaint that really is about `pi` still reads.
         #expect(AgentStart.diagnosis(
@@ -316,7 +316,7 @@ struct AgentStartTests {
 
     /// **No `--cwd`, and that is measured rather than lazy.** A new tab's pane
     /// inherits the *workspace's* directory, not the server's — verified
-    /// against a workspace in `/Users/ravil/Developer` while the server had
+    /// against a workspace in `/Users/robin/Developer` while the server had
     /// been started in the repo root. `workspace create` is the opposite, which
     /// is why that one must always be told. So adding a pane needs no path
     /// typed on a phone.

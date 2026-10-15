@@ -11,9 +11,9 @@
                     "value": "48e16e8d-fdd8-4698-9720-5054de308348"
                 },
                 "agent_status": "idle",
-                "cwd": "/Users/ravil/Developer/partofinc/bleat-apple",
+                "cwd": "/Users/robin/Developer/partofinc/bleat-apple",
                 "focused": true,
-                "foreground_cwd": "/Users/ravil/Developer/partofinc/bleat-apple",
+                "foreground_cwd": "/Users/robin/Developer/partofinc/bleat-apple",
                 "interactive_ready": true,
                 "name": "bleat",
                 "pane_id": "w1:p1",

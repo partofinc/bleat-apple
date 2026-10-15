@@ -73,7 +73,7 @@ struct TerminalPanesTests {
     @Test("a pane names itself, and never with an empty string")
     func naming() async throws {
         let terminals = try await panes().withoutAgents(in: try await agents())
-        #expect(terminals.first?.displayTitle == "ravil@rawillkair:~/Developer/autorq/link-apple")
+        #expect(terminals.first?.displayTitle == "robin@studio-mac:~/Developer/zenith/link-apple")
         #expect(terminals.allSatisfy { !$0.displayTitle.isEmpty })
 
         let body = """

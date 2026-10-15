@@ -33,8 +33,8 @@ struct TailscaleStatusTests {
     func offersNameAndAddresses() throws {
         let found = try endpoints("tailscale-status.json")
         #expect(found.count == 3)
-        #expect(found.contains { $0.host == "100.114.119.30" })
-        #expect(found.contains { $0.host == "fd7a:115c:a1e0::42a:771f" })
+        #expect(found.contains { $0.host == "100.111.222.33" })
+        #expect(found.contains { $0.host == "fd7a:115c:a1e0::42a:abcd" })
     }
 
     /// Every one of them has to survive `endpointsToTry` on cellular, which is

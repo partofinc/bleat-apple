@@ -567,7 +567,7 @@ fact the whole design turns on:
 
 ```
 $ herdr workspace create --cwd /no/such/dir --label ghost
-{"result":{"root_pane":{"cwd":"/Users/ravil",…},"workspace":{"label":"ghost",…}}}
+{"result":{"root_pane":{"cwd":"/Users/robin",…},"workspace":{"label":"ghost",…}}}
 ```
 
 Exit 0, `workspace_created`, no error — and a workspace called `ghost` sitting
@@ -579,7 +579,7 @@ the order that costs the user least:
 - **The shape, while they type.** `WorkspaceDirectory` refuses a relative path —
   herdr resolves one against the *server process's* working directory, measured:
   the CLI run from `/tmp` with `--cwd ../` produced a pane in
-  `/Users/ravil/Developer/rawillk`, the parent of wherever `herdr server` was
+  `/Users/robin/Developer/kestrel`, the parent of wherever `herdr server` was
   started. From a phone that directory is unknowable. It also refuses a leading
   `~`: every argument reaches the host inside single quotes, so nothing expands
   it, and herdr then falls back to the home directory — which for `~` alone is
@@ -596,8 +596,8 @@ the order that costs the user least:
   `ls` would be read as part of the path.
   - **Resolving is not tidiness; a plain `test -d` shipped a bug.** herdr
     reports a **canonical** cwd — measured: `/tmp` → `/private/tmp`, `/var` →
-    `/private/var`, and both `/Users/ravil//Developer` and
-    `/Users/ravil/Developer/../Developer` → `/Users/ravil/Developer`. A phone
+    `/private/var`, and both `/Users/robin//Developer` and
+    `/Users/robin/Developer/../Developer` → `/Users/robin/Developer`. A phone
     comparing herdr's answer against the string the user typed therefore
     reported a workspace as misplaced that had gone exactly where it was asked,
     for paths as ordinary as `/tmp`. The create sends the resolved form and the
@@ -883,7 +883,7 @@ why the measurement is written down.
 
 - **No `--cwd` is sent, and that is measured rather than lazy.** A new tab's
   pane inherits the *workspace's* directory — verified against a workspace in
-  `/Users/ravil/Developer` while the server had been started in the repo root.
+  `/Users/robin/Developer` while the server had been started in the repo root.
   This is the **opposite of `workspace create`**, which takes the server's cwd
   and must therefore always be told. So adding a pane needs no path typed on a
   phone; the directory is shown before the tap rather than asked for.
@@ -954,7 +954,7 @@ so a shell had no row and no route; and the only button on it was Start Agent.
   shell as its first cause; the route carries the mode so it is not reached.
 - **The row shows the directory only when the title does not already say it.**
   A login shell titles itself with where it is —
-  `ravil@rawillkair:~/Developer/autorq/link-apple` in `Fixtures/pane-list.json`
+  `robin@studio-mac:~/Developer/zenith/link-apple` in `Fixtures/pane-list.json`
   — so a path underneath would repeat the line above it on every idle shell. A
   running command retitles the pane, and then the path is what says which shell
   it is running in. Both are truncated at the head, as the agent rows are.

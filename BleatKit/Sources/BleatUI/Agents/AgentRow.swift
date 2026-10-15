@@ -17,7 +17,7 @@ struct AgentRow: View {
                         .lineLimit(1)
                         // A path truncated at the front keeps the part that
                         // distinguishes one checkout from another; truncated at
-                        // the end every row reads "/Users/ravil/Developer/…".
+                        // the end every row reads "/Users/robin/Developer/…".
                         .truncationMode(.head)
                 }
             }

@@ -13,7 +13,7 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// The host is **lower-cased**, and that is not cosmetic.
     ///
     /// DNS is case-insensitive and `Equatable`/`Hashable` are not, so without
-    /// this `RawillkAir.local` and `rawillkair.local` are two endpoints for one
+    /// this `Studio-Mac.local` and `studio-mac.local` are two endpoints for one
     /// machine. Every comparison in the refresh path runs on that equality:
     /// de-duplication, `Report.superseded`, `endpoints.contains`, the
     /// `lastGoodEndpoint` match. A differently-cased duplicate is therefore
@@ -190,7 +190,7 @@ public struct Endpoint: Sendable, Hashable, Codable, CustomStringConvertible {
     /// Whether a string a *user typed* is plausibly a host at all.
     ///
     /// `Endpoint(string:)` is a parser, not a validator: anything with no colon
-    /// is taken as a hostname verbatim, so `ravil@mac.internal` — a very
+    /// is taken as a hostname verbatim, so `robin@mac.internal` — a very
     /// natural paste — `ssh mac.local`, and `mac.local/foo` all sail through.
     /// That matters more here than it looks. An address the user adds by hand
     /// is invisible to detection, so it is **permanently sticky**: it can never

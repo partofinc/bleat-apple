@@ -8,7 +8,7 @@
 /// {"type":"workspace_created",
 ///  "workspace":{"workspace_id":"w4","label":"captured","tab_count":1,…},
 ///  "tab":      {"tab_id":"w4:t1","label":"1",…},
-///  "root_pane":{"pane_id":"w4:p1","cwd":"/Users/ravil/Developer",…}}
+///  "root_pane":{"pane_id":"w4:p1","cwd":"/Users/robin/Developer",…}}
 /// ```
 ///
 /// **A workspace is never empty**, and neither is a tab: `workspace create`

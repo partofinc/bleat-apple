@@ -10,8 +10,8 @@ struct PairedPeerTests {
     private func peer(
         endpoints: [Endpoint],
         lastGood: Endpoint? = nil,
-        name: String = "rawillk.air",
-        user: String = "ravil",
+        name: String = "kestrel.air",
+        user: String = "robin",
         herdr: String = "/opt/homebrew/bin/herdr",
         marker: String? = nil
     ) -> PairedPeer {
@@ -26,26 +26,26 @@ struct PairedPeerTests {
     /// again from a different network must add a way in, not a second peer.
     @Test("pairing again over a new network adds an endpoint, not a peer")
     func mergeAddsEndpoints() throws {
-        let lan = peer(endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54")])
+        let lan = peer(endpoints: [Endpoint(host: "studio-mac.local"), Endpoint(host: "192.168.50.54")])
         let overTailscale = peer(endpoints: [Endpoint(host: "100.101.102.103")])
         let merged = try lan.merging(overTailscale)
 
         #expect(merged.id == lan.id)
-        #expect(merged.endpoints.map(\.host) == ["rawillkair.local", "192.168.11.54", "100.101.102.103"])
+        #expect(merged.endpoints.map(\.host) == ["studio-mac.local", "192.168.50.54", "100.101.102.103"])
     }
 
     /// Pairing over Tailscale must not cost the peer its LAN addresses — those
     /// are the fast path when the phone comes home.
     @Test("merging never drops an existing endpoint")
     func mergeKeepsOldEndpoints() throws {
-        let lan = peer(endpoints: [Endpoint(host: "rawillkair.local")])
+        let lan = peer(endpoints: [Endpoint(host: "studio-mac.local")])
         let merged = try lan.merging(peer(endpoints: [Endpoint(host: "100.101.102.103")]))
-        #expect(merged.endpoints.contains(Endpoint(host: "rawillkair.local")))
+        #expect(merged.endpoints.contains(Endpoint(host: "studio-mac.local")))
     }
 
     @Test("re-pairing from the same place does not duplicate endpoints")
     func mergeIsIdempotent() throws {
-        let original = peer(endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54")])
+        let original = peer(endpoints: [Endpoint(host: "studio-mac.local"), Endpoint(host: "192.168.50.54")])
         let merged = try original.merging(original)
         #expect(merged.endpoints == original.endpoints)
     }
@@ -103,8 +103,8 @@ struct PairedPeerTests {
     @Test("a peer built from a payload carries its endpoints and identity")
     func fromPayload() {
         let payload = PairingPayload(
-            name: "rawillk.air", username: "ravil",
-            endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "100.101.102.103")],
+            name: "kestrel.air", username: "robin",
+            endpoints: [Endpoint(host: "studio-mac.local"), Endpoint(host: "100.101.102.103")],
             enrollmentSeed: Data(repeating: 3, count: 32),
             hostKey: hostKey
         )
@@ -134,34 +134,34 @@ struct EndpointSelectionTests {
     /// rather than ordered last — trying them only spends the timeout.
     @Test("off the local link, LAN endpoints are dropped rather than deprioritised")
     func offLinkDropsLAN() {
-        let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103", "herdr.dev"])
+        let p = peer(["studio-mac.local", "192.168.50.54", "100.101.102.103", "herdr.dev"])
         #expect(p.endpointsToTry(from: .offLink).map(\.host) == ["100.101.102.103", "herdr.dev"])
     }
 
     @Test("on the local link, everything is a candidate")
     func onLinkKeepsAll() {
-        let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103"])
+        let p = peer(["studio-mac.local", "192.168.50.54", "100.101.102.103"])
         #expect(p.endpointsToTry(from: .localLink).count == 3)
     }
 
     @Test("last-known-good is tried first and not repeated")
     func lastGoodLeads() {
-        let p = peer(["rawillkair.local", "192.168.11.54", "100.101.102.103"], lastGood: "100.101.102.103")
+        let p = peer(["studio-mac.local", "192.168.50.54", "100.101.102.103"], lastGood: "100.101.102.103")
         let order = p.endpointsToTry(from: .localLink).map(\.host)
-        #expect(order == ["100.101.102.103", "rawillkair.local", "192.168.11.54"])
+        #expect(order == ["100.101.102.103", "studio-mac.local", "192.168.50.54"])
     }
 
     /// A remembered LAN address is still unreachable on cellular; being the
     /// last good one does not exempt it from the filter.
     @Test("a last-known-good LAN endpoint is still dropped off-link")
     func lastGoodStillFiltered() {
-        let p = peer(["rawillkair.local", "100.101.102.103"], lastGood: "rawillkair.local")
+        let p = peer(["studio-mac.local", "100.101.102.103"], lastGood: "studio-mac.local")
         #expect(p.endpointsToTry(from: .offLink).map(\.host) == ["100.101.102.103"])
     }
 
     @Test("a peer with only LAN endpoints yields nothing off-link, rather than a doomed attempt")
     func noneUsableOffLink() {
-        let p = peer(["rawillkair.local", "192.168.11.54"])
+        let p = peer(["studio-mac.local", "192.168.50.54"])
         #expect(p.endpointsToTry(from: .offLink).isEmpty)
     }
 }

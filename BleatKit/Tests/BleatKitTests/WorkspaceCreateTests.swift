@@ -27,7 +27,7 @@ struct WorkspaceCreateTests {
         #expect(created.tab?.tabID == "w4:t1")
         #expect(created.rootPane?.paneID == "w4:p1")
         #expect(created.rootPane?.tabID == "w4:t1")
-        #expect(created.rootPane?.cwd == "/Users/ravil/Developer")
+        #expect(created.rootPane?.cwd == "/Users/robin/Developer")
     }
 
     /// The reason `tab` and `root_pane` are optional. A host answering in a
@@ -86,7 +86,7 @@ struct WorkspaceCreateTests {
     ///
     /// ```
     /// $ herdr workspace create --cwd /no/such/dir --label ghost
-    /// {"result":{"root_pane":{"cwd":"/Users/ravil",…},
+    /// {"result":{"root_pane":{"cwd":"/Users/robin",…},
     ///            "workspace":{"label":"ghost",…}}}
     /// ```
     ///
@@ -98,9 +98,9 @@ struct WorkspaceCreateTests {
         let asked = WorkspaceDirectory("/no/such/dir")!
         let created = WorkspaceCreated(
             workspace: Workspace(workspaceID: "w1", label: "ghost", number: 1, agentStatus: .unknown),
-            rootPane: pane(cwd: "/Users/ravil")
+            rootPane: pane(cwd: "/Users/robin")
         )
-        #expect(created.openedElsewhere(than: asked) == "/Users/ravil")
+        #expect(created.openedElsewhere(than: asked) == "/Users/robin")
     }
 
     @Test("a pane that opened where it was asked to is not a complaint")
@@ -108,7 +108,7 @@ struct WorkspaceCreateTests {
         let created = try JSONDecoder()
             .decode(HerdrEnvelope<WorkspaceCreated>.self, from: Fixture.data("workspace-create.json"))
             .result
-        #expect(created.openedElsewhere(than: WorkspaceDirectory("/Users/ravil/Developer")!) == nil)
+        #expect(created.openedElsewhere(than: WorkspaceDirectory("/Users/robin/Developer")!) == nil)
     }
 
     /// A missing answer is not a wrong one. `SessionStatus` makes the same
@@ -133,7 +133,7 @@ struct WorkspaceCreateTests {
     // MARK: - The directory
 
     @Test("an absolute path is what is wanted", arguments: [
-        "/", "/tmp", "/Users/ravil/Developer", "/Users/ravil/a b/c", "/Users/ravil/it's",
+        "/", "/tmp", "/Users/robin/Developer", "/Users/robin/a b/c", "/Users/robin/it's",
     ])
     func acceptsAbsolutePaths(_ path: String) {
         #expect(WorkspaceDirectory(path) != nil, "\(path) should be a usable directory")
@@ -142,7 +142,7 @@ struct WorkspaceCreateTests {
     /// Silent, and unreasonable to expect a user to predict: herdr resolves a
     /// relative path against the **server process's** working directory.
     /// Measured — the CLI run from `/tmp` with `--cwd ../` produced a pane in
-    /// `/Users/ravil/Developer/rawillk`, the parent of where `herdr server`
+    /// `/Users/robin/Developer/kestrel`, the parent of where `herdr server`
     /// had been started.
     @Test("a relative path is refused, because herdr resolves it somewhere unguessable", arguments: [
         "Developer", "./Developer", "../Developer", "",
@@ -169,12 +169,12 @@ struct WorkspaceCreateTests {
         #expect(WorkspaceDirectory.problem(with: "   ") == .empty)
     }
 
-    /// So `/Users/ravil/` and `/Users/ravil` are one directory rather than two
+    /// So `/Users/robin/` and `/Users/robin` are one directory rather than two
     /// that suggest different labels.
     @Test("trailing slashes are normalised away, except at the root")
     func normalisesTrailingSlashes() {
-        #expect(WorkspaceDirectory("/Users/ravil/")?.path == "/Users/ravil")
-        #expect(WorkspaceDirectory("/Users/ravil///")?.path == "/Users/ravil")
+        #expect(WorkspaceDirectory("/Users/robin/")?.path == "/Users/robin")
+        #expect(WorkspaceDirectory("/Users/robin///")?.path == "/Users/robin")
         #expect(WorkspaceDirectory("  /tmp  ")?.path == "/tmp")
         #expect(WorkspaceDirectory("/")?.path == "/")
     }
@@ -183,8 +183,8 @@ struct WorkspaceCreateTests {
     /// the label blank will do. Every row here is a create with no `--label`
     /// run against herdr 0.9.0.
     @Test("the suggested label is the basename, which is what herdr would pick", arguments: [
-        ("/Users/ravil/Developer/partofinc/bleat-apple", "bleat-apple"),
-        ("/Users/ravil/Developer", "Developer"),
+        ("/Users/robin/Developer/partofinc/bleat-apple", "bleat-apple"),
+        ("/Users/robin/Developer", "Developer"),
         ("/tmp", "tmp"),
         ("/", "/"),
     ])
@@ -200,7 +200,7 @@ struct WorkspaceCreateTests {
     /// path, for a user who leaves the label blank there.
     @Test("the home directory is the exception, and the phone cannot know it")
     func cannotKnowTheHomeDirectory() {
-        #expect(WorkspaceDirectory("/Users/ravil/")?.suggestedLabel == "ravil")
+        #expect(WorkspaceDirectory("/Users/robin/")?.suggestedLabel == "robin")
     }
 
     // MARK: - The command
@@ -209,11 +209,11 @@ struct WorkspaceCreateTests {
     func buildsTheCommand() async throws {
         let transport = RecordingTransport(reply: try Fixture.data("workspace-create.json"))
         _ = try await HerdrClient(transport: transport)
-            .createWorkspace(in: WorkspaceDirectory("/Users/ravil/Developer")!, label: "captured")
+            .createWorkspace(in: WorkspaceDirectory("/Users/robin/Developer")!, label: "captured")
 
         let args = try #require(transport.commands.first)
         #expect(args.contains("--cwd"))
-        #expect(args.contains("/Users/ravil/Developer"))
+        #expect(args.contains("/Users/robin/Developer"))
         #expect(args.contains("--label"))
         #expect(args.contains("captured"))
     }
@@ -225,7 +225,7 @@ struct WorkspaceCreateTests {
     func omitsAnEmptyLabel() async throws {
         let transport = RecordingTransport(reply: try Fixture.data("workspace-create.json"))
         _ = try await HerdrClient(transport: transport)
-            .createWorkspace(in: WorkspaceDirectory("/Users/ravil/Developer")!, label: "")
+            .createWorkspace(in: WorkspaceDirectory("/Users/robin/Developer")!, label: "")
         #expect(try #require(transport.commands.first).contains("--label") == false)
     }
 
@@ -253,8 +253,8 @@ struct WorkspaceCreateTests {
 
     @Test("the check asks about the directory and exits 0 either way")
     func directoryCheckCommand() {
-        let command = DirectoryCheck.command(for: WorkspaceDirectory("/Users/ravil/Developer")!)
-        #expect(command.contains("cd '/Users/ravil/Developer'"))
+        let command = DirectoryCheck.command(for: WorkspaceDirectory("/Users/robin/Developer")!)
+        #expect(command.contains("cd '/Users/robin/Developer'"))
         #expect(command.contains("pwd -P"))
         // Both branches print, so `ShellRunner` never sees a non-zero exit and
         // the answer never arrives as "the host rejected a command".
@@ -274,8 +274,8 @@ struct WorkspaceCreateTests {
     /// nothing downstream will quote the path inside it.
     @Test("a path holding a quote cannot break out of the command")
     func quotesThePath() {
-        let command = DirectoryCheck.command(for: WorkspaceDirectory("/Users/ravil/it's here")!)
-        #expect(command.contains(#"'/Users/ravil/it'\''s here'"#))
+        let command = DirectoryCheck.command(for: WorkspaceDirectory("/Users/robin/it's here")!)
+        #expect(command.contains(#"'/Users/robin/it'\''s here'"#))
     }
 
     /// **Why this resolves rather than merely testing.** herdr reports a
@@ -285,8 +285,8 @@ struct WorkspaceCreateTests {
     /// |---|---|
     /// | `/tmp` | `/private/tmp` |
     /// | `/var` | `/private/var` |
-    /// | `/Users/ravil//Developer` | `/Users/ravil/Developer` |
-    /// | `/Users/ravil/Developer/../Developer` | `/Users/ravil/Developer` |
+    /// | `/Users/robin//Developer` | `/Users/robin/Developer` |
+    /// | `/Users/robin/Developer/../Developer` | `/Users/robin/Developer` |
     ///
     /// So a phone that compared its own string against that would report a
     /// workspace as misplaced that had gone exactly where it was asked — and
@@ -305,8 +305,8 @@ struct WorkspaceCreateTests {
     /// refuse every directory on a Mac with a chatty profile.
     @Test("a banner around the answer does not change it")
     func readsThroughABanner() {
-        let output = "Welcome back!\nyou have mail\nbleat-dir-at:/Users/ravil/Developer\n"
-        #expect(DirectoryCheck.resolvedPath(inOutput: output) == "/Users/ravil/Developer")
+        let output = "Welcome back!\nyou have mail\nbleat-dir-at:/Users/robin/Developer\n"
+        #expect(DirectoryCheck.resolvedPath(inOutput: output) == "/Users/robin/Developer")
     }
 
     /// `cd` refuses a missing directory, a file, and one it cannot enter, and

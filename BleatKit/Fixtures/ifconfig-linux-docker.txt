@@ -1,13 +1,13 @@
 docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
         inet 172.17.0.1  netmask 255.255.0.0  broadcast 172.17.255.255
-        ether 7e:83:0d:59:55:e6  txqueuelen 0  (Ethernet)
+        ether 02:00:00:00:00:01  txqueuelen 0  (Ethernet)
         RX packets 0  bytes 0 (0.0 B)
         RX errors 0  dropped 0  overruns 0  frame 0
         TX packets 0  bytes 0 (0.0 B)
         TX errors 0  dropped 11 overruns 0  carrier 0  collisions 0
 
 eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-        ether 2c:cf:67:c0:fa:8b  txqueuelen 1000  (Ethernet)
+        ether 02:00:00:00:00:02  txqueuelen 1000  (Ethernet)
         RX packets 0  bytes 0 (0.0 B)
         RX errors 0  dropped 0  overruns 0  frame 0
         TX packets 0  bytes 0 (0.0 B)
@@ -24,10 +24,10 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
         TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 
 wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
-        inet 192.168.11.67  netmask 255.255.255.0  broadcast 192.168.11.255
-        inet6 2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c  prefixlen 64  scopeid 0x0<global>
+        inet 192.168.50.67  netmask 255.255.255.0  broadcast 192.168.50.255
+        inet6 2001:db8:5ad0:0:2ecf:67ff:fec0:fa8c  prefixlen 64  scopeid 0x0<global>
         inet6 fe80::2ecf:67ff:fec0:fa8c  prefixlen 64  scopeid 0x20<link>
-        ether 2c:cf:67:c0:fa:8c  txqueuelen 1000  (Ethernet)
+        ether 02:00:00:00:00:03  txqueuelen 1000  (Ethernet)
         RX packets 82090  bytes 73419080 (70.0 MiB)
         RX errors 0  dropped 0  overruns 0  frame 0
         TX packets 33923  bytes 7461184 (7.1 MiB)

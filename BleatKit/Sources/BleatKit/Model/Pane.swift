@@ -32,7 +32,7 @@ public struct Pane: Codable, Sendable, Identifiable, Hashable {
     /// The same three-way fallback as `Agent.displayTitle`, minus the agent
     /// kind a plain shell does not have: the stripped terminal title, the raw
     /// one, then the pane id, which is at least unique. A login shell titles
-    /// itself with where it is — `ravil@rawillkair:~/Developer/link-apple` in
+    /// itself with where it is — `robin@studio-mac:~/Developer/link-apple` in
     /// `Fixtures/pane-list.json` — and a running command retitles it, which is
     /// the case this is worth showing for.
     public var displayTitle: String {

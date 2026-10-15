@@ -3,7 +3,7 @@
 > Moved verbatim from `CLAUDE.md` on 1 Oct 2026. Where the text says "this file", "above" or "below", it means the old single file; a **bold** section name can be found with `grep -r docs/`.
 
 ```
-bleat hosts add dev ravil@10.0.0.5 --key ~/.bleat/id_ed25519 \
+bleat hosts add dev robin@10.0.0.5 --key ~/.bleat/id_ed25519 \
       --herdr /opt/homebrew/bin/herdr --session work
 bleat hosts list / hosts remove dev
 bleat sessions   [host]                   # named sessions

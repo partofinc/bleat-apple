@@ -49,7 +49,7 @@ struct RelayTests {
         private var events: [String] = []
         var seen: [String] { lock.withLock { events } }
         var paired = [PairedPeer(
-            hostKey: "ssh-ed25519 AAAAKEY", name: "Mac", username: "ravil",
+            hostKey: "ssh-ed25519 AAAAKEY", name: "Mac", username: "robin",
             endpoints: [Endpoint(string: "mac.local")!]
         )]
 

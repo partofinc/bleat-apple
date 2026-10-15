@@ -126,7 +126,7 @@ struct PreviewSmokeTests {
         let context = sampleContext()
         #expect(context.peers.peers.count == 3)
         #expect(context.peers.failure == nil)
-        #expect(context.peers.peers.contains { $0.name == "rawillk.air" })
+        #expect(context.peers.peers.contains { $0.name == "kestrel.air" })
     }
 
     /// **The location, not the contents.** `AddEndpointView` and the unpair
@@ -395,24 +395,24 @@ struct PreviewSmokeTests {
         // one nobody will otherwise ever see — created, somewhere else.
         for model in [
             NewWorkspaceModel(
-                previewing: "/Users/ravil/Developer/partofinc/bleat-apple",
+                previewing: "/Users/robin/Developer/partofinc/bleat-apple",
                 suggestions: Pane.sampleDirectories
             ),
             NewWorkspaceModel(previewing: "Developer/bleat-apple"),
             NewWorkspaceModel(previewing: "~/Developer"),
             NewWorkspaceModel(
-                previewing: "/Users/ravil/Developr",
-                failure: "There is no directory at /Users/ravil/Developr on this host."
+                previewing: "/Users/robin/Developr",
+                failure: "There is no directory at /Users/robin/Developr on this host."
             ),
             NewWorkspaceModel(
-                previewing: "/Users/ravil/Developer",
-                warning: "Created Developer, but its pane opened in /Users/ravil."
+                previewing: "/Users/robin/Developer",
+                warning: "Created Developer, but its pane opened in /Users/robin."
             ),
             NewWorkspaceModel(
-                previewing: "/Users/ravil/Developer",
+                previewing: "/Users/robin/Developer",
                 warning: "the connection closed before this finished"
             ),
-            NewWorkspaceModel(previewing: "/Users/ravil/Developer", isCreating: true),
+            NewWorkspaceModel(previewing: "/Users/robin/Developer", isCreating: true),
         ] {
             render(context, NewWorkspaceForm(
                 model: model, peer: .preview, known: Workspace.samples, onCreated: {}
@@ -430,11 +430,11 @@ struct PreviewSmokeTests {
             ),
             NewAgentModel(
                 previewing: "reviewer", workspace: "w2",
-                workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple"
+                workspaceDirectory: "/Users/robin/Developer/partofinc/bleat-apple"
             ),
             NewAgentModel(
                 previewing: "reviewer", workspace: "w2",
-                workspaceDirectory: "/Users/ravil/Developer/partofinc/bleat-apple",
+                workspaceDirectory: "/Users/robin/Developer/partofinc/bleat-apple",
                 isAddingPane: true
             ),
             // The host never answered about its panes, so the screen must not
@@ -711,7 +711,7 @@ struct PreviewSmokeTests {
 
         // The other write, and the one with a directory check in front of it:
         // a parked create must not reach the host for `test -d` either.
-        let workspace = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
+        let workspace = NewWorkspaceModel(previewing: "/Users/robin/Developer")
         #expect(await workspace.create(on: .preview) == .failed)
         #expect(workspace.failure == nil, "a parked create reported a failure, so it tried")
 

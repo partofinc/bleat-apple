@@ -40,7 +40,7 @@ struct EndpointRefreshTests {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAKEY",
             name: "Mac",
-            username: "ravil",
+            username: "robin",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
             lastGoodEndpoint: lastGood.flatMap { Endpoint(string: $0) },
             hostReport: hostReport
@@ -76,7 +76,7 @@ struct EndpointRefreshTests {
 
         // mDNS name first, then the interface addresses, then whatever only the
         // CLI knows — which is the MagicDNS name.
-        #expect(found.first?.host == "rawillkair.local")
+        #expect(found.first?.host == "studio-mac.local")
         #expect(found.contains { $0.reach == .overlay && $0.host.hasSuffix(".ts.net") })
         #expect(Set(found).count == found.count, "endpoints must be de-duplicated")
     }

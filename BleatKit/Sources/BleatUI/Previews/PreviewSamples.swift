@@ -78,7 +78,7 @@ extension Workspace {
                 agentStatus: .done, paneCount: 2
             ),
             Workspace(
-                workspaceID: "wA", label: "nuvio-assess", number: 7,
+                workspaceID: "wA", label: "lumen-assess", number: 7,
                 agentStatus: .working, paneCount: 4, tabCount: 3
             ),
             Workspace(
@@ -104,31 +104,31 @@ extension Agent {
             Agent(
                 paneID: "w2:p1", workspaceID: "w2", tabID: "t1", agentStatus: .blocked,
                 agent: "claude",
-                cwd: "/Users/ravil/Developer/partofinc/bleat-apple",
-                foregroundCwd: "/Users/ravil/Developer/partofinc/bleat-apple/BleatKit",
+                cwd: "/Users/robin/Developer/partofinc/bleat-apple",
+                foregroundCwd: "/Users/robin/Developer/partofinc/bleat-apple/BleatKit",
                 terminalTitleStripped: "Do you want to make this edit to PeerDetailView.swift?"
             ),
             Agent(
                 paneID: "w2:p2", workspaceID: "w2", tabID: "t1", agentStatus: .done,
                 agent: "claude",
-                cwd: "/Users/ravil/Developer/rawillk/herdr",
+                cwd: "/Users/robin/Developer/kestrel/herdr",
                 terminalTitleStripped: "Rewrote the pane layout tests"
             ),
             Agent(
                 paneID: "w2:p3", workspaceID: "w2", tabID: "t2", agentStatus: .working,
                 agent: "claude",
-                cwd: "/Users/ravil/Developer/rawillk/nuvio-assess",
-                foregroundCwd: "/Users/ravil/Developer/rawillk/nuvio-assess/LinkKit/Sources",
+                cwd: "/Users/robin/Developer/kestrel/lumen-assess",
+                foregroundCwd: "/Users/robin/Developer/kestrel/lumen-assess/LinkKit/Sources",
                 terminalTitleStripped: "Auditing the migration for missing indexes"
             ),
             Agent(
                 paneID: "w2:p4", workspaceID: "w2", tabID: "t2", agentStatus: .idle,
                 agent: "codex",
-                cwd: "/Users/ravil/Developer/rawillk/dotfiles"
+                cwd: "/Users/robin/Developer/kestrel/dotfiles"
             ),
             Agent(
                 paneID: "w2:p5", workspaceID: "w2", tabID: "t3", agentStatus: .unknown,
-                cwd: "/Users/ravil"
+                cwd: "/Users/robin"
             ),
         ]
     }
@@ -192,17 +192,17 @@ extension Pane {
         // falls back to the pane id.
         let body = """
         [{"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
-          "focused":false,"cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
-          "terminal_title":"ravil@rawillkair:~/Developer/partofinc/bleat-apple",
-          "terminal_title_stripped":"ravil@rawillkair:~/Developer/partofinc/bleat-apple"},
+          "focused":false,"cwd":"/Users/robin/Developer/partofinc/bleat-apple",
+          "foreground_cwd":"/Users/robin/Developer/partofinc/bleat-apple",
+          "terminal_title":"robin@studio-mac:~/Developer/partofinc/bleat-apple",
+          "terminal_title_stripped":"robin@studio-mac:~/Developer/partofinc/bleat-apple"},
          {"pane_id":"w2:p3","workspace_id":"w2","tab_id":"w2:t1","agent_status":"unknown",
-          "focused":false,"cwd":"/Users/ravil/Developer/partofinc/bleat-apple",
-          "foreground_cwd":"/Users/ravil/Developer/partofinc/bleat-apple/BleatKit",
+          "focused":false,"cwd":"/Users/robin/Developer/partofinc/bleat-apple",
+          "foreground_cwd":"/Users/robin/Developer/partofinc/bleat-apple/BleatKit",
           "terminal_title":"swift test","terminal_title_stripped":"swift test"},
          {"pane_id":"w653998617a6031:p1","workspace_id":"w653998617a6031",
           "tab_id":"w653998617a6031:t1","agent_status":"unknown","focused":false,
-          "cwd":"/Users/ravil/Developer/rawillk/herdr"}]
+          "cwd":"/Users/robin/Developer/kestrel/herdr"}]
         """
         return (try? JSONDecoder().decode([Pane].self, from: Data(body.utf8))) ?? []
     }
@@ -215,10 +215,10 @@ extension Pane {
     /// truncation the right choice in the row.
     static var sampleDirectories: [String] {
         [
-            "/Users/ravil/Developer/partofinc/bleat-apple",
-            "/Users/ravil/Developer/rawillk/herdr",
-            "/Users/ravil/Developer/nuvio/nuvio-assess",
-            "/Users/ravil/dotfiles",
+            "/Users/robin/Developer/partofinc/bleat-apple",
+            "/Users/robin/Developer/kestrel/herdr",
+            "/Users/robin/Developer/lumen/lumen-assess",
+            "/Users/robin/dotfiles",
         ].sorted()
     }
 }

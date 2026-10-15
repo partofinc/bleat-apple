@@ -37,11 +37,11 @@ MagicDNS name. See the endpoint list in [`pairing.md`](pairing.md), under
 tunnel up:
 
 ```
-rawillkair.local                           lan       — same network only
-192.168.11.54                              lan       — same network only
-100.114.119.30                             overlay   — works over the tunnel
-[fd7a:115c:a1e0::42a:771f]                 overlay   — works over the tunnel
-rawillk.tail2a3bab.ts.net                  overlay   — works over the tunnel
+studio-mac.local                           lan       — same network only
+192.168.50.54                              lan       — same network only
+100.111.222.33                             overlay   — works over the tunnel
+[fd7a:115c:a1e0::42a:abcd]                 overlay   — works over the tunnel
+kestrel.tailf00d42.ts.net                  overlay   — works over the tunnel
 ```
 
 **The classification is the load-bearing part.** Tailscale's CGNAT range is not
@@ -63,7 +63,7 @@ The Phase 1 gate is met over real SSH: connect, list sessions/workspaces/agents,
 attach to a pane, see live frames, send input, resize, detach cleanly. Verified
 against a loopback sshd on 127.0.0.1:2222. **Remote Login is now on** (verified
 4 Sept 2026: port 22 answers `SSH-2.0-OpenSSH_10.3`, and mDNSResponder advertises
-`_ssh._tcp` as `rawillkair.local:22`), so the throwaway-sshd dance is no longer
+`_ssh._tcp` as `studio-mac.local:22`), so the throwaway-sshd dance is no longer
 required to exercise the SSH path — it remains the fallback on a Mac where
 Remote Login is off, since enabling it is a system change needing root.
 

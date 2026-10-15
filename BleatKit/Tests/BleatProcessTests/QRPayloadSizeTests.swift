@@ -36,8 +36,8 @@ struct QRPayloadSizeTests {
 
     private func matrix(endpoints: [String]) throws -> QRMatrix {
         let payload = PairingPayload(
-            name: "rawillk.air",
-            username: "ravil",
+            name: "kestrel.air",
+            username: "robin",
             endpoints: endpoints.map { Endpoint(string: $0)! },
             enrollmentSeed: Data(repeating: 7, count: 32),
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB8x2Vw0jKQe5vJ0aXqE1YQ7pQ0mZ8Nn4T6cLd9RfKpP"
@@ -52,13 +52,13 @@ struct QRPayloadSizeTests {
     @Test("the worst realistic payload still fits a full-screen terminal")
     func worstCaseFits() throws {
         let matrix = try matrix(endpoints: [
-            "rawillkair.local",
-            "[2a00:f3c:5ad0:0:c29:6db5:4a49:dc53]",
-            "192.168.11.54",
+            "studio-mac.local",
+            "[2001:db8:5ad0:0:c29:6db5:4a49:dc53]",
+            "192.168.50.54",
             "[fd74:e60:b537:4fb6:4bd:a9e4:d43:fc95]",
-            "100.114.119.30",
-            "[fd7a:115c:a1e0::42a:771f]",
-            "rawillk.tail2a3bab.ts.net",
+            "100.111.222.33",
+            "[fd7a:115c:a1e0::42a:abcd]",
+            "kestrel.tailf00d42.ts.net",
         ])
         let rows = (matrix.size + 1) / 2
         // 3 rows of chrome — title, host key, footer — and no blank spacers.
@@ -72,8 +72,8 @@ struct QRPayloadSizeTests {
     /// out of byte mode.
     @Test("the MagicDNS name costs a couple of rows, not a screenful")
     func theNameIsCheap() throws {
-        let lan = ["rawillkair.local", "192.168.11.54", "[fd7a:115c:a1e0::42a:771f]", "100.114.119.30"]
-        let withName = try matrix(endpoints: lan + ["rawillk.tail2a3bab.ts.net"]).size
+        let lan = ["studio-mac.local", "192.168.50.54", "[fd7a:115c:a1e0::42a:abcd]", "100.111.222.33"]
+        let withName = try matrix(endpoints: lan + ["kestrel.tailf00d42.ts.net"]).size
         let without = try matrix(endpoints: lan).size
         #expect(withName > without)
         #expect((withName - without) / 2 <= 4, "the name grew the code by \((withName - without) / 2) rows")

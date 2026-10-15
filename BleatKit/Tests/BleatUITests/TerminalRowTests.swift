@@ -29,8 +29,8 @@ struct TerminalRowTests {
     @Test("an idle shell's title is its directory, so the path is not repeated")
     func titledWithItsOwnDirectory() throws {
         let shell = try pane(
-            title: "ravil@rawillkair:~/Developer/autorq/link-apple",
-            cwd: "/Users/ravil/Developer/autorq/link-apple"
+            title: "robin@studio-mac:~/Developer/zenith/link-apple",
+            cwd: "/Users/robin/Developer/zenith/link-apple"
         )
         #expect(TerminalRow.directory(for: shell) == nil)
     }
@@ -41,7 +41,7 @@ struct TerminalRowTests {
     /// with it.
     @Test("a shell in the home directory says it with a tilde")
     func home() throws {
-        let shell = try pane(title: "ravil@rawillkair:~", cwd: "/Users/ravil")
+        let shell = try pane(title: "robin@studio-mac:~", cwd: "/Users/robin")
         #expect(TerminalRow.directory(for: shell) == nil)
     }
 
@@ -51,15 +51,15 @@ struct TerminalRowTests {
     @Test("a shell titled with a tilde still shows where its process moved to")
     func homeWithAProcessElsewhere() throws {
         let moved = try pane(
-            title: "ravil@rawillkair:~", cwd: "/Users/ravil", foreground: "/Users/ravil/Developer"
+            title: "robin@studio-mac:~", cwd: "/Users/robin", foreground: "/Users/robin/Developer"
         )
-        #expect(TerminalRow.directory(for: moved) == "/Users/ravil/Developer")
+        #expect(TerminalRow.directory(for: moved) == "/Users/robin/Developer")
     }
 
     @Test("a running command is not the directory, so the path is shown")
     func runningCommand() throws {
-        let running = try pane(title: "swift test", cwd: "/Users/ravil/Developer/partofinc/bleat-apple")
-        #expect(TerminalRow.directory(for: running) == "/Users/ravil/Developer/partofinc/bleat-apple")
+        let running = try pane(title: "swift test", cwd: "/Users/robin/Developer/partofinc/bleat-apple")
+        #expect(TerminalRow.directory(for: running) == "/Users/robin/Developer/partofinc/bleat-apple")
     }
 
     /// The false positive a plain suffix test had: the command's last word is
@@ -72,9 +72,9 @@ struct TerminalRowTests {
 
     @Test("an untitled pane falls back to its id, and keeps its path")
     func untitled() throws {
-        let untitled = try pane(title: nil, cwd: "/Users/ravil/Developer")
+        let untitled = try pane(title: nil, cwd: "/Users/robin/Developer")
         #expect(untitled.displayTitle == "w2:p3")
-        #expect(TerminalRow.directory(for: untitled) == "/Users/ravil/Developer")
+        #expect(TerminalRow.directory(for: untitled) == "/Users/robin/Developer")
     }
 
     @Test("a pane the host gave no directory for shows none")

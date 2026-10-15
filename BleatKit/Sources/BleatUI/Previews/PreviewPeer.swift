@@ -21,17 +21,17 @@ extension PairedPeer {
     static var preview: PairedPeer {
         var peer = PairedPeer(
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG5cjZ26Q+4UUiEfZnfwG+hUvC3MasbyQN8yihaMCcTY",
-            name: "rawillk.air",
-            username: "ravil",
+            name: "kestrel.air",
+            username: "robin",
             endpoints: [
-                Endpoint(host: "rawillkair.local"),
-                Endpoint(host: "192.168.11.54"),
-                Endpoint(host: "rawillk.tail2a3bab.ts.net"),
+                Endpoint(host: "studio-mac.local"),
+                Endpoint(host: "192.168.50.54"),
+                Endpoint(host: "kestrel.tailf00d42.ts.net"),
             ],
             herdrPath: "/opt/homebrew/bin/herdr",
             deviceMarker: "bleat-device-9f2c1a4e"
         )
-        peer.lastGoodEndpoint = Endpoint(host: "192.168.11.54")
+        peer.lastGoodEndpoint = Endpoint(host: "192.168.50.54")
         peer.hostInfo = .sampleMac
         return peer
     }
@@ -43,10 +43,10 @@ extension PairedPeer {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBv4kDh8Wq2LZ0nT1sRr9xYcPmKjEuA6oVdHgNfSbQwX",
             name: "studio",
-            username: "ravil",
+            username: "robin",
             endpoints: [
-                Endpoint(host: "studio.tail2a3bab.ts.net", port: 2222),
-                Endpoint(host: "100.114.119.30", port: 2222),
+                Endpoint(host: "studio.tailf00d42.ts.net", port: 2222),
+                Endpoint(host: "100.111.222.33", port: 2222),
             ],
             herdrPath: "/usr/local/bin/herdr",
             deviceMarker: "bleat-device-3d70b8c5",
@@ -63,7 +63,7 @@ extension PairedPeer {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHqW3mR8tYvL5aBnKzXcJ2dPfEoUi7SgMhVrQwZyNbTA",
             name: "mini",
-            username: "ravil",
+            username: "robin",
             endpoints: [Endpoint(host: "mini.local")]
         )
     }

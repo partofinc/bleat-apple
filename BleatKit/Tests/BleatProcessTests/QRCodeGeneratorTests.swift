@@ -39,9 +39,9 @@ struct QRCodeGeneratorTests {
     @Test("a full-size pairing payload is correctly oriented")
     func fullSizeOrientation() throws {
         let payload = PairingPayload(
-            name: "rawillk.air", username: "ravil",
-            endpoints: [Endpoint(host: "rawillkair.local"), Endpoint(host: "192.168.11.54"),
-                        Endpoint(host: "2a00:f3c:5ad0:0:c29:6db5:4a49:dc53", port: 2222)],
+            name: "kestrel.air", username: "robin",
+            endpoints: [Endpoint(host: "studio-mac.local"), Endpoint(host: "192.168.50.54"),
+                        Endpoint(host: "2001:db8:5ad0:0:c29:6db5:4a49:dc53", port: 2222)],
             enrollmentSeed: Data(repeating: 0xA7, count: 32),
             hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBPdxsAyNEaNtfx47Futg4ERIBkkAsvtWfxnTeKq0jct")
         let matrix = try #require(QRCodeGenerator.matrix(for: try payload.urlString()))

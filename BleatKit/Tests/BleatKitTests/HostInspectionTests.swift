@@ -31,8 +31,8 @@ struct SSHPublicKeyLineTests {
     func withComment() throws {
         let base = try #require(String(data: Fixture.data("ssh_host_ed25519_key.pub"), encoding: .utf8))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let line = try #require(SSHPublicKeyLine(line: base + " root@rawillk air"))
-        #expect(line.comment == "root@rawillk air")
+        let line = try #require(SSHPublicKeyLine(line: base + " root@kestrel air"))
+        #expect(line.comment == "root@kestrel air")
         // A comment must not change the fingerprint: it is not in the blob.
         #expect(line.fingerprint == "SHA256:5kgLcSfLx2/OaEHRcfc7PhrQ2uLNlTc8aL19AfjYn78")
     }
@@ -97,8 +97,8 @@ struct InterfaceAddressesTests {
     @Test("a real ifconfig yields only the addresses a phone could reach")
     func realOutput() throws {
         #expect(try endpoints().map(\.host) == [
-            "192.168.11.54",
-            "2a00:f3c:5ad0:0:c29:6db5:4a49:dc53",
+            "192.168.50.54",
+            "2001:db8:5ad0:0:c29:6db5:4a49:dc53",
         ])
     }
 
@@ -109,8 +109,8 @@ struct InterfaceAddressesTests {
     @Test("temporary privacy addresses are excluded, since they rotate")
     func skipsTemporary() throws {
         let hosts = try endpoints().map(\.host)
-        #expect(!hosts.contains("2a00:f3c:5ad0:0:49c5:c03a:bea8:3706"))
-        #expect(!hosts.contains("2a00:f3c:5ad0:0:bdf2:4ccc:1b87:c0e"))   // deprecated too
+        #expect(!hosts.contains("2001:db8:5ad0:0:49c5:c03a:bea8:3706"))
+        #expect(!hosts.contains("2001:db8:5ad0:0:bdf2:4ccc:1b87:c0e"))   // deprecated too
     }
 
     @Test("link-local, loopback and AWDL interfaces contribute nothing")
@@ -154,9 +154,9 @@ struct InterfaceAddressesTests {
         vmnet1: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         \tinet 10.211.55.2 netmask 0xffffff00 broadcast 10.211.55.255
         en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
-        \tinet 192.168.11.54 netmask 0xffffff00 broadcast 192.168.11.255
+        \tinet 192.168.50.54 netmask 0xffffff00 broadcast 192.168.50.255
         """
-        #expect(InterfaceAddresses.endpoints(ifconfigOutput: output).map(\.host) == ["192.168.11.54"])
+        #expect(InterfaceAddresses.endpoints(ifconfigOutput: output).map(\.host) == ["192.168.50.54"])
     }
 
     /// Linux's net-tools `ifconfig` has another layout — two spaces before
@@ -166,7 +166,7 @@ struct InterfaceAddressesTests {
     func readsLinuxIfconfig() throws {
         let text = try #require(String(data: Fixture.data("ifconfig-linux-docker.txt"), encoding: .utf8))
         #expect(InterfaceAddresses.endpoints(ifconfigOutput: text).map(\.host) == [
-            "192.168.11.67", "2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c",
+            "192.168.50.67", "2001:db8:5ad0:0:2ecf:67ff:fec0:fa8c",
         ])
     }
 
@@ -201,7 +201,7 @@ struct InterfaceAddressesTests {
 
         """
         let hosts = InterfaceAddresses.endpoints(ifconfigOutput: extended).map(\.host)
-        #expect(hosts == ["192.168.11.67", "2a00:f3c:5ad0:0:2ecf:67ff:fec0:fa8c"])
+        #expect(hosts == ["192.168.50.67", "2001:db8:5ad0:0:2ecf:67ff:fec0:fa8c"])
     }
 
     /// A down interface still prints its last address. Without the flag check a

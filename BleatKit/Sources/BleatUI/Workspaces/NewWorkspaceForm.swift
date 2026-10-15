@@ -202,7 +202,7 @@ struct NewWorkspaceForm: View {
 /// The ordinary case: a directory picked from the host's own list.
 #Preview("Naming", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer/partofinc/bleat-apple",
+        previewing: "/Users/robin/Developer/partofinc/bleat-apple",
         suggestions: Pane.sampleDirectories
     ))
 }
@@ -222,8 +222,8 @@ struct NewWorkspaceForm: View {
 /// The host answered: there is no such directory. Nothing was created.
 #Preview("No such directory", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developr",
-        failure: "There is no directory at /Users/ravil/Developr on this host."
+        previewing: "/Users/robin/Developr",
+        failure: "There is no directory at /Users/robin/Developr on this host."
     ))
 }
 
@@ -232,9 +232,9 @@ struct NewWorkspaceForm: View {
 /// previewed: it is the state nobody will otherwise ever look at.
 #Preview("Landed elsewhere", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer",
-        warning: "Created Developer, but its pane opened in /Users/ravil rather than "
-            + "/Users/ravil/Developer."
+        previewing: "/Users/robin/Developer",
+        warning: "Created Developer, but its pane opened in /Users/robin rather than "
+            + "/Users/robin/Developer."
     ))
 }
 
@@ -243,7 +243,7 @@ struct NewWorkspaceForm: View {
 /// been made. The button is spent either way.
 #Preview("Cannot tell", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer",
+        previewing: "/Users/robin/Developer",
         warning: "the connection closed before this finished\n\nThe workspace may or may not "
             + "have been created — pull the list down to see."
     ))
@@ -252,13 +252,13 @@ struct NewWorkspaceForm: View {
 /// A label the session already has. herdr allows it; the footer says so.
 #Preview("Duplicate label", traits: .sampleData) {
     NewWorkspacePreview(
-        model: NewWorkspaceModel(previewing: "/Users/ravil/Developer/forge", label: "forge")
+        model: NewWorkspaceModel(previewing: "/Users/robin/Developer/forge", label: "forge")
     )
 }
 
 #Preview("Creating", traits: .sampleData) {
     NewWorkspacePreview(model: NewWorkspaceModel(
-        previewing: "/Users/ravil/Developer/partofinc/bleat-apple", isCreating: true
+        previewing: "/Users/robin/Developer/partofinc/bleat-apple", isCreating: true
     ))
 }
 

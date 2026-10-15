@@ -94,7 +94,7 @@ struct EnrollmentShellTests {
         // A key the user put there. `+` in the blob is deliberate: it is an ERE
         // metacharacter, and an unescaped pattern built from a *different* key
         // could match this line and delete it.
-        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj ravil@laptop"
+        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj robin@laptop"
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(line: usersKey))
 
         let enrollment = SSHKeyPair()
@@ -194,7 +194,7 @@ struct EnrollmentShellTests {
 
         let ssh = home.appendingPathComponent(".ssh")
         try FileManager.default.createDirectory(at: ssh, withIntermediateDirectories: true)
-        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj ravil@laptop"
+        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj robin@laptop"
         try usersKey.write(   // no trailing newline, deliberately
             to: ssh.appendingPathComponent("authorized_keys"), atomically: true, encoding: .utf8
         )
@@ -256,7 +256,7 @@ struct EnrollmentShellTests {
         defer { try? FileManager.default.removeItem(at: home) }
         let shell = LocalShell(home: home)
 
-        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj ravil@laptop"
+        let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj robin@laptop"
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(line: usersKey))
 
         // This device, from an earlier pairing, under an older marker.

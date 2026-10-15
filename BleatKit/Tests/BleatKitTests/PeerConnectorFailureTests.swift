@@ -37,11 +37,11 @@ struct PeerConnectorFailureTests {
     @Test("all-overlay endpoints name the VPN rather than the network")
     func overlayOnlyNamesTheVPN() {
         let text = message([
-            Endpoint(host: "100.114.119.30", port: 22),
+            Endpoint(host: "100.111.222.33", port: 22),
             Endpoint(host: "somemac.tailexample.ts.net", port: 22),
         ])
         #expect(text.contains("VPN"))
-        #expect(text.contains("100.114.119.30"))
+        #expect(text.contains("100.111.222.33"))
     }
 
     /// A LAN address in the list means the phone is on Wi-Fi and the ordinary
@@ -51,7 +51,7 @@ struct PeerConnectorFailureTests {
     func mixedGetsTheOrdinaryMessage() {
         let endpoints = [
             Endpoint(host: "somemac.local", port: 22),
-            Endpoint(host: "100.114.119.30", port: 22),
+            Endpoint(host: "100.111.222.33", port: 22),
         ]
         #expect(!verdict(endpoints, from: .localLink))
         let text = message(endpoints, everyCandidateNeedsATunnel: false)
@@ -79,7 +79,7 @@ struct PeerConnectorFailureTests {
     /// detected, so there the advice is right.
     @Test("a private address blames the VPN off the link and never on it")
     func privateAddressDependsOnWhereThePhoneIs() {
-        let endpoints = [Endpoint(host: "192.168.11.54", port: 22)]
+        let endpoints = [Endpoint(host: "192.168.50.54", port: 22)]
         #expect(!verdict(endpoints, from: .localLink))
         #expect(verdict(endpoints, from: LinkState(onLocalLink: false, tunnelActive: true)))
     }
@@ -95,7 +95,7 @@ struct PeerConnectorFailureTests {
     @Test("a narrowed list is not read as a VPN problem")
     func narrowedListIsNotAVPNProblem() {
         let text = message(
-            [Endpoint(host: "100.114.119.30", port: 22)],
+            [Endpoint(host: "100.111.222.33", port: 22)],
             everyCandidateNeedsATunnel: false
         )
         #expect(!text.contains("VPN"))
@@ -109,7 +109,7 @@ struct PeerConnectorFailureTests {
     /// address was dialled at all.
     @Test("the VPN failure is a distinct case, not a different sentence")
     func vpnFailureIsItsOwnCase() {
-        let endpoints = [Endpoint(host: "100.114.119.30", port: 22)]
+        let endpoints = [Endpoint(host: "100.111.222.33", port: 22)]
         let error = PeerConnector.failure(
             from: [], endpoints: endpoints, everyCandidateNeedsATunnel: true
         )
@@ -123,7 +123,7 @@ struct PeerConnectorFailureTests {
     /// the record describes, which is not about addresses at all.
     @Test("a host key mismatch is still promoted over everything")
     func mismatchWins() {
-        let endpoint = Endpoint(host: "100.114.119.30", port: 22)
+        let endpoint = Endpoint(host: "100.111.222.33", port: 22)
         let error = PeerConnector.failure(
             from: [(endpoint, TransportError.hostKeyMismatch(expected: "a", actual: "b"))],
             endpoints: [endpoint]
@@ -138,7 +138,7 @@ struct PeerConnectorFailureTests {
     /// up and saying otherwise would be false.
     @Test("a refused key is promoted over the VPN message")
     func authenticationWins() {
-        let endpoint = Endpoint(host: "100.114.119.30", port: 22)
+        let endpoint = Endpoint(host: "100.111.222.33", port: 22)
         let error = PeerConnector.failure(
             from: [(endpoint, TransportError.authenticationFailed("no method succeeded"))],
             endpoints: [endpoint]

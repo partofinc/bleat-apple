@@ -24,7 +24,7 @@ struct PaneControlTests {
         return PaneModel(
             connections: ConnectionStore(peers: peers, reachability: Reachability()),
             peer: PairedPeer(
-                hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+                hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin", endpoints: []
             ),
             session: "scratch",
             target: "w1:p1"

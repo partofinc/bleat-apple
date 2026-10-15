@@ -36,7 +36,7 @@ struct TerminalRow: View {
     /// Where the pane is working, shown **only when the title does not already
     /// say it**.
     ///
-    /// A login shell's title is its own directory — `ravil@rawillkair:~/
+    /// A login shell's title is its own directory — `robin@studio-mac:~/
     /// Developer/link-apple` in `Fixtures/pane-list.json` — so the path
     /// underneath would repeat the line above it for every idle shell. When
     /// something is running the title is that command instead, and then the
@@ -47,7 +47,7 @@ struct TerminalRow: View {
     /// segment is taken after the final `/` **or `:`**, so `git log` run in
     /// `/var/log` no longer reads as the title repeating the directory. And a
     /// shell sitting in the home directory titles itself `user@host:~` against
-    /// a `cwd` of `/Users/ravil`, which matches nothing by name — that is the
+    /// a `cwd` of `/Users/robin`, which matches nothing by name — that is the
     /// shape every session the phone starts has, since its one workspace is the
     /// SSH user's home, so `~` is taken as saying the same thing.
     ///

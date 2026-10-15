@@ -93,7 +93,7 @@ struct AddEndpointView: View {
     ///
     /// **`Endpoint(string:)` alone is not enough**, because it is a parser and
     /// not a validator: anything without a colon becomes a hostname verbatim,
-    /// so `ravil@mac.internal` — a very natural paste — `ssh mac.local` and
+    /// so `robin@mac.internal` — a very natural paste — `ssh mac.local` and
     /// `mac.local/foo` would all enable the button and be stored. And an
     /// address added here is permanently sticky, since detection can never
     /// report it: it would be dialled in every race from then on, costing a
@@ -108,8 +108,8 @@ struct AddEndpointView: View {
 
     private func add() {
         guard let endpoint = parsed else { return }
-        // `Endpoint` lower-cases its host, so this catches `RawillkAir.local`
-        // against a stored `rawillkair.local` — which DNS treats as one machine
+        // `Endpoint` lower-cases its host, so this catches `Studio-Mac.local`
+        // against a stored `studio-mac.local` — which DNS treats as one machine
         // and `Hashable` would not.
         guard !peer.endpoints.contains(endpoint) else {
             failure = "\(endpoint) is already on the list."

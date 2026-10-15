@@ -9,7 +9,7 @@ import Testing
 struct InvitationShellTests {
 
     /// A key the user put there, which nothing here may touch.
-    private let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj ravil@laptop"
+    private let usersKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMhKfcrGJN9TJkeFBij/SoJie+EkZFSkE0zVCLVZbsnj robin@laptop"
 
     private let peer = PairedPeer(
         hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG5cjZ26Q+4UUiEfZnfwG+hUvC3MasbyQN8yihaMCcTY",

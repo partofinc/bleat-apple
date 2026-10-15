@@ -30,7 +30,7 @@ struct NewWorkspaceTests {
 
     @Test("an absolute path arms the button")
     func absolutePathIsAllowed() {
-        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
+        let model = NewWorkspaceModel(previewing: "/Users/robin/Developer")
         #expect(model.pathProblem == nil)
         #expect(model.canCreate)
     }
@@ -39,7 +39,7 @@ struct NewWorkspaceTests {
     /// lying about what leaving the field blank will do.
     @Test("the label placeholder is the folder's name")
     func placeholderIsTheBasename() {
-        #expect(NewWorkspaceModel(previewing: "/Users/ravil/Developer/partofinc/bleat-apple")
+        #expect(NewWorkspaceModel(previewing: "/Users/robin/Developer/partofinc/bleat-apple")
             .labelPlaceholder == "bleat-apple")
     }
 
@@ -54,8 +54,8 @@ struct NewWorkspaceTests {
     @Test("editing the path is not still an error")
     func failureIsClearable() {
         let model = NewWorkspaceModel(
-            previewing: "/Users/ravil/Developr",
-            failure: "There is no directory at /Users/ravil/Developr on this host."
+            previewing: "/Users/robin/Developr",
+            failure: "There is no directory at /Users/robin/Developr on this host."
         )
         #expect(model.failure != nil)
         model.clearFailure()
@@ -69,9 +69,9 @@ struct NewWorkspaceTests {
     @Test("a warning disarms the button rather than inviting a retry")
     func aWarningDisarms() {
         let model = NewWorkspaceModel(
-            previewing: "/Users/ravil/Developer",
-            warning: "Created Developer, but its pane opened in /Users/ravil rather than "
-                + "/Users/ravil/Developer."
+            previewing: "/Users/robin/Developer",
+            warning: "Created Developer, but its pane opened in /Users/robin rather than "
+                + "/Users/robin/Developer."
         )
         #expect(model.directory != nil, "the path itself is fine; it is the outcome that is not")
         #expect(!model.canCreate)
@@ -87,10 +87,10 @@ struct NewWorkspaceTests {
     @Test("editing the path does not clear a warning, but reopening the sheet does")
     func onlyResetClearsAWarning() {
         let model = NewWorkspaceModel(
-            previewing: "/Users/ravil/Developer",
+            previewing: "/Users/robin/Developer",
             label: "Developer",
             failure: "something went wrong",
-            warning: "Created Developer, but its pane opened in /Users/ravil."
+            warning: "Created Developer, but its pane opened in /Users/robin."
         )
         // Editing is not undoing: something may be on the host.
         model.clearFailure()
@@ -114,7 +114,7 @@ struct NewWorkspaceTests {
     /// writes. A canvas that dialled would make a workspace on the dev Mac.
     @Test("a parked model creates nothing")
     func parkedCreatesNothing() async {
-        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer")
+        let model = NewWorkspaceModel(previewing: "/Users/robin/Developer")
         #expect(await model.create(on: .preview) == .failed)
         #expect(model.failure == nil, "a parked create reported a failure, so it tried")
         #expect(model.warning == nil)
@@ -127,10 +127,10 @@ struct NewWorkspaceTests {
     /// directory about one that plainly exists.
     @Test("a path pasted with a trailing newline is still a path")
     func tolerantOfAPastedNewline() {
-        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer\n")
+        let model = NewWorkspaceModel(previewing: "/Users/robin/Developer\n")
         #expect(model.pathProblem == nil)
         #expect(model.canCreate)
-        #expect(model.directory?.path == "/Users/ravil/Developer")
+        #expect(model.directory?.path == "/Users/robin/Developer")
     }
 
     /// A field holding nothing but a pasted newline is still an untouched
@@ -151,7 +151,7 @@ struct NewWorkspaceTests {
     /// instead of the basename the placeholder promised.
     @Test("a label of nothing but spaces falls back to the folder's name")
     func blankLabelIsNoLabel() {
-        let model = NewWorkspaceModel(previewing: "/Users/ravil/Developer", label: "   ")
+        let model = NewWorkspaceModel(previewing: "/Users/robin/Developer", label: "   ")
         #expect(model.trimmedLabel.isEmpty)
         #expect(model.labelPlaceholder == "Developer")
     }

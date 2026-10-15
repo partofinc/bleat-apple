@@ -76,7 +76,7 @@ struct AuthorizedKeyEntryTests {
     @Test("a key without a Bleat marker is not an entry")
     func foreignKeysAreIgnored() {
         for line in [
-            SSHKeyPair().authorizedKeyLine(comment: "ravil@rawillk.air"),
+            SSHKeyPair().authorizedKeyLine(comment: "robin@kestrel.air"),
             SSHKeyPair().authorizedKeyLine(comment: ""),
             "# a comment",
             "",
@@ -109,7 +109,7 @@ struct AuthorizedKeyEntryTests {
     @Test("a marker in the middle of a comment is not the marker")
     func markerIsTheLastField() {
         let key = SSHKeyPair().authorizedKeyLine(comment: AuthorizedKeys.deviceMarker().value)
-        #expect(AuthorizedKeys.Entry.parse(line: "\(key) ravil") == nil)
+        #expect(AuthorizedKeys.Entry.parse(line: "\(key) robin") == nil)
     }
 
     /// Options may contain a **quoted space**, which splits into two fields and
@@ -167,7 +167,7 @@ struct AuthorizedKeyEntryTests {
         let first = AuthorizedKeys.deviceMarker()
         let second = AuthorizedKeys.deviceMarker()
         let output = [
-            SSHKeyPair().authorizedKeyLine(comment: "ravil@rawillk.air"),
+            SSHKeyPair().authorizedKeyLine(comment: "robin@kestrel.air"),
             deviceLine(first),
             enrollmentLine(),
             deviceLine(second),

@@ -8,15 +8,15 @@ struct SSHHostTests {
 
     @Test("user@host defaults to port 22")
     func plain() throws {
-        let host = try SSHHost(parsing: "ravil@10.0.0.5")
-        #expect(host.username == "ravil")
+        let host = try SSHHost(parsing: "robin@10.0.0.5")
+        #expect(host.username == "robin")
         #expect(host.hostname == "10.0.0.5")
         #expect(host.port == 22)
     }
 
     @Test("explicit port")
     func withPort() throws {
-        let host = try SSHHost(parsing: "ravil@10.0.0.5:2222")
+        let host = try SSHHost(parsing: "robin@10.0.0.5:2222")
         #expect(host.hostname == "10.0.0.5")
         #expect(host.port == 2222)
     }
@@ -24,21 +24,21 @@ struct SSHHostTests {
     @Test("a bare IPv6 literal is not split on its own colons")
     func ipv6() throws {
         // Splitting on the last colon would read this as host "fe80:" port 1.
-        let host = try SSHHost(parsing: "ravil@fe80::1")
+        let host = try SSHHost(parsing: "robin@fe80::1")
         #expect(host.hostname == "fe80::1")
         #expect(host.port == 22)
     }
 
     @Test("bracketed IPv6 carries an explicit port")
     func ipv6Bracketed() throws {
-        let host = try SSHHost(parsing: "ravil@[fe80::1]:2222")
+        let host = try SSHHost(parsing: "robin@[fe80::1]:2222")
         #expect(host.hostname == "fe80::1")
         #expect(host.port == 2222)
     }
 
     @Test("rejects malformed specs", arguments: [
         "10.0.0.5",        // no user
-        "ravil@",          // no host
+        "robin@",          // no host
         "@10.0.0.5",       // empty user
     ])
     func rejects(_ spec: String) {
@@ -47,8 +47,8 @@ struct SSHHostTests {
 
     @Test("rejects an out-of-range port")
     func badPort() {
-        #expect(throws: SSHHostParseError.badPort("ravil@h:99999")) {
-            try SSHHost(parsing: "ravil@h:99999")
+        #expect(throws: SSHHostParseError.badPort("robin@h:99999")) {
+            try SSHHost(parsing: "robin@h:99999")
         }
     }
 
@@ -64,7 +64,7 @@ struct RemoteCommandTests {
 
     private func transport(session: String?, herdrPath: String = "herdr") throws -> SSHTransport {
         SSHTransport(
-            host: try SSHHost(parsing: "ravil@example:22"),
+            host: try SSHHost(parsing: "robin@example:22"),
             privateKey: Curve25519.Signing.PrivateKey(),
             hostKeys: .knownHosts(KnownHostsStore(url: URL(fileURLWithPath: "/dev/null"))),
             herdrPath: herdrPath,

@@ -316,7 +316,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// endpoint that just won the race looks right — it demonstrably reached
     /// sshd — but the winner can be a manually added port forward, which is the
     /// motivating case for adding one at all. A peer with `mac.local:22`,
-    /// `192.168.1.20:22` and `100.114.119.30:22` plus a hand-typed
+    /// `192.168.1.20:22` and `100.111.222.33:22` plus a hand-typed
     /// `home.example.com:2222` connects over the forward from cellular; the
     /// refresh then rebuilds every discovered address at 2222 and supersedes
     /// the three that worked. Back on Wi-Fi every endpoint refuses, and since

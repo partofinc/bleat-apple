@@ -13,7 +13,7 @@ import Foundation
 ///
 /// ```
 /// $ herdr workspace create --cwd /no/such/dir --label ghost
-/// {"result":{"root_pane":{"cwd":"/Users/ravil", …},
+/// {"result":{"root_pane":{"cwd":"/Users/robin", …},
 ///            "workspace":{"label":"ghost", …}}}
 /// ```
 ///
@@ -38,7 +38,7 @@ public struct WorkspaceDirectory: Sendable, Hashable {
         /// **The silent one.** A relative path is resolved against the *server
         /// process's* working directory, not the client's and not the user's
         /// home. Measured: the CLI run from `/tmp` with `--cwd ../` produced a
-        /// pane in `/Users/ravil/Developer/rawillk` — the parent of wherever
+        /// pane in `/Users/robin/Developer/kestrel` — the parent of wherever
         /// `herdr server` happened to be started. From a phone that directory
         /// is whatever the SSH session's home was when the session was
         /// launched, which is not a thing the user can reason about.
@@ -88,11 +88,11 @@ public struct WorkspaceDirectory: Sendable, Hashable {
     ///
     /// | cwd | label |
     /// |---|---|
-    /// | `/Users/ravil/Developer/partofinc/bleat-apple` | `bleat-apple` |
-    /// | `/Users/ravil/Developer` | `Developer` |
+    /// | `/Users/robin/Developer/partofinc/bleat-apple` | `bleat-apple` |
+    /// | `/Users/robin/Developer` | `Developer` |
     /// | `/tmp` | `tmp` |
     /// | `/` | `/` |
-    /// | `/Users/ravil` | **`~`** |
+    /// | `/Users/robin` | **`~`** |
     ///
     /// So: the basename, and offering the same string as a placeholder means
     /// the common case needs no typing and the field is not lying about what
@@ -101,8 +101,8 @@ public struct WorkspaceDirectory: Sendable, Hashable {
     /// **Except for the home directory, where this is knowingly wrong.** herdr
     /// abbreviates it to `~`, and the phone cannot tell which path that is —
     /// nothing in a peer record holds the host's home directory, and asking for
-    /// it would be a round trip for a placeholder. So `/Users/ravil` suggests
-    /// `ravil` while herdr would write `~`. The cost is one wrong hint on one
+    /// it would be a round trip for a placeholder. So `/Users/robin` suggests
+    /// `robin` while herdr would write `~`. The cost is one wrong hint on one
     /// path, paid only by a user who leaves the label blank there; the fix
     /// costs a shell command on every keystroke. Pinned by a test so it is not
     /// mistaken later for an oversight.
@@ -111,7 +111,7 @@ public struct WorkspaceDirectory: Sendable, Hashable {
         return name.isEmpty ? path : name
     }
 
-    /// Trailing slashes removed, so `/Users/ravil/` and `/Users/ravil` are one
+    /// Trailing slashes removed, so `/Users/robin/` and `/Users/robin` are one
     /// directory rather than two with different suggested labels. The root
     /// survives, because it is nothing but a slash.
     ///

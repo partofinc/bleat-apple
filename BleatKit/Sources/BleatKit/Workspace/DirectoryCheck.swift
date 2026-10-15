@@ -14,8 +14,8 @@ import Foundation
 ///   real path, and to the same answer `cd … && pwd -P` gives, which is what
 ///   this check relies on:
 ///   `/tmp` comes back `/private/tmp`, `/var` comes back `/private/var`,
-///   `/Users/ravil//Developer` and `/Users/ravil/Developer/../Developer` both
-///   come back `/Users/ravil/Developer`.
+///   `/Users/robin//Developer` and `/Users/robin/Developer/../Developer` both
+///   come back `/Users/robin/Developer`.
 ///
 /// So a phone that asked for `/tmp` and compared herdr's answer to what it
 /// typed would conclude the workspace had gone somewhere else — about a

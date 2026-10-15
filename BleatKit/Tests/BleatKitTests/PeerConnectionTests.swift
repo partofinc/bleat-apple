@@ -9,7 +9,7 @@ struct PeerConnectionTests {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAKEY",
             name: "Mac",
-            username: "ravil",
+            username: "robin",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
             herdrPath: "/opt/homebrew/bin/herdr"
         )

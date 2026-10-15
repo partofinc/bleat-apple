@@ -47,7 +47,7 @@ struct ManualEndpointTests {
         PairedPeer(
             hostKey: Self.hostKey,
             name: "Mac",
-            username: "ravil",
+            username: "robin",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
             lastGoodEndpoint: lastGood.flatMap { Endpoint(string: $0) }
         )
@@ -243,8 +243,8 @@ struct ManualEndpointTests {
     func caseInsensitiveHosts() throws {
         let temp = TempRegistry()
         let registry = temp.registry
-        try registry.save(peer(["rawillkair.local"]))
-        try registry.addEndpoint(Endpoint(host: "RawillkAir.Local"), forHostKey: Self.hostKey)
+        try registry.save(peer(["studio-mac.local"]))
+        try registry.addEndpoint(Endpoint(host: "Studio-Mac.Local"), forHostKey: Self.hostKey)
         #expect(try registry.peer(hostKey: Self.hostKey)?.endpoints.count == 1)
         #expect(Endpoint(host: "MAC.local") == Endpoint(host: "mac.local"))
     }
@@ -257,7 +257,7 @@ struct ManualEndpointTests {
     @Test("the shapes people actually paste are refused")
     func implausibleHostsAreRefused() {
         for text in [
-            "ravil@mac.internal", "ssh mac.local", "mac.local/foo", "https://mac.local",
+            "robin@mac.internal", "ssh mac.local", "mac.local/foo", "https://mac.local",
             "mac..local", ".mac.local", "mac local", "", "mac\"local",
         ] {
             let host = Endpoint(string: text)?.host
@@ -272,7 +272,7 @@ struct ManualEndpointTests {
     func plausibleHostsAreAccepted() {
         for text in [
             "mac.local", "192.168.1.20", "home.example.com:2222",
-            "[fd7a:115c:a1e0::42a:771f]", "[fe80::1]:2222", "mac-01.internal", "mac",
+            "[fd7a:115c:a1e0::42a:abcd]", "[fe80::1]:2222", "mac-01.internal", "mac",
         ] {
             let endpoint = Endpoint(string: text)
             #expect(endpoint.map { Endpoint.isPlausibleHost($0.host) } == true, "\(text)")

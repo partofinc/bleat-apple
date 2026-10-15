@@ -39,7 +39,7 @@ struct KeyRevocationShellTests {
         let enrollmentMarker = AuthorizedKeys.enrollmentMarker()
 
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
-            line: userKey.authorizedKeyLine(comment: "ravil@rawillk.air")
+            line: userKey.authorizedKeyLine(comment: "robin@kestrel.air")
         ))
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
             line: deviceKey.authorizedKeyLine(comment: deviceMarker.value)
@@ -111,7 +111,7 @@ struct KeyRevocationShellTests {
         #expect(AuthorizedKeys.Entry.parse(output: try await shell.run(shell: AuthorizedKeys.listCommand())).isEmpty)
 
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
-            line: SSHKeyPair().authorizedKeyLine(comment: "ravil@rawillk.air")
+            line: SSHKeyPair().authorizedKeyLine(comment: "robin@kestrel.air")
         ))
         #expect(AuthorizedKeys.Entry.parse(output: try await shell.run(shell: AuthorizedKeys.listCommand())).isEmpty)
     }
@@ -155,7 +155,7 @@ struct KeyRevocationShellTests {
             )
             let shell = LocalShell(home: home)
             let marker = AuthorizedKeys.deviceMarker()
-            let keep = SSHKeyPair().authorizedKeyLine(comment: "ravil@rawillk.air")
+            let keep = SSHKeyPair().authorizedKeyLine(comment: "robin@kestrel.air")
             try "\(keep)\n\(SSHKeyPair().authorizedKeyLine(comment: marker.value))\(trailer)\n"
                 .write(to: home.appendingPathComponent(".ssh/authorized_keys"),
                        atomically: true, encoding: .utf8)

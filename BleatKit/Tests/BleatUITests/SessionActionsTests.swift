@@ -228,7 +228,7 @@ struct SessionActionsTests {
             peers: peers
         )
         let unreachable = PairedPeer(
-            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin", endpoints: []
         )
 
         model.begin(.start, about: session("scratch", running: false), on: unreachable)
@@ -286,7 +286,7 @@ struct SessionActionsTests {
             peers: peers
         )
         let unreachable = PairedPeer(
-            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin", endpoints: []
         )
         _ = try? registry.save(unreachable)
 
@@ -311,7 +311,7 @@ struct SessionActionsTests {
             peers: peers
         )
         let unreachable = PairedPeer(
-            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin", endpoints: []
         )
         let target = session("scratch", running: false)
 
@@ -355,7 +355,7 @@ struct SessionActionsTests {
         )
         let target = session("scratch", running: true)
         let unreachable = PairedPeer(
-            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil", endpoints: []
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin", endpoints: []
         )
 
         model.ask(.stop, about: target)

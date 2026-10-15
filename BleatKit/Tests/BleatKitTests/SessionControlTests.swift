@@ -62,7 +62,7 @@ struct SessionControlTests {
 
     private var peer: PairedPeer {
         PairedPeer(
-            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "ravil",
+            hostKey: "ssh-ed25519 AAAA", name: "mac", username: "robin",
             endpoints: [Endpoint(host: "mac.local")]
         )
     }
@@ -90,7 +90,7 @@ struct SessionControlTests {
     @Test("a peer record written before this existed still decodes")
     func oldRecordsStillDecode() throws {
         let old = #"""
-        {"hostKey":"ssh-ed25519 AAAA","name":"mac","username":"ravil",
+        {"hostKey":"ssh-ed25519 AAAA","name":"mac","username":"robin",
          "endpoints":[{"host":"mac.local","port":22}]}
         """#
         let peer = try JSONDecoder().decode(PairedPeer.self, from: Data(old.utf8))
@@ -107,7 +107,7 @@ struct SessionControlTests {
         var mine = peer
         mine.createdSessions = ["scratch", "spare"]
         let fromQR = PairedPeer(
-            hostKey: mine.hostKey, name: "mac", username: "ravil",
+            hostKey: mine.hostKey, name: "mac", username: "robin",
             endpoints: [Endpoint(host: "100.64.0.1")]
         )
         let merged = try mine.merging(fromQR)
@@ -208,7 +208,7 @@ struct SessionControlTests {
 
     @Test("a peer record written before either claim existed still decodes")
     func oldRecordsDecodeWithNeitherClaim() throws {
-        let old = #"{"hostKey":"ssh-ed25519 AAAA","name":"mac","username":"ravil","endpoints":[]}"#
+        let old = #"{"hostKey":"ssh-ed25519 AAAA","name":"mac","username":"robin","endpoints":[]}"#
         let peer = try JSONDecoder().decode(PairedPeer.self, from: Data(old.utf8))
         #expect(peer.createdSessions == nil)
         #expect(peer.startedSessions == nil)

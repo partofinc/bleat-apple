@@ -141,7 +141,7 @@ struct HostLoadBar: View {
 #Preview("Mac", traits: .sampleData) {
     List { Text("Sessions") }
         .safeAreaBar(edge: .bottom) {
-            HostLoadBar(load: .sampleMac, login: "ravil@rawillk.air", machine: HostInfo.sampleMac.shortModel)
+            HostLoadBar(load: .sampleMac, login: "robin@kestrel.air", machine: HostInfo.sampleMac.shortModel)
         }
 }
 

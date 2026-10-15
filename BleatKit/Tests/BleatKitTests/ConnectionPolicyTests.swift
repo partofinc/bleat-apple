@@ -9,7 +9,7 @@ struct ConnectionPolicyTests {
         PairedPeer(
             hostKey: key,
             name: "Mac",
-            username: "ravil",
+            username: "robin",
             endpoints: [Endpoint(host: "mac.local")],
             herdrPath: "/opt/homebrew/bin/herdr"
         )

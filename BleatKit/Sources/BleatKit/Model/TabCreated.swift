@@ -28,9 +28,9 @@
 /// from any existing pane. So the phone adds tabs.
 ///
 /// **`--cwd` is not sent, because the default is the one we want.** Measured
-/// against a workspace whose panes sit in `/Users/ravil/Developer` while the
+/// against a workspace whose panes sit in `/Users/robin/Developer` while the
 /// server was started in the repo root: the new tab's pane came up in
-/// `/Users/ravil/Developer`. It inherits the *workspace*, not the server — the
+/// `/Users/robin/Developer`. It inherits the *workspace*, not the server — the
 /// opposite of `workspace create`, which is why that one must always be told.
 /// So adding a pane needs no path typed on a phone at all.
 public struct TabCreated: Codable, Sendable, Hashable {

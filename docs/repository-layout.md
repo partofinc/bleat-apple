@@ -168,7 +168,7 @@ What the port needed, each found by the compiler rather than by reading:
   endpoint; the phone's refresh on reconnect found them. `/sbin/ifconfig`
   gave `tailscale0`'s `100.112.148.125` and `fd7a:115c:a1e0::d82a:947e`, both
   classified `overlay`, and `/usr/bin/tailscale` the MagicDNS name
-  `adam.tail2a3bab.ts.net`. This is the first time the refresh was confirmed
+  `adam.tailf00d42.ts.net`. This is the first time the refresh was confirmed
   against a Linux host, and it only worked because both probes use absolute
   paths that exist there.
   - **The mDNS probe is the one the refresh cannot run on Linux.** It is

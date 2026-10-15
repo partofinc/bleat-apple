@@ -18,7 +18,7 @@ public struct LinkState: Sendable, Hashable, Codable {
     /// A tunnel interface is up — a VPN, a zero-trust client, a mesh.
     ///
     /// **This licenses private addresses, not `.local` names.** A tunnel can
-    /// route `192.168.11.54` from anywhere; none of them carry multicast DNS,
+    /// route `192.168.50.54` from anywhere; none of them carry multicast DNS,
     /// which is link-scoped by definition. Conflating the two is what would
     /// make a phone on cellular spend a timeout on an mDNS name that cannot
     /// resolve however many tunnels are up.

@@ -10,8 +10,8 @@
         "HostName": "somemac",
         "DNSName": "somemac.tailexample.ts.net.",
         "TailscaleIPs": [
-            "100.114.119.30",
-            "fd7a:115c:a1e0::42a:771f"
+            "100.111.222.33",
+            "fd7a:115c:a1e0::42a:abcd"
         ],
         "Online": true
     }

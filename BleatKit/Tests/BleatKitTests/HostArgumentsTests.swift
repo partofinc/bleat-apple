@@ -6,8 +6,8 @@ import Testing
 struct HostArgumentsTests {
 
     private let hosts = [
-        HostEntry(name: "dev", spec: "ravil@10.0.0.5", keyPath: "~/k"),
-        HostEntry(name: "box", spec: "ravil@box:2222", keyPath: "~/k"),
+        HostEntry(name: "dev", spec: "robin@10.0.0.5", keyPath: "~/k"),
+        HostEntry(name: "box", spec: "robin@box:2222", keyPath: "~/k"),
     ]
 
     private func resolve(

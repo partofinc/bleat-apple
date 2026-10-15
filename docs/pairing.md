@@ -182,7 +182,7 @@ peer with two endpoints*, not two peers.
     not search `PATH` deliberately, since resolving a tool through the user's
     `PATH` during pairing is a way to execute something else entirely.
     - **`DNSName` comes back fully qualified, with a trailing dot.** Verified
-      live: `rawillk.tail2a3bab.ts.net.`
+      live: `kestrel.tailf00d42.ts.net.`
     - Taken only when `BackendState` is `Running` — a stopped or logged-out
       Tailscale still reports the last state it knew, and an endpoint recorded
       from a tailnet the machine may have left is indistinguishable later from
@@ -703,7 +703,7 @@ rest.
   `bleat inspect --endpoint` avoids by re-parsing against `--port`.
 - **`Endpoint(string:)` is a parser, not a validator**, and this is the first
   place it is fed free text. Anything without a colon becomes a hostname
-  verbatim, so `ravil@mac.internal` — a very natural paste — `ssh mac.local` and
+  verbatim, so `robin@mac.internal` — a very natural paste — `ssh mac.local` and
   `mac.local/foo` would all enable the button and be stored. Permanently:
   detection can never report them, so no refresh prunes them, and each is
   dialled in every race from then on and counted in the message explaining the
@@ -714,7 +714,7 @@ rest.
 - **`Endpoint` lower-cases its host.** DNS is case-insensitive and
   `Equatable`/`Hashable` are not, and every comparison in the refresh path runs
   on that equality: de-duplication, `Report.superseded`, `endpoints.contains`,
-  the `lastGoodEndpoint` match. `RawillkAir.local` beside `rawillkair.local`
+  the `lastGoodEndpoint` match. `Studio-Mac.local` beside `studio-mac.local`
   would be two endpoints for one machine, and the second could never be pruned —
   the host reports one form, so the other looks like an address it never claimed
   — leaving every race dialling the host twice forever. Reachable both by typing

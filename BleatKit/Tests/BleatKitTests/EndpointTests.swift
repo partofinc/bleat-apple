@@ -17,7 +17,7 @@ struct EndpointTests {
     @Test("link-scoped names and addresses need the link, and no tunnel changes that")
     func linkScoped() {
         for host in [
-            "rawillkair.local", "rawillkair.local.", "RawillkAir.Local",
+            "studio-mac.local", "studio-mac.local.", "Studio-Mac.Local",
             "127.0.0.1", "127.1.2.3", "localhost", "::1",
             "169.254.1.1", "fe80::1",
         ] {
@@ -45,7 +45,7 @@ struct EndpointTests {
     @Test("private addresses need the link or a tunnel")
     func privateAddresses() {
         for host in [
-            "192.168.11.54", "10.0.0.5", "172.16.0.1", "172.31.255.254",
+            "192.168.50.54", "10.0.0.5", "172.16.0.1", "172.31.255.254",
             "fd00::1", "fc00::1",
         ] {
             let endpoint = Endpoint(host: host)
@@ -67,7 +67,7 @@ struct EndpointTests {
     /// is the case a plain "are we off-link" flag got wrong.
     @Test("whether an endpoint needs a tunnel depends on where the phone is")
     func needsTunnelIsLinkDependent() {
-        let privateAddress = Endpoint(host: "192.168.11.54")
+        let privateAddress = Endpoint(host: "192.168.50.54")
         #expect(!privateAddress.needsTunnel(from: .localLink))
         #expect(privateAddress.needsTunnel(from: .offLink))
 
@@ -84,7 +84,7 @@ struct EndpointTests {
     @Test("both local-only kinds fail the unaided-cellular test")
     func unaidedCellular() {
         #expect(!Endpoint(host: "mac.local").isUsableOffLink)
-        #expect(!Endpoint(host: "192.168.11.54").isUsableOffLink)
+        #expect(!Endpoint(host: "192.168.50.54").isUsableOffLink)
         #expect(!Endpoint(host: "127.0.0.1").isUsableOffLink)
         #expect(Endpoint(host: "100.101.102.103").isUsableOffLink)
     }
@@ -99,7 +99,7 @@ struct EndpointTests {
         for host in [
             "100.64.0.1", "100.101.102.103", "100.127.255.255",
             "fd7a:115c:a1e0::1", "fd7a:115c:a1e0:ab12:4843:cd96:0:1",
-            "rawillk-air.tailnet-1234.ts.net",
+            "kestrel-air.tailnet-1234.ts.net",
         ] {
             #expect(Endpoint(host: host).reach == .overlay, "\(host)")
             #expect(Endpoint(host: host).isUsableOffLink, "\(host)")
@@ -125,7 +125,7 @@ struct EndpointTests {
 
     @Test("global addresses and public names are routable")
     func routable() {
-        for host in ["2a00:f3c:5ad0:0:c29:6db5:4a49:dc53", "herdr.dev", "203.0.113.7"] {
+        for host in ["2001:db8:5ad0:0:c29:6db5:4a49:dc53", "herdr.dev", "203.0.113.7"] {
             #expect(Endpoint(host: host).reach == .routable, "\(host)")
         }
     }
@@ -139,7 +139,7 @@ struct EndpointParsingTests {
         let cases: [(String, String, Int)] = [
             ("herdr.dev", "herdr.dev", 22),
             ("herdr.dev:2222", "herdr.dev", 2222),
-            ("192.168.11.54:22", "192.168.11.54", 22),
+            ("192.168.50.54:22", "192.168.50.54", 22),
             ("[fe80::1]:2222", "fe80::1", 2222),
             ("[fe80::1]", "fe80::1", 22),
             ("fe80::1", "fe80::1", 22),

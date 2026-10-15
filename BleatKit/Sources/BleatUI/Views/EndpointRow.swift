@@ -52,16 +52,16 @@ struct EndpointRow: View {
 /// distinction the whole Twingate fix turns on.
 #Preview("Every reach", traits: .sampleData) {
     List {
-        EndpointRow(endpoint: Endpoint(host: "rawillkair.local"), isLastGood: false)
-        EndpointRow(endpoint: Endpoint(host: "192.168.11.54"), isLastGood: true)
-        EndpointRow(endpoint: Endpoint(host: "rawillk.tail2a3bab.ts.net"), isLastGood: false)
-        EndpointRow(endpoint: Endpoint(host: "100.114.119.30"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "studio-mac.local"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "192.168.50.54"), isLastGood: true)
+        EndpointRow(endpoint: Endpoint(host: "kestrel.tailf00d42.ts.net"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "100.111.222.33"), isLastGood: false)
         EndpointRow(endpoint: Endpoint(host: "home.example.com", port: 2222), isLastGood: false)
         // Bare, not bracketed: `init(host:)` stores the string verbatim — only
         // `init(string:)` strips brackets — and `description` adds them back
         // for any host containing a colon. Passing a bracketed literal here
         // rendered `[[2a00:…]]`, a shape production cannot produce.
-        EndpointRow(endpoint: Endpoint(host: "2a00:f3c:5ad0:0:c29:6db5:4a49:dc53"), isLastGood: false)
+        EndpointRow(endpoint: Endpoint(host: "2001:db8:5ad0:0:c29:6db5:4a49:dc53"), isLastGood: false)
     }
 }
 #endif

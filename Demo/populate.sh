@@ -14,8 +14,8 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 
-# Run again whenever the herdr client is restarted; the server may have
-# outlived it, so fill the session only once.
+# entrypoint.sh deletes the session before each start, so this normally finds
+# it empty; the check keeps a second run from duplicating everything.
 if herdr workspace list | grep -q '"label": *"web-app"'; then
     echo "demo: already populated"
     exit 0

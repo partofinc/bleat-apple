@@ -59,9 +59,12 @@ sshd_pid=$!
 # --- herdr, as demo, with the same limits applied to the server itself:
 # panes are its children, not SSH logins, so pam_limits never reaches them.
 # demo can stop it (it is theirs); it is then started again and refilled,
-# instead of the machine restarting and unpairing everyone.
+# instead of the machine restarting and unpairing everyone. A stopped herdr
+# session comes back with its workspaces but fresh idle shells, so the old one
+# is deleted first and the new one filled from scratch.
 herdr_loop() {
     while true; do
+        su - demo -c "herdr session stop demo; herdr session delete demo" >/dev/null 2>&1 || true
         su - demo -c "ulimit -u 256 -n 4096 -f 1048576; \
             script -qfec 'stty cols 160 rows 48; exec herdr session attach demo' /dev/null" \
             >/dev/null 2>&1 &

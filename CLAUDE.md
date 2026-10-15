@@ -58,6 +58,7 @@ shipped once, written down so it does not ship twice.
 | [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build, the SDK's ARMv8.1 allocator and what the port needed |
 | [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, approachable concurrency and what is `@concurrent` |
 | [`docs/app-icon.md`](docs/app-icon.md) | the icon, `Design/icon.swift`, and authoring a `.icon` by hand |
+| [`docs/releasing.md`](docs/releasing.md) | the app's `v` tags and Xcode Cloud, the tool's `cli-` tags, `release-cli.sh`, `install.sh`, the Homebrew tap, signing |
 | [`docs/testing.md`](docs/testing.md) | a scratch herdr session, a scratch sshd, testing pairing without touching your own keys |
 | [`docs/phase-history.md`](docs/phase-history.md) | how each phase gate was verified |
 
@@ -81,6 +82,8 @@ BleatKit/                   # the local Swift package
 Support/Info.plist          # the one key that cannot be a build setting
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
+Scripts/release-cli.sh      # publishes the tool: GitHub release + Homebrew formula (docs/releasing.md)
+Scripts/install.sh          # what users pipe into sh to install the tool
 docs/                       # the detail behind this file
 ```
 

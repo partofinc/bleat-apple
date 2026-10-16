@@ -776,9 +776,10 @@ fixed nothing visible; the user had to know to tap "Try again".
   the generated set cannot express — alongside `CFBundleURLTypes`, which is not
   in that set either. `NSLocalNetworkUsageDescription` is an
   `INFOPLIST_KEY_` build setting on the app target. The pair is split, which
-  this file previously argued against; the plist's own comment carries the
-  explanation so the two halves are still findable from each other. Look in the
-  project, not the plist, for the purpose string.
+  this file previously argued against; this note is what keeps the two halves
+  findable from each other, since the plist cannot carry a comment (Xcode
+  strips it — [layout](repository-layout.md)). Look in the project, not the
+  plist, for the purpose string.
 - **Only "nothing answered" is retried.** A host key mismatch or a refused key
   means a machine *was* reached, so waiting on a permission would hide what the
   user has to see. Retrying is safe because the enrollment key is spent only by

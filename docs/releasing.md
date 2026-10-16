@@ -24,8 +24,8 @@ first run was a plain build, so the first archive is build 2 or later.
 ## The tool
 
 ```sh
-# in a clean checkout of the commit to release (a worktree avoids Xcode's
-# Info.plist rewrite), with Version.swift already at the new version:
+# in a clean checkout of the commit to release (a worktree keeps the open
+# Xcode's edits out of it), with Version.swift already at the new version:
 Scripts/release-cli.sh 1.0.0 [--draft] [--skip-tap]
 ```
 

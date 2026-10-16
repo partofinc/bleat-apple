@@ -659,7 +659,7 @@ Herdr. `HostRegistry` stays in `BleatKit` for the console tool.
   merges the generated keys *into* that file — checked in the built product,
   where `CFBundleURLTypes` and `NSCameraUsageDescription` and the scene manifest
   are all present. So `Support/Info.plist` carries the one key that cannot be a
-  build setting and nothing else, and it sits outside `App/` so the target's
+  build setting and nothing else (two, with `NSBonjourServices`), and it sits outside `App/` so the target's
   synchronized group does not also copy it in as a resource.
   - The scheme string is duplicated between that file and
     `PairingPayload.urlScheme`, which is what `bleat pair` puts in the QR. No

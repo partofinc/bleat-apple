@@ -50,7 +50,7 @@ BleatKit/                   # the local Swift package
   Fixtures/
     schema.json             # output of `herdr api schema --json` (source of truth)
     *.json                  # captured CLI outputs for decoding tests
-Support/Info.plist          # the one key that cannot be a build setting
+Support/Info.plist          # the two keys that cannot be build settings
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
 ```
@@ -224,21 +224,25 @@ Moved here from `CLAUDE.md`, which keeps the one-line rules.
     app). That is tolerable where the build directories were not, but it is
     worth knowing when something in Xcode behaves oddly.
 
-- **`git add -A` can silently strip `Support/Info.plist`'s comments, because
-  Xcode rewrites that file.** Caught in review, 30 Sept 2026: a commit that
-  touched only doc comments also deleted the 25-line XML comment explaining why
-  that plist exists at all — the two keys that cannot be build settings, the
-  `PairingPayload.urlScheme` coupling no test can assert, and why
-  `NSBonjourServices` is not optional. The keys themselves survived; only the
-  reasoning went, which is the worse loss in a file nobody reads twice.
-  - **`xcodebuild build` is not the culprit** — reproduced with a scratch
-    `-derivedDataPath` and the file's md5 was unchanged. It is the **open
-    Xcode**, which normalises a plist it manages, and plist serialisation drops
-    comments. Same family as the DerivedData note below: the GUI and the command
-    line both think they own things in here.
-  - So **stage paths deliberately in this repo rather than `-A`**, and if the
-    plist does appear in `git status` unexpectedly, diff it before staging:
-    `PlistBuddy -c Print` on both versions says whether any *key* really moved.
+- **`Support/Info.plist` carries no comments, because Xcode owns it.** The open
+  Xcode normalises a plist it manages, and a plist is data — serialising it
+  keeps keys and values and has nowhere to keep an XML comment. So a 25-line
+  comment explaining the file was stripped every time Xcode touched it, showed
+  up as a permanent change in `git status`, and was kept out of commits by hand
+  for weeks (30 Sept to 16 Oct 2026). Nothing about the setup was incompatible;
+  the comment was simply in a file whose format cannot hold one. It was given
+  up, and its reasoning lives where a tool will not rewrite it:
+  - the file exists for the two keys that cannot be build settings,
+    `CFBundleURLTypes` and `NSBonjourServices` (an array), and Xcode merges the
+    generated `INFOPLIST_KEY_*` keys into it — [app screens](app-screens.md);
+  - the URL scheme must match `PairingPayload.urlScheme`, which no package test
+    can assert — [app screens](app-screens.md);
+  - `NSBonjourServices` is not optional and must match
+    `LocalNetworkAccess.serviceType` — [pairing](pairing.md).
+  - **`xcodebuild build` does not rewrite it** (md5 unchanged with a scratch
+    `-derivedDataPath`); the open Xcode does. If the plist appears in
+    `git status`, `PlistBuddy -c Print` on both versions says whether a *key*
+    really moved — that is the only change worth reviewing there.
 
 - **Command-line `xcodebuild` must pass `-derivedDataPath`, or it fights Xcode.**
   Without it, `xcodebuild -scheme Bleat` writes into the *same* DerivedData the

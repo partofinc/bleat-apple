@@ -80,7 +80,7 @@ BleatKit/                   # the local Swift package
   Tests/BleatKitTests/      # unit tests: codec, models, fake transport
   Tests/BleatUITests/       # lays views out for real; needs a simulator
   Fixtures/                 # schema.json + captured CLI output (source of truth)
-Support/Info.plist          # the one key that cannot be a build setting
+Support/Info.plist          # the two keys that cannot be build settings
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
 Scripts/release-cli.sh      # publishes the tool: GitHub release + Homebrew formula (docs/releasing.md)
@@ -207,9 +207,10 @@ says `@concurrent`. The settings on each side, and why, are in
   `Bleat` project's in one place. Two schemes still differ only in case
   (`bleat`, the tool; `Bleat`, the app). ([layout](docs/repository-layout.md))
 - **Stage paths deliberately, never `git add -A`.** The open Xcode rewrites
-  `Support/Info.plist` and drops its comments. If the plist shows up in
-  `git status` unexpectedly, compare `PlistBuddy -c Print` on both versions
-  before staging. ([layout](docs/repository-layout.md))
+  files it manages. `Support/Info.plist` holds no comments for that reason; its
+  reasoning is in the docs. If it shows up in `git status`, compare
+  `PlistBuddy -c Print` on both versions before staging.
+  ([layout](docs/repository-layout.md))
 - Small PR-sized steps; each ends with `swift build && swift test` green.
 - Before writing a model, look at the fixture. Before writing a command, run it
   on the host and capture the output into `Fixtures/`.

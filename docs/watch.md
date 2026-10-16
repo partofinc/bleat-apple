@@ -269,8 +269,14 @@ SIMCTL_CHILD_BLEAT_OPEN='bleat-test/w1/host' xcrun simctl launch <watch> team.pa
 ```
 
 `BLEAT_OPEN` opens the first host, then a session, a workspace id, that
-workspace's title, and a pane target, as far as it is given; empty stops at the
-host's sessions.
+workspace's title, a pane target and that pane's title, as far as it is given;
+empty stops at the host's sessions. An empty component takes its default
+(`s/w1//w1:p1` titles the workspace `w1`), and the pane title is everything
+after the target, slashes included. `BLEAT_OPEN_MODE=terminal` opens the pane as
+a terminal row does rather than as an agent's chat; it is its own variable so it
+never depends on a title. A word naming no `PaneMode` is printed, not ignored,
+and the watch prints and opens chat whatever it says: it has no pane stream
+through the phone, so a terminal there is one only a simulator can show.
 
 For a host to pair with, the scratch sshd in `CLAUDE.md` works, with three
 things that cost time here:

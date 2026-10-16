@@ -1,0 +1,15 @@
+Welcome to the Bleat demo host.
+
+This is a disposable Linux machine running Herdr, set up so Bleat has
+something live to show. Each workspace runs a real program:
+
+  web-app   a small web server (python3 -m http.server)
+  traffic   a script requesting pages from it
+  tests     a test suite that reruns every 45 seconds
+  system    htop
+  notes     this shell, for typing into
+
+Everything here is reset every day. Nothing leaves this machine: outgoing
+connections are blocked.
+
+Try: ls, cat public/index.html, or htop.

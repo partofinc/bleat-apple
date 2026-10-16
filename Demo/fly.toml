@@ -1,0 +1,58 @@
+# cd Demo && fly deploy --app bleat-demo --remote-only --ha=false
+# The design and its reasoning: docs/demo-host.md.
+app = "bleat-demo"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # The name the phone dials, written into every pairing code.
+  DEMO_ENDPOINT = "bleat-demo.fly.dev:22"
+
+[[mounts]]
+  source = "bleat_demo_data"
+  destination = "/data"
+
+# SSH: raw TCP, which needs the app's dedicated IPv4 (shared IPv4 is HTTP only).
+[[services]]
+  protocol = "tcp"
+  internal_port = 22
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[services.ports]]
+    port = 22
+
+# The pairing page, behind Fly's TLS.
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+  # Unauthenticated and does nothing but answer: a wedged pairing page shows
+  # up as a failing check in `fly checks list`.
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/healthz"
+    protocol = "http"
+
+# The daily reset is entrypoint.sh exiting; the machine must come back from
+# that, and from anything else, every time.
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

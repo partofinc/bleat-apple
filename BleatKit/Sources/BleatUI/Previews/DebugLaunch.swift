@@ -17,10 +17,15 @@ import Foundation
 public enum DebugLaunch {
     /// `BLEAT_PAIR_CODE` redeems a pairing link. `BLEAT_OPEN` opens the first
     /// host and then, a path component at a time: a session, a workspace id, a
-    /// title for that workspace, a pane target, a title for that pane (the
-    /// target if none: the list's row title is not known here), and `terminal`
-    /// to open it as a terminal row does rather than as an agent's chat. An
-    /// empty value stops at the host's sessions.
+    /// title for that workspace, a pane target, and a title for that pane. The
+    /// pane title is everything after the target, slashes included, since real
+    /// ones are paths. An empty component takes the default (the id for the
+    /// workspace title, the target for the pane's: the row title is not known
+    /// here), and an empty value stops at the host's sessions.
+    ///
+    /// `BLEAT_OPEN_MODE` names the `PaneMode` a pane opens in, `chat` by
+    /// default: `terminal` opens it as a terminal row does. Its own variable,
+    /// not a path component, so it never depends on a title being given.
     public static func apply(to context: AppContext) async {
         let environment = ProcessInfo.processInfo.environment
         if let code = environment["BLEAT_PAIR_CODE"] {
@@ -35,27 +40,51 @@ public enum DebugLaunch {
         guard let peer = context.peers.peers.first else { return }
         context.navigation.selectedPeer = peer.hostKey
 
-        let parts = open.split(separator: "/").map(String.init)
-        guard let session = parts.first else { return }
+        // Empty components are kept, so `//` skips one without shifting the rest.
+        let parts = open.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let mode = paneMode(environment["BLEAT_OPEN_MODE"])
+        guard let session = parts.first, !session.isEmpty else { return }
         // A beat between steps, as a finger would leave: a collapsed split
         // view turns the selection into a push of its own, and a route
         // appended in the same turn is dropped.
         await step()
         context.navigation.push(.workspaces(peer: peer.hostKey, session: session))
-        guard parts.count > 1 else { return }
-        let label = parts.count > 2 ? parts[2] : parts[1]
+        guard parts.count > 1, !parts[1].isEmpty else { return }
+        let label = parts.count > 2 && !parts[2].isEmpty ? parts[2] : parts[1]
         await step()
         context.navigation.push(
             .agents(peer: peer.hostKey, session: session, workspace: parts[1], label: label)
         )
-        guard parts.count > 3 else { return }
+        guard parts.count > 3, !parts[3].isEmpty else { return }
         // A pane target holds a colon and no slash: `w1:p1`.
+        let title = parts.count > 4 ? parts[4...].joined(separator: "/") : ""
         await step()
         context.navigation.push(
             .pane(peer: peer.hostKey, session: session, target: parts[3],
-                  title: parts.count > 4 ? parts[4] : parts[3],
-                  mode: parts.count > 5 && parts[5] == "terminal" ? .terminal : .chat)
+                  title: title.isEmpty ? parts[3] : title, mode: mode)
         )
+    }
+
+    /// The mode `BLEAT_OPEN_MODE` names, matched against `PaneMode` itself so a
+    /// new case is reachable without touching this. A word that names none is
+    /// said, not quietly read as the default: here the only symptom of a typo
+    /// would be a wrong screenshot.
+    private static func paneMode(_ name: String?) -> PaneMode {
+        guard let name, !name.isEmpty else { return .chat }
+        guard let mode = PaneMode.allCases.first(where: { "\($0)" == name }) else {
+            print("DebugLaunch: BLEAT_OPEN_MODE=\(name) is not one of",
+                  PaneMode.allCases.map { "\($0)" }, "- opening chat")
+            return .chat
+        }
+        #if os(watchOS)
+        // The watch has no pane stream through the phone, so a terminal here
+        // would be one only a simulator's direct socket can show.
+        if mode != .chat {
+            print("DebugLaunch: the watch opens panes as chat; ignoring BLEAT_OPEN_MODE=\(name)")
+            return .chat
+        }
+        #endif
+        return mode
     }
 
     private static func step() async {

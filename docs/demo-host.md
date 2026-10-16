@@ -48,14 +48,21 @@ holes.
   PAM stack on Debian skips pam_limits. So herdr is started under `ulimit -u 256
   -n 4096 -f 1048576`, and every pane inherits it.
 - **Fixed sizes.** `/home/demo` is a 512 MB ext4 image, made fresh at every boot
-  (which is also the reset); `/tmp` 64 MB, `/var/tmp` and `/dev/shm` 16 MB. The
-  root filesystem is not writable by `demo`.
+  (which is also the reset); `/tmp` 64 MB, `/var/tmp` and `/dev/shm` 16 MB,
+  `/run/lock` 1 MB. Anything else on the root filesystem that anyone can write to
+  stops the boot: `find / -xdev -perm -0002 -type d`, skipping mount points,
+  which `-xdev` still lists. A new base image could add such a directory.
+- **herdr is pinned** (`HERDR_VERSION` and its checksum in the Dockerfile),
+  because `populate.sh` reads its JSON. Its installer only fetches the latest,
+  so the release binary is fetched directly. `populate.sh` reads the workspaces
+  back at the end and fails if they are not the six it made.
 - **demo cannot take the machine down for others.** The pairing page runs as
   `pairpage`, which demo cannot signal or inspect (its environment holds the
   password), and runs `bleat pair` as demo through one sudo rule. herdr is
   demo's own and demo can stop it; it is started again and, if the session is
   gone, refilled, instead of the machine restarting and unpairing everyone. Only
-  sshd or the page exiting restarts the machine.
+  sshd or the page exiting restarts the machine. `fly.toml` sets the restart
+  policy to `always`, because the daily reset is the entrypoint exiting.
 - **Nothing lasts.** The home, and with it every pairing, is rebuilt at every
   boot, and the machine restarts daily (`DEMO_RESET_SECONDS`). Only the SSH host
   key persists, on the volume, because the app pins it: a new one would look like
@@ -67,10 +74,17 @@ holes.
 Every `bleat pair` removes other pending enrollment keys first, so the page keeps
 at most one running. A visitor while one is pending gets that same link; **get a
 new code** (`/new`) cancels it, which makes `bleat pair` remove its key, and
-starts another. `bleat pair` gets 30 seconds to print its link, read on a thread
+starts another. It is stopped with SIGTERM, never SIGKILL first: sudo relays
+SIGTERM, but SIGKILL kills only sudo and orphans `bleat pair` with its key live,
+and `pairpage` cannot signal demo's processes to finish the job. The QR is made
+before anything is stored, so a failed QR never leaves a new link beside the last
+code's QR. `/healthz` is unauthenticated and backs Fly's HTTP check.
+`bleat pair` gets 30 seconds to print its link, read on a thread
 so a stall cannot hold the lock and with it every request. The endpoint is
 given with `--endpoint bleat-demo.fly.dev:22`, because the machine's own
-addresses are private to Fly.
+addresses are private to Fly. Known gap: `bleat pair` still lists those
+private addresses ahead of it, so the phone tries them first; skipping them
+needs a `bleat pair` option and a release of the tool.
 
 ## Cost
 

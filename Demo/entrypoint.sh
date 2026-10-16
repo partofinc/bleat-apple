@@ -30,6 +30,16 @@ mount -o loop,nosuid,nodev /data/home.img /home/demo
 mount -t tmpfs -o size=64m,mode=1777,nosuid,nodev tmpfs /tmp
 mount -t tmpfs -o size=16m,mode=1777,nosuid,nodev tmpfs /var/tmp
 mount -o remount,size=16m /dev/shm
+mount -t tmpfs -o size=1m,mode=1777,nosuid,nodev,noexec tmpfs /run/lock
+# Anything else on the root filesystem demo can write to is a way to fill it,
+# and with it sshd's and herdr's disk. A new base image could add one.
+# -xdev still lists a mount point itself, so the ones above are skipped.
+writable=$(find / -xdev -perm -0002 -type d 2>/dev/null |
+    while read -r dir; do mountpoint -q "$dir" || echo "$dir"; done)
+if [[ -n "$writable" ]]; then
+    log "world-writable on the root filesystem, refusing to start: $writable"
+    exit 1
+fi
 mkdir -p /home/demo/.ssh /home/demo/projects
 cp -a /etc/skel/. /home/demo/
 cp -a /opt/demo/project /home/demo/projects/web-app
@@ -37,7 +47,7 @@ touch /home/demo/.ssh/authorized_keys
 chmod 700 /home/demo/.ssh
 chmod 600 /home/demo/.ssh/authorized_keys
 chown -R demo:demo /home/demo
-log "home, /tmp, /var/tmp and /dev/shm size-limited"
+log "home, /tmp, /var/tmp, /dev/shm and /run/lock size-limited"
 
 # --- No new outbound connections from this machine at all; replies to
 # inbound SSH and HTTP are ESTABLISHED and pass. Not even DNS: port 53 open to
@@ -62,9 +72,18 @@ sshd_pid=$!
 # instead of the machine restarting and unpairing everyone. A stopped herdr
 # session comes back with its workspaces but fresh idle shells, so the old one
 # is deleted first and the new one filled from scratch.
+# herdr answers `deleted: true` whether or not anything was deleted, so the
+# session list is read back instead.
+demo_session_exists() {
+    su - demo -c "herdr session list --json" | python3 -c \
+        'import json,sys; sys.exit(0 if any(s["name"] == "demo" for s in json.load(sys.stdin)["sessions"]) else 1)'
+}
 herdr_loop() {
     while true; do
         su - demo -c "herdr session stop demo; herdr session delete demo" >/dev/null 2>&1 || true
+        if demo_session_exists; then
+            log "the old demo session is still there; populate.sh will find it filled"
+        fi
         su - demo -c "ulimit -u 256 -n 4096 -f 1048576; \
             script -qfec 'stty cols 160 rows 48; exec herdr session attach demo' /dev/null" \
             >/dev/null 2>&1 &

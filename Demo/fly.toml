@@ -38,6 +38,20 @@ primary_region = "sjc"
     port = 80
     handlers = ["http"]
     force_https = true
+  # Unauthenticated and does nothing but answer: a wedged pairing page shows
+  # up as a failing check in `fly checks list`.
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/healthz"
+    protocol = "http"
+
+# The daily reset is entrypoint.sh exiting; the machine must come back from
+# that, and from anything else, every time.
+[[restart]]
+  policy = "always"
 
 [[vm]]
   size = "shared-cpu-1x"

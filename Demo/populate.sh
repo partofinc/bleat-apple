@@ -3,7 +3,7 @@
 # of the app has something live in it. Runs as `demo` once the session is up.
 #
 # No AI agent runs here, deliberately: one needs an API key, and anyone who
-# pairs has a shell that could read it. See Demo/README.md.
+# pairs has a shell that could read it. See docs/demo-host.md.
 set -euo pipefail
 export HERDR_SESSION=demo
 unset HERDR_SOCKET_PATH HERDR_PANE_ID HERDR_WORKSPACE_ID 2>/dev/null || true
@@ -15,8 +15,14 @@ for _ in $(seq 1 60); do
 done
 
 # entrypoint.sh deletes the session before each start, so this normally finds
-# it empty; the check keeps a second run from duplicating everything.
-if herdr workspace list | grep -q '"label": *"web-app"'; then
+# it empty; the check keeps a second run from duplicating everything. Read into
+# a variable first: `herdr … | grep -q` can fail under pipefail when grep exits
+# on the match and herdr dies of SIGPIPE.
+labels() {
+    herdr workspace list | python3 -c 'import json,sys; print("\n".join(w["label"] for w in json.load(sys.stdin)["result"]["workspaces"]))'
+}
+existing=$(labels)
+if grep -qx "web-app" <<<"$existing"; then
     echo "demo: already populated"
     exit 0
 fi
@@ -55,4 +61,11 @@ run "$pane" "htop" "htop"
 pane=$(workspace "notes" "$web")
 herdr pane run "$pane" "clear; cat WELCOME.txt"
 
-echo "demo: populated $(herdr workspace list | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["result"]["workspaces"]))') workspaces"
+# Read the host back rather than trust each reply.
+expected=$'home\nweb-app\ntraffic\ntests\nsystem\nnotes'
+actual=$(labels)
+if [[ "$actual" != "$expected" ]]; then
+    echo "demo: populated wrong: $(tr '\n' ' ' <<<"$actual")" >&2
+    exit 1
+fi
+echo "demo: populated $(wc -l <<<"$actual" | tr -d ' ') workspaces"

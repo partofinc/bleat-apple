@@ -47,13 +47,8 @@ class Pairing:
             return self.link, self.qr, self.subtitle, self.started + WINDOW - time.time()
 
     def _stop(self):
-        # SIGTERM reaches `bleat pair` through sudo, and it removes its key.
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
+        if self.process is not None:
+            end(self.process)
         self.process = None
 
     def _start(self):
@@ -81,10 +76,16 @@ class Pairing:
             elif line.startswith("bleat://"):
                 link = line
         if link is None:
-            process.kill()
+            end(process)
             raise RuntimeError("bleat pair printed no link: " + " | ".join(seen[-5:]))
-        self.process, self.link, self.subtitle = process, link, subtitle
-        self.qr = qr_svg(link)
+        # The QR first: if it fails, nothing is stored, so the page can never
+        # pair a new link with the last code's QR.
+        try:
+            qr = qr_svg(link)
+        except Exception:
+            end(process)
+            raise
+        self.process, self.link, self.subtitle, self.qr = process, link, subtitle, qr
         self.started = time.time()
 
     @staticmethod
@@ -99,10 +100,29 @@ class Pairing:
         lines.put(None)
 
 
+def end(process):
+    """Stop a `bleat pair` so it removes its enrollment key.
+
+    SIGTERM, never SIGKILL first: sudo relays SIGTERM to `bleat pair`, which
+    cleans up, but SIGKILL kills only sudo and orphans `bleat pair` with its key
+    live. pairpage cannot signal demo's processes, so if SIGTERM is ignored the
+    orphan is bounded by its own --timeout, and the next `bleat pair` sweeps
+    its key anyway.
+    """
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        print("pair: bleat pair ignored SIGTERM; leaving it to its timeout", flush=True)
+        process.kill()
+
+
 def qr_svg(text):
     return subprocess.run(
         ["qrencode", "-t", "SVG", "-m", "2", "-s", "6", "-o", "-", text],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=True, timeout=10,
     ).stdout
 
 

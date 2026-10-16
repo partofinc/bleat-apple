@@ -11,8 +11,16 @@ RUN apt-get update \
       htop less vim-tiny git qrencode tini sudo e2fsprogs \
  && rm -rf /var/lib/apt/lists/*
 
-# Both installers check their downloads against published checksums.
-RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh \
+# Both pinned and checked against checksums. herdr is pinned because
+# populate.sh reads its JSON; its installer only fetches the latest, so the
+# release binary is fetched directly. Bump both together, after re-running
+# populate.sh against the new herdr.
+ARG HERDR_VERSION=0.9.5
+ARG HERDR_SHA256=14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
+RUN curl -fsSL -o /usr/local/bin/herdr \
+      https://github.com/herdrdev/herdr/releases/download/v$HERDR_VERSION/herdr-linux-x86_64 \
+ && echo "$HERDR_SHA256  /usr/local/bin/herdr" | sha256sum -c - \
+ && chmod 755 /usr/local/bin/herdr \
  && curl -fsSL https://raw.githubusercontent.com/partofinc/bleat-apple/main/Scripts/install.sh \
       | BLEAT_VERSION=$BLEAT_VERSION BLEAT_INSTALL_DIR=/usr/local/bin sh \
  && herdr --version && bleat --version

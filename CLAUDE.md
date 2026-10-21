@@ -66,7 +66,7 @@ shipped once, written down so it does not ship twice.
 ## Repository layout
 
 ```
-Bleat.xcodeproj             # two app targets; sources join via synchronized groups
+Bleat.xcodeproj             # project.xcproj (JSON format): two app targets; sources join via synchronized groups
 App/                        # @main App struct and little else; icon and assets shared with the watch
 Watch/                      # the watch app's @main, and nothing else
 Design/icon.swift           # generates the icon's layers — run it, never edit the PNGs
@@ -166,7 +166,7 @@ says `@concurrent`. The settings on each side, and why, are in
 
 ## Conventions
 
-- Swift 6.4 toolchain (Xcode 27.1), Swift 6 language mode, strict concurrency,
+- Swift 6.4 toolchain (Xcode 27.2; Xcode Cloud on 27.1), Swift 6 language mode, strict concurrency,
   `Sendable` everywhere in BleatKit.
 - One type per file. Folders by feature, not by kind.
 - `async/await` only; no Combine, no callbacks.

@@ -104,7 +104,9 @@ reverse-engineered and every claim below was checked by rendering. Worth keeping
 ## Wiring it into the target
 
 - **`App/AppIcon.icon` joins the target by existing.** `App` is a
-  `PBXFileSystemSynchronizedRootGroup`, so there is no `pbxproj` edit; actool
+  synchronized folder (`"kind": "folder"` with `target-membership` in
+  `project.xcproj`; a `PBXFileSystemSynchronizedRootGroup` in the old
+  `pbxproj`), so there is no project edit; actool
   receives the `.icon` alongside `Assets.xcassets` and
   `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` resolves to it.
 - **The `AppIcon.appiconset` had to go.** One name, one icon — a catalog entry

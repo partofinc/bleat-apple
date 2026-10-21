@@ -22,12 +22,24 @@ old file: `-showBuildSettings` for both apps in both configurations gave the
 same ~500 resolved settings, path for path, and both built in Release for
 device. Xcode 27.1, which Xcode Cloud's Release workflow uses, opens it; older
 Xcodes do not.
+  - **It converts back.** `xcodebuild -project Bleat.xcodeproj -convert-project
+    "Xcode 27.0"` writes a `project.pbxproj` again (tried 21 Oct 2026; the
+    round trip also restores `BuildIndependentTargetsInParallel = 1`, which the
+    JSON format leaves implicit as the default). That is the way out if a tool
+    or an Xcode cannot read it.
+  - `last-upgrade` reads 26.6 because that was the old file's
+    `LastUpgradeCheck`; the conversion carried it, it did not lose a newer one.
+  - **Xcode Cloud runs 27.1 and this Mac 27.2**, so an Xcode prompt accepted
+    here ("Update to recommended settings") can write a key 27.1 does not know.
+    Look at what such a prompt changes in `project.xcproj` before committing
+    it; the next `v` tag is otherwise the first place it would fail.
 
 **A fresh Xcode needs its Metal toolchain** before either app builds:
 SwiftTerm compiles a Metal shader, and Xcode 27.2 installs without the
 toolchain (`cannot execute tool 'metal' due to missing Metal Toolchain`).
 `xcodebuild -downloadComponent MetalToolchain` fetches it, about 840 MB, once
-per Xcode.
+per Xcode. Xcode Cloud's image already has it: its 27.1 Release run for
+`v1.0` (run 3, 21 Oct 2026) archived SwiftTerm without the step.
 
 **`App/PrivacyInfo.xcprivacy`** declares no tracking, no collected data, and
 the one required-reason API the app uses: `UserDefaults` (`@AppStorage` in

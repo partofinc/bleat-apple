@@ -114,7 +114,10 @@ The full reasoning is in [`docs/pairing.md`](docs/pairing.md).
 
 ## Building from source
 
-Requirements: Xcode 27.1 (Swift 6.4), iOS and watchOS 26.
+Requirements: Xcode 27.1 or later (Swift 6.4), iOS and watchOS 26. The
+project is in Xcode's JSON format, which older Xcodes cannot open. A fresh
+Xcode needs its Metal toolchain first, for SwiftTerm's shader:
+`xcodebuild -downloadComponent MetalToolchain`.
 
 ```sh
 open Bleat.xcodeproj                 # the app and the watch app

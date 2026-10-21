@@ -12,6 +12,23 @@ the icon, the asset catalog and the privacy manifest, on purpose. **No Swift
 file but `BleatApp.swift` belongs there** — a second one would be compiled into
 the watch as well, and code belongs in the package anyway.
 
+**The project is `Bleat.xcodeproj/project.xcproj`, Xcode's JSON project
+format**, not `project.pbxproj`. Converted 21 Oct 2026 with Xcode 27.2 RC:
+`xcodebuild -project Bleat.xcodeproj -convert-project "Xcode Project"`. It is
+JSON with trailing commas: targets, build settings and package references by
+name, without the object ids and cross-references a `pbxproj` threads through
+every entry, so a diff of it can be read. It was checked before it replaced the
+old file: `-showBuildSettings` for both apps in both configurations gave the
+same ~500 resolved settings, path for path, and both built in Release for
+device. Xcode 27.1, which Xcode Cloud's Release workflow uses, opens it; older
+Xcodes do not.
+
+**A fresh Xcode needs its Metal toolchain** before either app builds:
+SwiftTerm compiles a Metal shader, and Xcode 27.2 installs without the
+toolchain (`cannot execute tool 'metal' due to missing Metal Toolchain`).
+`xcodebuild -downloadComponent MetalToolchain` fetches it, about 840 MB, once
+per Xcode.
+
 **`App/PrivacyInfo.xcprivacy`** declares no tracking, no collected data, and
 the one required-reason API the app uses: `UserDefaults` (`@AppStorage` in
 `PaneKeyBar`), reason `CA92.1`. App Store Connect checks it at submission and
@@ -19,7 +36,7 @@ TestFlight does not, so a new API from Apple's required-reason list needs its
 line here before it ships. Added 3 Oct 2026.
 
 ```
-Bleat.xcodeproj             # two app targets; sources join via synchronized groups
+Bleat.xcodeproj             # project.xcproj (JSON format): two app targets; sources join via synchronized groups
 App/                        # @main App struct, icon, assets, PrivacyInfo.xcprivacy
 Watch/                      # the watch app's @main; shares App/'s icon and assets
   AppIcon.icon/             # layered Icon Composer document; joins the target by existing

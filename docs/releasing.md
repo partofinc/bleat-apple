@@ -10,6 +10,16 @@ tool**: `v` tags start the app's Xcode Cloud workflow.
 
 ## The app
 
+**An app release on GitHub is never "latest".** `install.sh` downloads the
+tool from `releases/latest/download`, so a `v…` release marked latest would
+leave `curl … | sh` looking for tool files in a release that has none. Publish
+it with `gh release create v<version> --verify-tag --latest=false`, as `v1.0`
+was (22 Oct 2026); only `release-cli.sh` passes `--latest`.
+
+After a version ships, `MARKETING_VERSION` (both targets in
+`Bleat.xcodeproj/project.xcproj`) moves to the next one, so builds of `main`
+upload as that version rather than as another build of the released one.
+
 Xcode Cloud onboarding could not be finished from `main`: it asked for access
 to every public dependency repository (`apple/swift-system` first), which
 nobody outside those organizations can grant. It was finished on a local branch

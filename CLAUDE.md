@@ -10,23 +10,45 @@ The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
 plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
 Herdr's own JSON. No daemon, no relay, no plugin on the host.
 
-## Current phase: 3 — Control
+## Current phase: Bleat 2, A — Pipe (planned)
+
+Bleat 2.0 moves the engine from the herdr TUI CLI to herdr-core (`hc`): one
+framed `hc connect` stream per host, events instead of polling. It is a full
+transition with no dual backend; the herdr code is deleted in Phase B. The
+plan, what is already settled and the open questions (each tagged with the
+phase it must close before) are in [`docs/bleat-2-plan.md`](docs/bleat-2-plan.md).
+Facts about `hc`, with their sources, are in [`docs/hc-facts.md`](docs/hc-facts.md).
+
+Read the phase gates before proposing work outside them. Three product
+questions in the plan (1.x users still on the TUI, the listing's name and
+promise, and whether 1.x's unbuilt Control items carry over) are Ravil's to
+decide; question 3 must close before Phase A starts.
+
+| Phase | Deliverable | Gate to next phase |
+|---|---|---|
+| **A — Pipe** | `HcKit` (framed codec from the start, not only for attach) and the console tool on it. `docs/hc-facts.md` verified live. Fixtures captured from `hc schema` and live replies. | From a Mac terminal, over SSH `hc connect` to a Pi, on one framed connection: hello, subscribe and print live events while sending requests, list spaces and terminals, attach and see live frames, send keys, resize, detach cleanly, survive a dropped connection. No UI code. |
+| **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone does not clear the Mac's `done`. Sessions on the watch work. |
+| **C — New capabilities** | Federated machines in the host list, templates when creating, anything else hc enables that we choose to take. | Agreed scope only; each item listed before work starts. |
+| **D — Release 2.0** | Demo host rebuilt on `hc`, docs and README updated, App Store listing and review notes revised, TestFlight. | Approved on the App Store as 2.0, same listing. |
+
+Out of scope until after Phase D: pairing/relay transport (iroh or WebRTC),
+push notifications, Live Activities, multi-account badges.
+
+Until Phase B deletes it, the herdr backend below is what ships, and the
+herdr rules in [Rules that bite](#rules-that-bite) still apply to it.
+
+### Bleat 1.x (herdr TUI) — shipped
 
 Phase 1 met over real SSH. **The Phase 2 gate was met 7 Sept 2026**: paired
-and connected from an iPhone on cellular with Wi-Fi off, over Tailscale. How
-each gate was verified, and what that taught, is in
-[`docs/phase-history.md`](docs/phase-history.md).
-
-Read the phase gates before proposing work outside them.
+and connected from an iPhone on cellular with Wi-Fi off, over Tailscale.
+Phase 3 shipped as 1.0 on the App Store. How each gate was verified, and what
+that taught, is in [`docs/phase-history.md`](docs/phase-history.md).
 
 | Phase | Deliverable | Gate to next phase |
 |---|---|---|
 | **1 — Pipe** ✅ | Platform-agnostic Swift package `BleatKit` + macOS console tool `bleat` | From a Mac terminal: connect over SSH, list sessions/workspaces/agents, attach to a pane, see live frames, send input, resize, detach cleanly. No UI code. |
 | **2 — Read-only app** ✅ | Xcode project, SwiftUI iOS app | Hosts → session → workspaces → agents (blocked on top) → live pane view (SwiftTerm). No input yet. Runs on a real phone over Tailscale. |
-| **3 — Control** | Input + release | Keyboard with accessory row (Esc, Ctrl, Tab, arrows, y/n), prompt composer via `agent prompt`, takeover indicator, reconnect on foreground. TestFlight, then App Store. As built: arrows, Esc, Return and a shortcut menu, no Ctrl or y/n keys; always takeover, no indicator yet ([pane view](docs/pane-view.md)). |
-
-Out of scope until after Phase 3: pairing/relay transport (iroh or WebRTC),
-push notifications, Live Activities, multi-account badges.
+| **3 — Control** ✅ 1.0 | Input + release | Keyboard with accessory row (Esc, Ctrl, Tab, arrows, y/n), prompt composer via `agent prompt`, takeover indicator, reconnect on foreground. TestFlight, then App Store. As built: arrows, Esc, Return and a shortcut menu, no Ctrl or y/n keys; always takeover, no indicator yet ([pane view](docs/pane-view.md)). |
 
 **The watch app was started early, 1 Oct 2026, because it was asked for.** It
 is the phone's screens over a relay through the phone — watchOS allows an app
@@ -47,6 +69,8 @@ shipped once, written down so it does not ship twice.
 
 | file | covers |
 |---|---|
+| [`docs/bleat-2-plan.md`](docs/bleat-2-plan.md) | the 2.0 move to `hc`: what is settled, architecture, domain mapping, phases, open questions |
+| [`docs/hc-facts.md`](docs/hc-facts.md) | herdr-core: framed mode and its frame layout, viewers and size, status, reconnect, creating terminals — each fact with its source |
 | [`docs/herdr-facts.md`](docs/herdr-facts.md) | herdr's two command families, envelopes, errors on stderr, agent states, the pane stream protocol |
 | [`docs/ssh-transport.md`](docs/ssh-transport.md) | Citadel, host keys, session selection by command prefix, clean detach |
 | [`docs/pairing.md`](docs/pairing.md) | the enrollment-key swap, pairing another device from a paired one, peer identity, the QR, endpoint discovery and refresh, Tailscale, addresses by hand, local network permission, unpairing, endpoint selection |

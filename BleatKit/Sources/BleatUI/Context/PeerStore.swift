@@ -100,6 +100,14 @@ public final class PeerStore {
         reload()
     }
 
+    /// Keeps what the host said about herdr-core. Reloads only when the
+    /// answer changed — every launch asks again. Not sent upstream: only the
+    /// phone checks, and the watch gets the answer in the next mirrored list.
+    public func recordHerdrCore(_ herdrCore: HerdrCore, for peer: PairedPeer) {
+        guard (try? registry.recordHerdrCore(herdrCore, forHostKey: peer.hostKey)) == true else { return }
+        reload()
+    }
+
     /// Remembers that this phone created a session on the host, which is what
     /// lets it be deleted from here later. See `PairedPeer.createdSessions`.
     ///

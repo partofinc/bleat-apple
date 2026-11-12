@@ -25,7 +25,7 @@ public struct PeersView: View {
             }
 
             ForEach(context.peers.peers) { peer in
-                PeerRow(peer: peer)
+                PeerRow(peer: peer, readiness: context.herdrCore.state(of: peer))
                 // `PairedPeer.id` is already the host key, so this restates
                 // what `ForEach` would infer — but the selection's type is what
                 // decides whether a row is selectable at all, and the two being
@@ -123,6 +123,14 @@ public struct PeersView: View {
         }
         .task {
             context.peers.reload()
+            // The migration gate: every host not known to have herdr-core is
+            // asked now. `RootView` asks again on each return to the
+            // foreground.
+            await context.herdrCore.checkAll()
+        }
+        .refreshable {
+            context.peers.reload()
+            await context.herdrCore.checkAll()
         }
     }
 

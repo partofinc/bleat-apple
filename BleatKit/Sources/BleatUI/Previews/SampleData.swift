@@ -81,7 +81,7 @@ private enum SampleContexts {
         if let existing = contexts[key] { return existing }
         let store = PeerStore(registry: .sample(peers))
         store.reload()
-        let context = AppContext(peers: store)
+        let context = AppContext(peers: store, checksHerdrCore: false)
         contexts[key] = context
         return context
     }

@@ -284,6 +284,20 @@ and neither is fixed. Written down rather than discovered twice.
   one the keyboard path already uses: freeze the grid while the pane is held
   and thaw when it is released.
 
+## Bleat 2: a host opens to the herdr-core gate (12 Nov 2026)
+
+`RouteView`'s `.peer` route resolves to `HerdrCoreGateView`, not
+`PeerDetailView`. The host list's row shows the peer's
+`HerdrCoreReadiness.State` in place of its detail line when it is not ready.
+The sections below describe the 1.x screens, which are unreachable until the hc
+terminal screens replace them. How the check works, and when it runs, is in
+[`bleat-2-plan.md`](bleat-2-plan.md#the-migration-gate-built-12-nov-2026).
+
+- **Previews and tests never check.** `AppContext(checksHerdrCore: false)`;
+  otherwise a preview would dial the sample hosts.
+- **The watch checks nothing.** It shows the answer the phone stored, and
+  "Not checked yet" until the phone has sent one.
+
 ## A host's screen is its sessions; everything else is a sheet (Phase 2)
 
 (Since 1 Oct 2026 the sheet also says what the host runs, and the screen

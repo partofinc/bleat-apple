@@ -73,6 +73,12 @@ public struct RootView: View {
             guard phase == .background else { return }
             Task { await context.connections.release() }
         }
+        // Back in the foreground, ask the hosts that were not ready again:
+        // installing herdr-core on one is all it should take to move it on.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await context.herdrCore.checkAll() }
+        }
         // On the split view, not on a screen inside it: the peer list and a
         // peer's detail can both start an unpair, and a modifier on each would
         // bind two presentations to one piece of state.
@@ -118,7 +124,7 @@ public struct RootView: View {
             ContentUnavailableView(
                 "No host selected",
                 systemImage: "desktopcomputer",
-                description: Text("Pick a host to see the sessions running on it.")
+                description: Text("Pick a host to see its terminals.")
             )
         }
     }

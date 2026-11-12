@@ -31,7 +31,7 @@ struct PreviewSmokeTests {
     private func sampleContext(peers: [PairedPeer] = PairedPeer.samples) -> AppContext {
         let store = PeerStore(registry: .sample(peers))
         store.reload()
-        return AppContext(peers: store)
+        return AppContext(peers: store, checksHerdrCore: false)
     }
 
     /// Gives anything the tasks started a moment to land, then checks nothing

@@ -28,7 +28,15 @@ public enum HerdrLookup {
     /// empty answer — and the caller reports `the host rejected a command
     /// (exit 1)` instead of "herdr is not installed on that host". Absence is a
     /// normal answer to this question, so it is spelled as empty output.
-    public static let command = "${SHELL:-/bin/sh} -lc 'command -v herdr' || true"
+    public static let command = command(locating: "herdr")
+
+    /// The same question about any tool — `hc`, for the move to herdr-core.
+    ///
+    /// `tool` is interpolated into single quotes, so it must be a plain name
+    /// with no quote or space; every caller passes a literal.
+    public static func command(locating tool: String) -> String {
+        "${SHELL:-/bin/sh} -lc 'command -v \(tool)' || true"
+    }
 
     /// Reads the answer out of the shell's output.
     ///

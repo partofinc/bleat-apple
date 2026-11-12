@@ -95,23 +95,22 @@ public enum PeerConnection {
         let connection = try await open(to: peer, deviceKey: deviceKey, link: link, session: session)
 
         var discovered: String?
-        if peer.herdrPath == nil {
-            // Only reachable for a record made before pairing resolved this.
-            // Asking now costs one command on a connection that is already
-            // open, where rebuilding the transport would cost a handshake.
+        // Not asked at all of a peer with herdr-core: nothing Bleat 2 runs
+        // there needs herdr, and asking would cost a round trip per connection.
+        if peer.herdrPath == nil, !(peer.herdrCore?.isInstalled ?? false) {
+            // Best effort, and never a reason to refuse the connection. Bleat
+            // 2 reaches hosts through herdr-core, and a host paired on hc may
+            // have no herdr at all: refusing it here also refused unpairing,
+            // the host's settings and its load, which all ride this connection.
+            // A failed command does leave the channel open, and cancellation
+            // does too, so a throw still disconnects before it propagates.
             do {
                 let output = try await connection.transport.run(shell: HerdrLookup.command)
-                guard let path = HerdrLookup.path(inOutput: output) else {
-                    throw PairingError.herdrNotFound
+                if let path = HerdrLookup.path(inOutput: output) {
+                    connection.transport.useHerdrPath(path)
+                    discovered = path
                 }
-                connection.transport.useHerdrPath(path)
-                discovered = path
             } catch {
-                // Every throw, not just the not-found one. This connection is
-                // the only reference to a live SSH session — a failed command
-                // does not close the channel, and neither does cancellation —
-                // so unwinding without disconnecting leaves a session open on
-                // the host, and each retry adds another.
                 await connection.transport.disconnect()
                 throw error
             }

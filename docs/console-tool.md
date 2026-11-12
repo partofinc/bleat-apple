@@ -46,7 +46,9 @@ sends `terminal.release` and exits 0; SIGWINCH is forwarded as `terminal.resize`
 bleat pair [--endpoint HOST[:PORT]]...   # add endpoints detection cannot find
 ```
 
-Checks that `herdr` is installed and resolvable, enumerates endpoints, mints the
+Checks that herdr-core (`hc`) is installed — the login shell's `PATH`, then
+`~/.local/bin`, and `hc --version` must answer as herdr-core; since Bleat 2
+(12 Nov 2026) herdr itself is not asked for — enumerates endpoints, mints the
 single-use enrollment key, renders the QR in the terminal, and waits for the
 phone to swap in its own key. See [`pairing.md`](pairing.md) for the rules
 that govern it — they are settled, not per-PR decisions.

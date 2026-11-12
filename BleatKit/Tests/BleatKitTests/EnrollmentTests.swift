@@ -16,8 +16,10 @@ final class FakeHost: ShellRunner, @unchecked Sendable {
     private var installed: Set<String> = []
     private var log: [String] = []
 
-    /// What the login shell prints for `command -v herdr`.
-    var herdrOutput = "/opt/homebrew/bin/herdr\n"
+    /// What the login shell prints for `command -v hc`.
+    var hcOutput = "/opt/homebrew/bin/hc\n"
+    /// What `hc --version` prints.
+    var hcVersionOutput = "hc 0.1.20\n"
     /// Make the append succeed loudly and do nothing, the way `StrictModes` or
     /// a full disk would.
     var swallowAppends = false
@@ -42,7 +44,10 @@ final class FakeHost: ShellRunner, @unchecked Sendable {
 
     func run(shell command: String) async throws -> String {
         lock.withLock { log.append(command) }
-        if command == HerdrLookup.command { return herdrOutput }
+        if command == HerdrCoreLookup.locate { return hcOutput }
+        // Nothing in `~/.local/bin` either, unless a test puts it there.
+        if command == HerdrCoreLookup.installedByHerdrApp { return "" }
+        if command.hasSuffix(" --version") { return hcVersionOutput }
 
         let blob = lock.withLock { known.first { Self.mentions(command, $0) } }
         guard let blob else { return "" }
@@ -88,7 +93,7 @@ struct EnrollmentTests {
             deviceKey: device, enrollmentKey: enrollment, on: host, openDeviceSession: { host }
         )
 
-        #expect(result.herdrPath == "/opt/homebrew/bin/herdr")
+        #expect(result.herdrCore == .installed(path: "/opt/homebrew/bin/hc", version: "0.1.20"))
         #expect(host.lines == [blob(device)])
     }
 
@@ -151,18 +156,19 @@ struct EnrollmentTests {
 
     /// Resolved before anything is written, so a host that cannot serve the app
     /// leaves nothing to undo.
-    @Test("a host without herdr is refused before authorized_keys is touched")
-    func herdrMissing() async throws {
+    @Test("a host without herdr-core is refused before authorized_keys is touched")
+    func herdrCoreMissing() async throws {
         let device = SSHKeyPair(), enrollment = SSHKeyPair()
         let host = host(device: device, enrollment: enrollment)
-        host.herdrOutput = "\n"
+        host.hcOutput = "\n"
 
-        await #expect(throws: PairingError.herdrNotFound) {
+        await #expect(throws: PairingError.herdrCoreNotFound) {
             try await Enrollment.redeem(
                 deviceKey: device, enrollmentKey: enrollment, on: host, openDeviceSession: { host }
             )
         }
-        #expect(host.commands.count == 1)
+        // The login shell's PATH, then `~/.local/bin`: two questions, no writes.
+        #expect(host.commands == [HerdrCoreLookup.locate, HerdrCoreLookup.installedByHerdrApp])
         #expect(host.lines == [blob(enrollment)])
     }
 

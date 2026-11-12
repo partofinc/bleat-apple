@@ -21,6 +21,11 @@ public enum PairingError: Error, Sendable, Equatable {
     /// The host has no `herdr`, so pairing it would produce an app that can
     /// list nothing.
     case herdrNotFound
+    /// The host has no herdr-core (`hc`), so Bleat 2 would pair a machine it
+    /// can show nothing from. Checked by both ends before anything is
+    /// written: `bleat pair` before it shows a code, the phone before it
+    /// installs its key.
+    case herdrCoreNotFound
     /// The host offers no host key the phone can negotiate. NIOSSH speaks
     /// `ssh-ed25519` and the three ECDSA curves and **not** `ssh-rsa`, so an
     /// RSA-only host cannot be paired at all — better to say so while the user
@@ -58,6 +63,8 @@ extension PairingError: CustomStringConvertible {
             "the host key does not match the pairing code (expected \(expected), got \(actual))"
         case .herdrNotFound:
             "herdr is not installed on that host"
+        case .herdrCoreNotFound:
+            "herdr-core (hc) is not installed on that host — install Herdr there, then pair again"
         case .noSupportedHostKey:
             "that host has no ed25519 or ECDSA host key, so Bleat cannot verify it"
         case .enrollmentIncomplete(let reason):

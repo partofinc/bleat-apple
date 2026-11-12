@@ -21,7 +21,7 @@ enum Inspect {
 
         print("name          \(report.name)")
         print("username      \(report.username)")
-        print("herdr         \(report.herdrPath)")
+        print("herdr-core    \(report.hcPath) (hc \(report.hcVersion))")
         print("host key      \(report.hostKeyFingerprint ?? report.hostKey)")
         print("endpoints     \(report.endpoints.isEmpty ? "(none found)" : "")")
         for endpoint in report.endpoints {

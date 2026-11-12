@@ -78,7 +78,10 @@ public struct PairingClient: Sendable {
             throw error
         }
         var peer = PairedPeer(payload: payload)
-        peer.herdrPath = redemption.herdrPath
+        // Paired ready: the host was asked about herdr-core during the swap,
+        // so the gate has nothing left to ask and the host opens straight to
+        // its terminals.
+        peer.herdrCore = redemption.herdrCore
         peer.lastGoodEndpoint = connection.endpoint
         // Kept so unpairing can name the line it leaves behind if it cannot
         // remove it. `Enrollment` has always returned this; it used to be
@@ -110,7 +113,7 @@ public struct PairingClient: Sendable {
         // so the new host arrives in the list with its mark and system rather
         // than waiting for the first time someone opens it. Best effort, and
         // bounded: closing the sessions is what ends a probe that overran.
-        let info = await hostInfo(over: deviceSession.current, herdrPath: redemption.herdrPath)
+        let info = await hostInfo(over: deviceSession.current)
         await close(connection.transport, deviceSession.current)
         guard let info,
               (try? peers.recordHostInfo(info, forHostKey: saved.hostKey)) == true,
@@ -132,9 +135,11 @@ public struct PairingClient: Sendable {
     /// waits for every child before it returns. Whichever finishes first is
     /// the answer; the caller then closes the session, which fails the
     /// command if it is still running.
-    private func hostInfo(over session: SSHTransport?, herdrPath: String) async -> HostInfo? {
+    private func hostInfo(over session: SSHTransport?) async -> HostInfo? {
         guard let session else { return nil }
-        let command = HostStatusProbe.command(herdrPath: herdrPath, sampling: false)
+        // No herdr path: Bleat 2 does not resolve herdr, and the probe leaves
+        // its version out without one.
+        let command = HostStatusProbe.command(herdrPath: nil, sampling: false)
         return await Self.first(within: Self.hostInfoDeadline) {
             guard let output = try? await session.run(shell: command) else { return nil }
             let info = HostStatusProbe.status(fromOutput: output).info

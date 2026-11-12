@@ -305,6 +305,15 @@ ready host shows `TerminalsView`, with the load bar under it; a row opens
 describe were removed with the herdr backend, 12 Nov 2026. How the check works, and when it runs, is in
 [`bleat-2-plan.md`](bleat-2-plan.md#the-migration-gate-built-12-nov-2026).
 
+- **Install herdr-core** (12 Nov 2026): a host that answered "missing" shows
+  Install herdr-core and Check Again. Install asks first, in an alert that
+  shows the exact one-liner and the user it runs as; then the screen reads
+  "Installing herdr-core on …" and the row "Installing herdr-core…" until the
+  installer and the look afterwards finish. A failure shows the installer's
+  own `hc: …` reason as "Install failed", with both buttons again. The
+  install runs in a task of its own, not the view's, so leaving the screen
+  does not cut an installer off on the host; a check never runs alongside it.
+  Not on the watch, which cannot dial.
 - **Previews and tests never check.** `AppContext(checksHerdrCore: false)`;
   otherwise a preview would dial the sample hosts.
 - **The watch checks nothing.** It shows the answer the phone stored, and

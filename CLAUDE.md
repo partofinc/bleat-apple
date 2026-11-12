@@ -26,10 +26,11 @@ sources, in [`docs/hc-facts.md`](docs/hc-facts.md).
 **Built app-first, not console-first**, at Ravil's direction (12 Nov 2026):
 the herdr-core gate for 1.x peers (#77); `HcClient` and a host's live terminal
 list (#78); attaching to a terminal (#79); pairing on hc (#80); the herdr
-backend removed. Phase A's console gate is met only in part — `bleat
+backend removed (#81); installing herdr-core from the gate and from `bleat
+pair`. Phase A's console gate is met only in part — `bleat
 terminals --watch` follows events; attaching from the console is not built.
-**Left for B:** installing herdr-core from Bleat, creating terminals, and the
-watch on hc. Two product questions are Ravil's before release: the listing's
+**Left for B:** creating terminals, the watch on hc, and whether a core
+outlives the SSH login on a fresh Pi (linger; [hc facts](docs/hc-facts.md)). Two product questions are Ravil's before release: the listing's
 name and promise, and whether 1.x's unbuilt Control items carry over.
 
 | Phase | Deliverable | Gate to next phase |

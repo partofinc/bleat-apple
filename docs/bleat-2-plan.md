@@ -129,8 +129,18 @@ Re-verify before relying on any of it; the host wins over this file.
   and the peer record's `herdrPath`, `session`, `createdSessions` and
   `startedSessions` (old records still decode: unknown keys are ignored).
   `docs/herdr-facts.md` and `docs/creating-from-the-phone.md` moved to
-  `docs/archive/`. Next: installing herdr-core from Bleat, over the same SSH
-  exec channel (the official installer is non-interactive).
+  `docs/archive/`.
+- **Installing herdr-core from Bleat, 12 Nov 2026.** "Install herdr-core" on
+  the gate screen shows herdr-core's one-liner and runs it on the host after
+  a confirmation (`HerdrCoreInstall`), over its own short connection like the
+  check, then looks again and stores the answer. Not cancelled by leaving the
+  screen: an installer cut off half way would leave the host in between.
+  `bleat pair` on a host without hc offers the same install, `[y/N]`, only on
+  a terminal. The lookup's fallback now also tries
+  `~/.local/bin/herdr-core`, and tries it when the `hc` on `PATH` is not
+  herdr-core, since the installer leaves another `hc` alone. Verified in a
+  fresh Debian container; the facts and what is open about a core outliving
+  the SSH login are in [`hc-facts.md`](hc-facts.md#installing-source-installsh-read-12-nov-2026-live-in-a-fresh-debian-container).
 
 ## Phases
 
@@ -160,8 +170,9 @@ check before any hc screen uses it.
   installed, because `~/.local/bin` is added to `PATH` in `.zshrc`, which
   `zsh -lc` does not read (`herdr` was still found, in `/opt/homebrew/bin`
   from `.zprofile`). The Pis were fine: Debian's `.profile` adds it. So when
-  `PATH` has no `hc`, the check also tries `$HOME/.local/bin/hc`, where
-  Herdr.app installs it, and `--version` still decides.
+  `PATH` has no `hc`, or its `hc` is not herdr-core, the check also tries
+  `$HOME/.local/bin/hc` and then `$HOME/.local/bin/herdr-core`, where Herdr.app
+  and the installer put it, and `--version` still decides.
 - **The answer is stored on the peer** as `PairedPeer.herdrCore`:
   `.installed(path, version)` or `.missing`. Nil on every 1.x record until
   checked; old records decode. It reaches the watch with the mirrored list.

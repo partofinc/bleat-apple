@@ -46,7 +46,7 @@ final class FakeHost: ShellRunner, @unchecked Sendable {
         lock.withLock { log.append(command) }
         if command == HerdrCoreLookup.locate { return hcOutput }
         // Nothing in `~/.local/bin` either, unless a test puts it there.
-        if command == HerdrCoreLookup.installedByHerdrApp { return "" }
+        if command == HerdrCoreLookup.standardLocations { return "" }
         if command.hasSuffix(" --version") { return hcVersionOutput }
 
         let blob = lock.withLock { known.first { Self.mentions(command, $0) } }
@@ -168,7 +168,7 @@ struct EnrollmentTests {
             )
         }
         // The login shell's PATH, then `~/.local/bin`: two questions, no writes.
-        #expect(host.commands == [HerdrCoreLookup.locate, HerdrCoreLookup.installedByHerdrApp])
+        #expect(host.commands == [HerdrCoreLookup.locate, HerdrCoreLookup.standardLocations])
         #expect(host.lines == [blob(enrollment)])
     }
 

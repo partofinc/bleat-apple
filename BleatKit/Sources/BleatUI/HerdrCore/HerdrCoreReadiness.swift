@@ -29,6 +29,11 @@ public final class HerdrCoreReadiness {
         case failed(String)
         /// A check is in flight and nothing earlier is known.
         case checking
+        /// Bleat is running herdr-core's installer on the host.
+        case installing
+        /// This run's install reached the host and did not work. The message
+        /// is the installer's own reason where it gave one.
+        case installFailed(String)
         /// No answer is known and no check is running: a host paired since the
         /// last check, or the watch before the phone has sent an answer.
         case unknown
@@ -37,6 +42,10 @@ public final class HerdrCoreReadiness {
     /// Checks in flight, and this run's answers that are not worth storing,
     /// by host key.
     private var checking: Set<String> = []
+    /// Installs in flight, by host key. Held apart from `checking` so a
+    /// foreground's `checkAll` cannot start a check that would race the
+    /// install and store "missing" half way through it.
+    private var installing: Set<String> = []
     private var problems: [String: State] = [:]
 
     private let peers: PeerStore
@@ -53,6 +62,7 @@ public final class HerdrCoreReadiness {
 
     public func state(of peer: PairedPeer) -> State {
         if case .installed = peer.herdrCore { return .ready }
+        if installing.contains(peer.hostKey) { return .installing }
         if checking.contains(peer.hostKey) {
             // An earlier "missing" stays on screen while it is asked again, so
             // a row does not flicker at every foreground.
@@ -82,7 +92,7 @@ public final class HerdrCoreReadiness {
 
     /// Asks one peer. Does nothing while that peer is already being asked.
     public func check(_ peer: PairedPeer) async {
-        guard canCheck, !checking.contains(peer.hostKey) else { return }
+        guard canCheck, !checking.contains(peer.hostKey), !installing.contains(peer.hostKey) else { return }
         let deviceKey: SSHKeyPair
         do {
             deviceKey = try peers.deviceKey()
@@ -108,6 +118,49 @@ public final class HerdrCoreReadiness {
             problems[peer.hostKey] = .unreachable(message)
         case .cancelled:
             // Nothing was learned; whatever was shown before stands.
+            break
+        }
+    }
+
+    /// Runs herdr-core's official installer on a host that answered
+    /// "missing", then looks again. Does nothing while that host is being
+    /// checked or installed already, or on the watch.
+    ///
+    /// The caller is expected to have shown `HerdrCoreInstall.displayCommand`
+    /// and had it confirmed: this runs a script from the network on someone's
+    /// machine.
+    ///
+    /// **Not tied to the screen.** The gate starts it in a task of its own, so
+    /// leaving the screen does not cancel an installer half way through on
+    /// the host; the answer is recorded whenever it comes, and every screen
+    /// showing the host reads it from here.
+    public func install(_ peer: PairedPeer) async {
+        guard canCheck, peer.herdrCore == .missing,
+              !checking.contains(peer.hostKey), !installing.contains(peer.hostKey)
+        else { return }
+        let deviceKey: SSHKeyPair
+        do {
+            deviceKey = try peers.deviceKey()
+        } catch {
+            problems[peer.hostKey] = .failed("this device's key could not be read: \(error)")
+            return
+        }
+        installing.insert(peer.hostKey)
+        defer { installing.remove(peer.hostKey) }
+
+        switch await HerdrCoreInstall.run(peer: peer, deviceKey: deviceKey, link: reachability.link) {
+        case .installed(let herdrCore, let endpoint):
+            do {
+                try peers.recordHerdrCore(herdrCore, reachedAt: endpoint, for: peer)
+                problems[peer.hostKey] = nil
+            } catch {
+                problems[peer.hostKey] = .failed("herdr-core was installed, but the answer could not be saved: \(error)")
+            }
+        case .failed(let message):
+            problems[peer.hostKey] = .installFailed(message)
+        case .unreachable(let message):
+            problems[peer.hostKey] = .unreachable(message)
+        case .cancelled:
             break
         }
     }

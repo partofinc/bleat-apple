@@ -40,6 +40,8 @@ struct PeerRow: View {
         case .unreachable: "Not reachable"
         case .failed: "Check failed"
         case .checking: "Checking for herdr-core…"
+        case .installing: "Installing herdr-core…"
+        case .installFailed: "Install failed"
         }
     }
 

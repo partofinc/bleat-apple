@@ -13,8 +13,10 @@ public enum HerdrCoreLookup {
     /// `LoginShellLookup.command(locating:)` for why that is not a failed command.
     public static let locate = LoginShellLookup.command(locating: "hc")
 
-    /// Where Herdr.app installs `hc`, asked only when the login shell's `PATH`
-    /// has no `hc`.
+    /// Where herdr-core's installer and Herdr.app put it, asked only when the
+    /// login shell's `PATH` has no herdr-core: `~/.local/bin/hc`, then
+    /// `~/.local/bin/herdr-core`, each printed on its own line if it is
+    /// executable.
     ///
     /// **The login shell is not enough on a Mac.** `~/.local/bin` is commonly
     /// put on `PATH` in `.zshrc` (it is on this project's Mac; who wrote the
@@ -25,11 +27,25 @@ public enum HerdrCoreLookup {
     /// Debian's `.profile` adds `~/.local/bin` for login shells, which is why
     /// the Pis were found.
     ///
+    /// **`herdr-core` as well as `hc`.** The installer always writes
+    /// `~/.local/bin/herdr-core`, and adds the `hc` link beside it only when
+    /// no `hc` exists — "some window managers ship one" (its own header, read
+    /// 12 Nov 2026). On such a host the `hc` on `PATH` is not herdr-core and
+    /// there is no `~/.local/bin/hc`; only this name finds what was installed.
+    ///
     /// Run by `/bin/sh` inside single quotes, so the login shell (zsh, bash,
     /// fish) only has to pass a quoted string. Empty output when absent; the
-    /// trailing `|| true` keeps absence from being a failed command.
-    public static let installedByHerdrApp =
-        #"/bin/sh -c '[ -x "$HOME/.local/bin/hc" ] && echo "$HOME/.local/bin/hc" || true'"#
+    /// trailing `true` keeps absence from being a failed command.
+    public static let standardLocations =
+        #"/bin/sh -c 'for f in "$HOME/.local/bin/hc" "$HOME/.local/bin/herdr-core"; do [ -x "$f" ] && echo "$f"; done; true'"#
+
+    /// Every absolute path in `standardLocations`' output, in order.
+    public static func paths(inOutput output: String) -> [String] {
+        output
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("/") }
+    }
 
     /// `<path> --version`, with the path quoted for a POSIX shell.
     public static func version(at path: String) -> String {

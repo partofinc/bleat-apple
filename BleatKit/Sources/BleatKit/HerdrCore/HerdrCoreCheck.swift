@@ -69,13 +69,28 @@ public enum HerdrCoreCheck {
     /// - Throws: `TransportError` when the connection goes part way, and
     ///   `CancellationError`. Neither is an answer about hc.
     public static func find(over shell: any ShellRunner) async throws -> HerdrCore {
-        var path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
-        if path == nil {
-            // `PATH` first, so an hc the user put somewhere else wins;
-            // Herdr.app's own location only when `PATH` has none.
-            path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.installedByHerdrApp))
+        // `PATH` first, so an hc the user put somewhere else wins.
+        let onPath = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
+        if let onPath, let version = try await version(of: onPath, over: shell) {
+            return .installed(path: onPath, version: version)
         }
-        guard let path else { return .missing }
+        // The standard locations when `PATH` has no hc, **or has one that is
+        // not herdr-core**: the installer leaves another `hc` alone and puts
+        // herdr-core beside it under its own name.
+        let candidates = HerdrCoreLookup.paths(inOutput: try await shell.run(shell: HerdrCoreLookup.standardLocations))
+        for path in candidates where path != onPath {
+            if let version = try await version(of: path, over: shell) {
+                return .installed(path: path, version: version)
+            }
+        }
+        return .missing
+    }
+
+    /// What `path --version` says, if it answers as herdr-core.
+    ///
+    /// - Throws: `TransportError` and `CancellationError` only. Any other
+    ///   failure is the binary not running as herdr-core, which is an answer.
+    private static func version(of path: String, over shell: any ShellRunner) async throws -> String? {
         let printed: String
         do {
             printed = try await shell.run(shell: HerdrCoreLookup.version(at: path))
@@ -86,9 +101,8 @@ public enum HerdrCoreCheck {
             // would have been stored and shown as "Install herdr-core".
             throw CancellationError()
         } catch {
-            return .missing
+            return nil
         }
-        guard let version = HerdrCoreLookup.version(inOutput: printed) else { return .missing }
-        return .installed(path: path, version: version)
+        return HerdrCoreLookup.version(inOutput: printed)
     }
 }

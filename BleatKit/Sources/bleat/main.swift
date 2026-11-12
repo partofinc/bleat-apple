@@ -23,6 +23,9 @@ Against a host (omit <host> to use the local herdr; --herdr PATH says which herd
   bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
   bleat schema     [host]
 
+On herdr-core (omit <host> for this machine's hc; --hc PATH says which hc):
+  bleat terminals  [host] [--watch]          # live terminals, most urgent first
+
 Pairing (host side):
   bleat pair    [--port N] [--endpoint HOST[:PORT]]... [--timeout SECONDS]
   bleat inspect [--port N] [--endpoint HOST[:PORT]]...
@@ -48,6 +51,8 @@ struct Options {
     var endpoints: [String] = []
     var keyPath: String?
     var herdrPath: String?
+    var hcPath: String?
+    var watch = false
     var takeover = false
     var cols: Int?
     var rows: Int?
@@ -66,6 +71,8 @@ func parse(_ argv: [String]) -> Options {
         case "--session":  options.session = next()
         case "--key":      options.keyPath = next()
         case "--herdr":    options.herdrPath = next()
+        case "--hc":       options.hcPath = next()
+        case "--watch":    options.watch = true
         case "--takeover": options.takeover = true
         case "--cols":     options.cols = next().flatMap(Int.init)
         case "--rows":     options.rows = next().flatMap(Int.init)
@@ -217,6 +224,26 @@ do {
         exit(0)
     }
 
+    if command == "terminals" {
+        let (selection, _) = try HostArguments.resolve(
+            positional: options.positional, expectsTarget: false, hosts: try registry.all()
+        )
+        switch selection {
+        case .local:
+            guard let path = LocalHc.resolve(options.hcPath) else {
+                fail("bleat: hc is not on PATH or in ~/.local/bin. Pass --hc PATH.")
+            }
+            try await Terminals.run(opener: LocalHc(), hcPath: path, watch: options.watch)
+        case .saved:
+            // Over SSH the path is the host's; `hc` relies on its PATH.
+            guard let opener = try makeTransport(selection, session: nil, herdrPath: nil) as? any HcStreamOpening else {
+                fail("bleat: this host's transport cannot reach herdr-core")
+            }
+            try await Terminals.run(opener: opener, hcPath: options.hcPath ?? "hc", watch: options.watch)
+        }
+        exit(0)
+    }
+
     // Before choosing a transport, which for the local herdr may start a
     // login shell: a mistyped command is answered with the usage, not with
     // the outcome of looking for herdr.
@@ -271,6 +298,10 @@ do {
     fail("bleat: \(describe(error))")
 } catch let error as HerdrError {
     fail("\(error)")
+} catch let error as HcError {
+    fail("bleat: herdr-core: \(error)")
+} catch let error as HcProtocolError {
+    fail("bleat: \(error)")
 } catch let error as TransportError {
     fail("bleat: \(Describe.transport(error))")
 } catch {

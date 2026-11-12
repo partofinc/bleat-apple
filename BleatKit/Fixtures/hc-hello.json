@@ -1,0 +1,62 @@
+{
+ "id": 0,
+ "jsonrpc": "2.0",
+ "result": {
+  "core": {
+   "id": "d95cc11c4cc4674dc919c424538e0acd",
+   "name": "kestrel"
+  },
+  "features": [
+   "framed",
+   "attach",
+   "events",
+   "status",
+   "shell",
+   "resize_notifications",
+   "automatic_input",
+   "restart_environment"
+  ],
+  "framed": true,
+  "generation": 1,
+  "login_session": {
+   "gui": true,
+   "id": 100015,
+   "user": 501
+  },
+  "methods": [
+   "hello",
+   "server.status",
+   "server.stop",
+   "server.restart",
+   "terminal.run",
+   "templates.list",
+   "terminal.list",
+   "terminal.get",
+   "terminal.kill",
+   "terminal.rm",
+   "terminal.keep",
+   "terminal.label",
+   "terminal.read",
+   "terminal.attach",
+   "terminal.send",
+   "terminal.wait",
+   "terminal.keys",
+   "terminal.interrupt",
+   "terminal.put",
+   "machine.exec",
+   "file.read",
+   "file.write",
+   "file.edit",
+   "doc.get",
+   "doc.set",
+   "events.subscribe",
+   "machine.add",
+   "machine.list",
+   "machine.connect",
+   "machine.rename",
+   "machine.rm",
+   "rpc.discover"
+  ],
+  "version": "0.1.20"
+ }
+}

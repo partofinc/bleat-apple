@@ -1,0 +1,6 @@
+{"jsonrpc":"2.0","method":"event","params":{"data":{"address":"t5g","argv":["sleep","4"],"cols":200,"created_ms":1794468673032,"cwd":"/Users/robin/scratch","die_with_parent":true,"exit_code":null,"finished_ms":null,"identity":"ghostty","keep":false,"labels":{},"name":"bleat-scratch","notify":true,"parent":"t5f","pid":36763,"reason":null,"reported":false,"rm":false,"rows":120,"screen":"exact","signal":null,"state":"live","status":null,"status_ms":null,"template":null,"title":"","turn":0},"seq":2489,"terminal":"t5g","type":"created"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"labels":{"where":"bleat-apple / 1"}},"seq":2490,"terminal":"t5g","type":"labels"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"argv":["sleep","4"],"cwd":"/Users/robin/scratch","name":"sleep","pid":36763},"seq":2491,"terminal":"t5g","type":"foreground"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"labels":{"bleat.test":"1","where":"bleat-apple / 1"}},"seq":2492,"terminal":"t5g","type":"labels"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"exit_code":0,"finished_ms":1794468677064,"reason":"exited","signal":null},"seq":2493,"terminal":"t5g","type":"finished"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{},"seq":2494,"terminal":"t5g","type":"removed"}}

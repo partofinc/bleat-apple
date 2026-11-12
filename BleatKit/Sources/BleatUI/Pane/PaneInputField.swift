@@ -15,7 +15,7 @@ import SwiftUI
 /// someone's Mac — a field that grew with its text would resize their pane as
 /// the user typed.
 struct PaneInputField: View {
-    let model: PaneModel
+    let model: any PaneDriving
     @Binding var draft: String
     @Binding var isFocused: Bool
 

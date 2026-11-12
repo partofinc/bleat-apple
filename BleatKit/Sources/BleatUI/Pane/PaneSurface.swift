@@ -7,7 +7,7 @@ import SwiftUI
 /// so beats a blank rectangle — `BleatUI` builds for macOS as well, where the
 /// app does not exist yet.
 struct PaneSurface: View {
-    let model: PaneModel
+    let model: any PaneDriving
     let isActive: Bool
 
     var body: some View {

@@ -210,7 +210,8 @@ here. **Must be closed before:** the phase named.
 
 4. ~~**The attach frame layout.**~~ Answered from `wire.rs`; see
    `hc-facts.md`. Verify live in Phase A.
-5. **Scrolling.** herdr carried one viewport and scrolled with
+5. **Scrolling.** *Built 12 Nov 2026 as wheel clicks or local history; see
+   `pane-view.md`. Left open: whether it feels right on Claude Code.* herdr carried one viewport and scrolled with
    `terminal.scroll`, handed to the program as a wheel event. hc offers
    `history` on attach and `terminal.read --lines`, and `viewers.rs` mentions
    "a read scrolls the app". Is there a live scroll, or is scrolling Bleat's

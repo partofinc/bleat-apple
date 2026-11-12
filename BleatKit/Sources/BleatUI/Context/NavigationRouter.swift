@@ -72,6 +72,10 @@ public final class NavigationRouter {
         case pane(
             peer: String, session: String?, target: String, title: String, mode: PaneMode = .chat
         )
+        /// Bleat 2: one herdr-core terminal's live screen. `address` is hc's
+        /// (`t58`); `title` is what the list called it, for the same reason
+        /// `pane` carries one.
+        case terminal(peer: String, address: String, title: String)
     }
 
     public func push(_ route: Route) { path.append(route) }

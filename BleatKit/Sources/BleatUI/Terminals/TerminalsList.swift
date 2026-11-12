@@ -7,6 +7,8 @@ import SwiftUI
 /// A host Herdr.app never touched — a Pi, the demo host — has no such label,
 /// and its terminals are one section with no header.
 struct TerminalsList: View {
+    /// The host's key, which a row's route carries.
+    let hostKey: String
     let terminals: [HcTerminal]
 
     var body: some View {
@@ -14,7 +16,11 @@ struct TerminalsList: View {
             ForEach(sections, id: \.title) { section in
                 Section {
                     ForEach(section.terminals) { terminal in
-                        HcTerminalRow(terminal: terminal)
+                        NavigationLink(value: NavigationRouter.Route.terminal(
+                            peer: hostKey, address: terminal.address, title: terminal.displayName
+                        )) {
+                            HcTerminalRow(terminal: terminal)
+                        }
                     }
                 } header: {
                     if !section.title.isEmpty { Text(section.title) }
@@ -46,14 +52,14 @@ struct TerminalsList: View {
 #if DEBUG
 #Preview("Spaces", traits: .sampleData) {
     NavigationStack {
-        TerminalsList(terminals: HcTerminal.samples.sortedByAttention())
+        TerminalsList(hostKey: PairedPeer.preview.hostKey, terminals: HcTerminal.samples.sortedByAttention())
             .navigationTitle("kestrel.air")
     }
 }
 
 #Preview("A Pi, no spaces", traits: .sampleData) {
     NavigationStack {
-        TerminalsList(terminals: HcTerminal.samplesWithoutSpaces)
+        TerminalsList(hostKey: PairedPeer.preview.hostKey, terminals: HcTerminal.samplesWithoutSpaces)
             .navigationTitle("adam")
     }
 }

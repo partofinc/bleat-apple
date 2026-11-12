@@ -36,6 +36,12 @@ struct RouteView: View {
             } else {
                 unpaired
             }
+        case .terminal(let hostKey, let address, let title):
+            if let peer = peer(hostKey) {
+                HcTerminalScreen(peer: peer, address: address, title: title, connections: context.connections)
+            } else {
+                unpaired
+            }
         case .pane(let hostKey, let session, let target, let title, let mode):
             if let peer = peer(hostKey) {
                 PaneView(

@@ -8,7 +8,7 @@ import SwiftUI
 /// pane, which is where Tab and Ctrl-C are wanted most: a shell's completion
 /// is the reason to type there at all.
 struct PaneShortcutStrip: View {
-    let model: PaneModel
+    let model: any PaneDriving
 
     var body: some View {
         ScrollView(.horizontal) {

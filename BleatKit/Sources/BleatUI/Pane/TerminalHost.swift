@@ -5,7 +5,7 @@ import SwiftTerm
 
 /// SwiftTerm's terminal, as a SwiftUI view.
 struct TerminalHost: UIViewControllerRepresentable {
-    let model: PaneModel
+    let model: any PaneDriving
     /// Whether the terminal is the mode on screen. Passed from the view body
     /// rather than read off the model, so SwiftUI observes it.
     let isActive: Bool
@@ -24,6 +24,27 @@ struct TerminalHost: UIViewControllerRepresentable {
             // the bytes, so anything that touched them would corrupt the screen.
             model.attach { [weak terminal] data in
                 terminal?.feed(byteArray: ArraySlice(data))
+            }
+            // How a scroll reaches a program over hc, which has no scroll
+            // command: a program that asked for the mouse gets wheel clicks,
+            // encoded in the protocol it asked for and sent like any other
+            // input; anything else scrolls the history this terminal holds.
+            model.attachScroller { [weak terminal] direction, notches in
+                guard let terminal, notches > 0 else { return }
+                let engine = terminal.getTerminal()
+                if engine.mouseMode != .off {
+                    let flags = engine.encodeButton(
+                        button: direction == .up ? 4 : 5,
+                        release: false, shift: false, meta: false, control: false
+                    )
+                    for _ in 0..<notches {
+                        engine.sendEvent(buttonFlags: flags, x: engine.cols / 2, y: engine.rows / 2)
+                    }
+                } else if direction == .up {
+                    terminal.scrollUp(lines: notches)
+                } else {
+                    terminal.scrollDown(lines: notches)
+                }
             }
         }
         controller.isActive = isActive

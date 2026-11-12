@@ -3,10 +3,9 @@ import Foundation
 
 /// One cap on the shortcut strip: a key, or the same key more than once.
 ///
-/// **These go to the program in the pane, not to herdr.** herdr's own
-/// keybindings belong to its terminal UI, and the stream this app holds
-/// delivers input past that, straight to the pane — so a herdr prefix sent
-/// from here would arrive at the shell as a control character.
+/// **These go to the program in the terminal.** hc's attach delivers input
+/// straight to it, with no prefix key of its own in the way — so a shortcut
+/// here is exactly the bytes the program receives.
 struct PaneShortcut: Identifiable, Hashable {
     /// What is printed on the cap, in the notation a Mac keyboard uses.
     let label: String
@@ -20,7 +19,7 @@ struct PaneShortcut: Identifiable, Hashable {
     var id: String { label }
 
     /// Between the presses of a shortcut that has more than one. See
-    /// `PaneModel.send(_:spacedBy:)`.
+    /// `PaneDriving.send(_:spacedBy:)`.
     static let pause = Duration.milliseconds(300)
 
     /// In the order they are reached for. Interrupt first, because it is the

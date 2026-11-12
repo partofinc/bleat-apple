@@ -2,7 +2,7 @@ import Citadel
 import Foundation
 import NIOCore
 
-/// One `herdr` exec channel presented as a long-lived `HerdrStream`.
+/// One exec channel — `hc connect` — presented as a long-lived `DuplexStream`.
 ///
 /// Citadel exposes a bidirectional exec only as a scoped closure, and it closes
 /// the channel when that closure returns. So the closure is held open by a gate
@@ -10,7 +10,7 @@ import NIOCore
 /// returning is the only way to actually tear the channel down. Cancelling the
 /// task is not enough: a read-only `observe` never ends on its own, so without
 /// this an unattended read-only attach would hang forever.
-final class SSHStream: HerdrStream, @unchecked Sendable {
+final class SSHStream: DuplexStream, @unchecked Sendable {
     let output: AsyncThrowingStream<Data, any Error>
 
     private let writer = LockedBox<TTYStdinWriter?>(nil)
@@ -24,7 +24,7 @@ final class SSHStream: HerdrStream, @unchecked Sendable {
     /// never exits on its own (a read-only `observe`).
     private let sink = LockedBox<AsyncThrowingStream<Data, any Error>.Continuation?>(nil)
 
-    init(client: SSHClient, command: String, args: [String]) async {
+    init(client: SSHClient, command: String) async {
         let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
         output = stream
         sink.withLock { $0 = continuation }
@@ -90,11 +90,14 @@ final class SSHStream: HerdrStream, @unchecked Sendable {
 
             if let error = failure.current {
                 if let failed = error as? SSHClient.CommandFailed {
+                    // The command ran and failed — `hc` missing at that path,
+                    // or refusing to start. Its stderr is the explanation.
                     continuation.finish(
-                        throwing: HerdrError.fromStderr(
-                            command: args,
+                        throwing: ShellError(
+                            command: command,
                             exitCode: Int32(clamping: failed.exitCode),
-                            stderr: stderrBuffer.current
+                            stderr: String(decoding: stderrBuffer.current, as: UTF8.self)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                     )
                 } else {

@@ -7,8 +7,8 @@ import Foundation
 ///
 /// What actually makes this safe is narrower than "we hold a lock", and worth
 /// stating precisely: the lock guards only the *reference*, not calls made
-/// through it. List polling and the pane stream deliberately open channels
-/// concurrently, so `SSHClient` is used from several tasks at once. That is
+/// through it. The terminal list's `hc connect` and a terminal's deliberately
+/// open channels concurrently, so `SSHClient` is used from several tasks at once. That is
 /// sound because the transport dials with `reconnect: .never`, which means the
 /// client's `session` is assigned once at connect and never reassigned;
 /// opening a channel only reads it. **If reconnect support is ever added,

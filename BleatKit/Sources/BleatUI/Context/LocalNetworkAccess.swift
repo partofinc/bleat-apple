@@ -5,7 +5,7 @@ import Observation
 /// Whether iOS is letting this app reach the local network yet.
 ///
 /// **This exists because the first pairing on a fresh install always failed.**
-/// Herdr is on a Mac at a `.local` name or a LAN address, and iOS gates both
+/// A host is often a Mac at a `.local` name or a LAN address, and iOS gates both
 /// behind a permission prompt that appears the moment something first tries.
 /// The attempt that raises the alert does not wait for the answer — every
 /// endpoint in the race fails while it is still on screen — so pairing

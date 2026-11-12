@@ -40,9 +40,9 @@ struct PaneSurface: View {
                     EmptyView()
                 case .ended:
                     ContentUnavailableView {
-                        Label("The pane closed", systemImage: "rectangle.slash")
+                        Label("The terminal ended", systemImage: "rectangle.slash")
                     } description: {
-                        Text("Herdr stopped sending frames for it.")
+                        Text("herdr-core closed it: the program ended, or the terminal was removed.")
                     } actions: {
                         Button("Try again", action: model.retry)
                     }
@@ -110,22 +110,22 @@ struct PaneSurface: View {
 /// that stops answering, and each is a `ContentUnavailableView` over a black
 /// terminal — which is a combination worth seeing before it happens on a phone.
 #Preview("Live", traits: .sampleData) {
-    PaneSurface(model: PaneModel(previewing: .live), isActive: true)
+    PaneSurface(model: HcPaneModel(previewing: .live), isActive: true)
 }
 
 #Preview("Opening", traits: .sampleData) {
-    PaneSurface(model: PaneModel(previewing: .opening), isActive: true)
+    PaneSurface(model: HcPaneModel(previewing: .opening), isActive: true)
 }
 
-/// Not a failure: herdr simply stopped sending frames, because the pane went
-/// away or the session stopped.
+/// Not a failure: herdr-core closed the channel, because the program ended or
+/// the terminal was removed.
 #Preview("Ended", traits: .sampleData) {
-    PaneSurface(model: PaneModel(previewing: .ended), isActive: true)
+    PaneSurface(model: HcPaneModel(previewing: .ended), isActive: true)
 }
 
 #Preview("Failed", traits: .sampleData) {
     PaneSurface(
-        model: PaneModel(previewing: .failed("the connection closed before this finished")),
+        model: HcPaneModel(previewing: .failed("the connection closed before this finished")),
         isActive: true
     )
 }

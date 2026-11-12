@@ -1,33 +1,29 @@
 import Foundation
 
-/// Turns a paired peer into a working `HerdrClient`.
+/// Turns a paired peer into a live SSH connection.
 ///
 /// This is where the pairing record finally pays off. Everything the connection
 /// needs was learned once, out of band: which machine this is (the host key),
-/// where it answers (the endpoints), who to log in as, and where `herdr` lives
-/// on it. Nothing here prompts, guesses, or trusts anything on first sight.
+/// where it answers (the endpoints), and who to log in as. Nothing here
+/// prompts, guesses, or trusts anything on first sight.
+///
+/// **No herdr, and nothing about hc either.** What runs over the connection —
+/// `hc connect`, the herdr-core check, pairing's shell commands — is the
+/// caller's business; this only finds the machine and proves it is the one.
 public enum PeerConnection {
-    public struct Connected: Sendable {
-        public let client: HerdrClient
-        public let transport: SSHTransport
-        /// The address that won. Worth writing back to the peer: it is nearly
-        /// always still right, and trying it alone beats racing again.
-        public let endpoint: Endpoint
-    }
-
-    /// The SSH half of `connect`: races the peer's endpoints and returns the
-    /// winning transport, with no `herdr` call on it.
+    /// Races the peer's endpoints and returns a transport on the winner, with
+    /// the address that won — worth writing back to the peer: it is nearly
+    /// always still right, and trying it alone beats racing again.
     ///
-    /// Separate so that something needing only a shell can have one —
-    /// `HerdrCoreCheck` asks whether `hc` is installed.
-    ///
+    /// - Parameter link: Where the phone is standing. Endpoints that provably
+    ///   cannot work from there are dropped rather than ordered last, since
+    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
     /// - Throws: `TransportError.connectionFailed` when nothing answered, or
     ///   `.hostKeyMismatch` when something answered and was not this peer.
     public static func open(
         to peer: PairedPeer,
         deviceKey: SSHKeyPair,
-        link: LinkState,
-        session: String? = nil
+        link: LinkState
     ) async throws -> PeerConnector.Connection {
         let endpoints = peer.endpointsToTry(from: link)
         guard !endpoints.isEmpty else {
@@ -66,40 +62,7 @@ public enum PeerConnection {
             username: peer.username,
             hostKey: peer.hostKey,
             privateKey: deviceKey,
-            // The stored path for a 1.x peer. A peer paired on hc has none,
-            // and nothing Bleat 2 runs over this transport calls herdr, so the
-            // placeholder is never used.
-            herdrPath: peer.herdrPath ?? "herdr",
-            session: session ?? peer.session,
             everyCandidateNeedsATunnel: endpoints.allSatisfy { $0.needsTunnel(from: link) }
-        )
-    }
-
-    /// Races the peer's endpoints and returns a client on the winner.
-    ///
-    /// - Parameter link: Where the phone is standing. Endpoints that provably
-    ///   cannot work from there are dropped rather than ordered last, since
-    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
-    /// - Throws: `TransportError.connectionFailed` when nothing answered, or
-    ///   `.hostKeyMismatch` when something answered and was not this peer.
-    public static func connect(
-        to peer: PairedPeer,
-        deviceKey: SSHKeyPair,
-        link: LinkState,
-        session: String? = nil
-    ) async throws -> Connected {
-        let connection = try await open(to: peer, deviceKey: deviceKey, link: link, session: session)
-
-        // **herdr is not looked for here any more** (Bleat 2, 12 Nov 2026).
-        // Nothing Bleat 2 shows runs it: every host opens through the
-        // herdr-core gate. A 1.x peer already has its path stored, and a peer
-        // paired on hc has none to find. Looking anyway refused hosts without
-        // herdr — which also refused unpairing them — and, made best effort,
-        // cost a login-shell round trip on every connection to such a host.
-        return Connected(
-            client: HerdrClient(transport: connection.transport),
-            transport: connection.transport,
-            endpoint: connection.endpoint
         )
     }
 }

@@ -57,28 +57,29 @@ BleatKit/                   # the local Swift package
   Package.swift
   Sources/
     BleatKit/               # domain + transport. No SwiftUI. Builds for iOS.
-      Transport/            # HerdrTransport protocol + SSHTransport (Citadel)
-      Relay/                # the second transport: a watch asking the phone
-      Protocol/             # NDJSON codec, frame/command types
-      Model/                # Codable models for herdr JSON (from schema.json)
-      Client/               # HerdrClient: typed API over a transport
+      Transport/            # PeerLink, DuplexStream, ShellRunner + SSHTransport (Citadel)
+      Hc/                   # HcClient: herdr-core's framed JSON-RPC, terminals, events
+      HerdrCore/            # the gate: is hc on this host, and where
+      Terminal/             # keys, lines, grids: what a terminal is sent
+      Relay/                # a watch asking the phone (host list, shell, notes)
+      Client/               # the console tool's saved hosts
       Keys/                 # device ed25519 key + Keychain storage
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
       Context/              # AppContext, routers, stores
       Watch/                # WatchConnectivity: the watch's link, the phone's relay host
       Pairing/              # the pairing sheet, scanner and its model
-      Sessions/             # the sessions on a host
-      Workspaces/           # workspaces in a session
-      Agents/               # agents in a workspace, blocked first
+      HerdrCore/            # the gate a host opens to, and its readiness store
+      Terminals/            # a host's terminal list, and one terminal's screen
+      Pane/                 # the terminal surface: SwiftTerm, key bar, scrolling
       Views/                # screens
       Previews/             # #if DEBUG sample data for #Preview only
-    BleatProcess/           # macOS and Linux: LocalProcessTransport, spawns `herdr`
+    BleatProcess/           # macOS and Linux: local `hc connect`, pairing's host side
     bleat/                  # executable target, macOS console tool
-  Tests/BleatKitTests/      # unit tests: codec, models, fake transport
+  Tests/BleatKitTests/      # unit tests: frames, events, models, scripted cores
   Tests/BleatUITests/       # lays views out for real; needs a simulator
   Fixtures/
-    schema.json             # output of `herdr api schema --json` (source of truth)
-    *.json                  # captured CLI outputs for decoding tests
+    schema.json             # output of `hc schema --json`, OpenRPC (source of truth)
+    hc-*.json, *.ndjson     # captured herdr-core replies and events, scrubbed
 Support/Info.plist          # the two keys that cannot be build settings
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)

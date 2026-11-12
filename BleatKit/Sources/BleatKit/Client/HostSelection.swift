@@ -2,7 +2,7 @@ import Foundation
 
 /// Which host a command runs against.
 public enum HostSelection: Sendable, Equatable {
-    /// Spawn `herdr` on this machine.
+    /// This machine: `hc connect` as a child process.
     case local
     /// Reach a saved host over SSH.
     case saved(HostEntry)

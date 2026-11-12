@@ -46,8 +46,8 @@ struct PairedResultView: View {
 }
 #endif
 
-/// The overlay-only host, whose every address reads "VPN" — and whose herdr
-/// path and non-default port are both things this screen has to show plainly,
+/// The overlay-only host, whose every address reads "VPN" — and whose
+/// herdr-core and non-default port are both things this screen has to show plainly,
 /// since it is the last chance to notice a pairing that went somewhere odd.
 #if DEBUG
 #Preview("Over a tunnel", traits: .sampleData) {

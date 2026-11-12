@@ -3,29 +3,16 @@ import Crypto
 import Foundation
 import NIOCore
 
-/// Reaches Herdr over plain SSH, running `herdr` on exec channels.
+/// Reaches a host over plain SSH: shell commands, and `hc connect` streams, on
+/// exec channels of one connection.
 ///
-/// Transport v1: no daemon, no relay, no plugin on the host. One connection
-/// carries every channel — list polling and the pane stream run side by side.
+/// No daemon, no relay, no plugin on the host. One connection carries every
+/// channel — the terminal list's `hc connect` and a terminal's run side by
+/// side.
 public final class SSHTransport: PeerLink, @unchecked Sendable {
     private let host: SSHHost
     private let privateKey: Curve25519.Signing.PrivateKey
     private let validator: PinningHostKeyValidator
-    /// Boxed because it can be learned after construction.
-    ///
-    /// A peer records where `herdr` lives when it is paired, but a record that
-    /// predates that carries nil, and the answer only exists once there is a
-    /// connection to ask over. Rebuilding the transport to store one string
-    /// would mean a second handshake for nothing.
-    private let herdrPathBox: LockedBox<String>
-    private var herdrPath: String { herdrPathBox.current }
-    /// Boxed for the same reason the path is: it is chosen after the connection
-    /// exists. The user picks a session from a list the connection fetched, and
-    /// `HERDR_SESSION` is a command prefix rather than something negotiated at
-    /// the handshake — so switching sessions need not cost a reconnect.
-    private let sessionBox: LockedBox<String?>
-    private var session: String? { sessionBox.current }
-
     /// Guarded by `lock`; see `UnsafeTransfer` for why it is boxed.
     private let client = LockedBox<UnsafeTransfer<SSHClient>?>(nil)
     /// Collapses concurrent first calls into a single dial.
@@ -34,28 +21,21 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
     /// and the next command dials again; a disconnect means the owner has let
     /// go, and a command still holding this transport must not dial a session
     /// nobody will close. (Found in review: backgrounding mid-way through a
-    /// pane's opening chain re-dialled, takeover included.)
+    /// 1.x pane's opening chain re-dialled.)
     private let isClosed = LockedBox(false)
 
     /// - Parameters:
-    ///   - herdrPath: Absolute path is the safe default — a non-login shell
-    ///     often lacks `herdr` on `PATH`.
-    ///   - session: Named session, applied as a command prefix (see `command`).
     ///   - hostKeys: How to decide the machine that answered is the right one.
     ///     A paired peer supplies `.expect(peer.hostKey)`, which is the pin;
     ///     the console tool falls back to the trust-on-first-use file.
     public init(
         host: SSHHost,
         privateKey: Curve25519.Signing.PrivateKey,
-        hostKeys: HostKeyPolicy = .standard,
-        herdrPath: String = "herdr",
-        session: String? = nil
+        hostKeys: HostKeyPolicy = .standard
     ) {
         self.host = host
         self.privateKey = privateKey
         self.validator = PinningHostKeyValidator(host: host.pinKey, policy: hostKeys)
-        self.herdrPathBox = LockedBox(herdrPath)
-        self.sessionBox = LockedBox(session)
     }
 
     /// Loads an OpenSSH ed25519 private key from disk.
@@ -68,8 +48,8 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
 
     /// Connects on demand and reuses the connection.
     ///
-    /// `HerdrClient` is meant to survive a dropped socket, so this is
-    /// deliberately re-entrant: a failed connection is discarded and the next
+    /// A dropped socket is normal on a phone, so this is deliberately
+    /// re-entrant: a failed connection is discarded and the next
     /// call dials again.
     private func connected() async throws -> SSHClient {
         if isClosed.current { throw TransportError.channelClosed }
@@ -162,24 +142,6 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
         _ = try await connected()
     }
 
-    /// Records where `herdr` actually lives, once something has asked the host.
-    ///
-    /// Only ever narrows the default `"herdr"` to an absolute path, which is
-    /// what a non-login shell needs — see `HerdrLookup`.
-    public func useHerdrPath(_ path: String) {
-        herdrPathBox.withLock { $0 = path }
-    }
-
-    /// Selects the named session for every later command.
-    ///
-    /// Safe on a live connection: session selection is an environment prefix on
-    /// each exec channel, not connection state, so nothing already running is
-    /// disturbed. It assumes one drill-down at a time, which is what the app
-    /// does — the user is inside a single session's workspaces or nowhere.
-    public func useSession(_ session: String?) {
-        sessionBox.withLock { $0 = session }
-    }
-
     /// Drops the connection, for good: every later command throws
     /// `TransportError.channelClosed` rather than dialling again. A dropped
     /// connection is recovered by the owner making a new transport, which is
@@ -211,53 +173,17 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
 
     // MARK: - Commands
 
-    /// Builds the remote command line.
-    ///
-    /// Session selection is by environment, but SSH channel env requests need
-    /// `PermitUserEnvironment` on the server, which is off by default. sshd
-    /// runs an exec command through the login shell, so a `VAR=value` prefix
-    /// works without any server configuration.
-    ///
-    /// `HERDR_SOCKET_PATH` is cleared: if it leaks in from the remote
-    /// environment it pins the command to the wrong session and silently
-    /// overrides `HERDR_SESSION`.
-    func command(for args: [String]) -> String {
-        command(for: args, session: session)
-    }
-
-    func command(for args: [String], session: String?) -> String {
-        var parts = ["env", "-u", "HERDR_SOCKET_PATH"]
-        if let session { parts.append("HERDR_SESSION=\(Self.quote(session))") }
-        parts.append(Self.quote(herdrPath))
-        parts.append(contentsOf: args.map(Self.quote))
-        return parts.joined(separator: " ")
-    }
-
     /// Single-quotes for POSIX shells; the only escape inside is `'\''`.
     static func quote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
-    public func run(_ args: [String]) async throws -> Data {
-        try await run(args, inSession: session)
-    }
-
-    public func run(_ args: [String], inSession session: String?) async throws -> Data {
-        try await execute(command(for: args, session: session)) { exitCode, stderr in
-            // herdr writes its error envelope to stderr and exits non-zero.
-            HerdrError.fromStderr(command: args, exitCode: exitCode, stderr: stderr)
-        }
-    }
-
     /// Runs one command on its own exec channel and returns stdout.
     ///
-    /// - Parameter onFailure: builds the error for a non-zero exit. The two
-    ///   callers describe failure differently — a `herdr` command that was
-    ///   reached and said no, against a shell command that did not do what it
-    ///   was told — and nothing else about the channel differs.
+    /// - Parameter onFailure: builds the error for a non-zero exit.
     ///
     /// `@concurrent`: every chunk of output is appended here, and the caller
-    /// is usually on the main actor — a transcript tail is a few hundred KB.
+    /// is usually on the main actor.
     @concurrent
     private func execute(
         _ commandLine: String,
@@ -288,32 +214,23 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
         return stdout
     }
 
-    @concurrent
-    public func openStream(_ args: [String]) async throws -> any HerdrStream {
-        let connection = try await connected()
-        return await SSHStream(client: connection, command: command(for: args), args: args)
-    }
 }
 
 /// Bleat 2's one connection per host: `hc connect` on an exec channel, its
 /// stdin and stdout the framed JSON-RPC byte stream `HcClient` speaks.
 ///
-/// Its own command rather than `openStream`: that one builds a `herdr`
-/// command line with the session prefix, and hc chooses its session by
-/// `--session`, never by environment.
 extension SSHTransport: HcStreamOpening {
     @concurrent
-    public func openHcConnection(hcPath: String) async throws -> any HerdrStream {
+    public func openHcConnection(hcPath: String) async throws -> any DuplexStream {
         let connection = try await connected()
         let command = Self.quote(hcPath) + " connect"
-        return await SSHStream(client: connection, command: command, args: [hcPath, "connect"])
+        return await SSHStream(client: connection, command: command)
     }
 }
 
-/// Pairing runs shell commands, not `herdr` commands: installing a key in
-/// `authorized_keys` and finding where `herdr` lives are both plain shell. The
-/// conformance sits on the transport so both kinds of work share one
-/// connection, one dial and one host key check.
+/// Pairing, unpairing, the host's load and the herdr-core check are all plain
+/// shell. The conformance sits on the transport so every kind of work shares
+/// one connection, one dial and one host key check.
 extension SSHTransport: ShellRunner {
     /// `@concurrent` so the decode to `String` stays off the caller's actor too.
     @concurrent

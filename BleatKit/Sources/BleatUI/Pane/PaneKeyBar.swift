@@ -233,7 +233,7 @@ struct PaneKeyBar: View {
 /// Over a live pane it holds, which is the only place it appears.
 #Preview("Accessory", traits: .sampleData) {
     PaneSurface(
-        model: PaneModel(previewing: .live),
+        model: HcPaneModel(previewing: .live),
         isActive: true
     )
 }

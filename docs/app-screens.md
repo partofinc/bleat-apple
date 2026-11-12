@@ -1,5 +1,12 @@
 # App screens: connecting, lists, layout, previews, pairing UI
 
+> **Bleat 2 (12 Nov 2026):** the 1.x session, workspace, agent and pane
+> screens described below were **removed** with the herdr backend. A host opens
+> to `HerdrCoreGateView`, and a ready one to `TerminalsView` → `HcTerminalScreen`;
+> see the section on the herdr-core gate. What remains true below: the split
+> view, the host screen's load bar (now under the terminal list), previews,
+> pairing.
+
 > Moved verbatim from `CLAUDE.md` on 1 Oct 2026. Where the text says "this file", "above" or "below", it means the old single file; a **bold** section name can be found with `grep -r docs/`.
 
 ## Connecting to a paired peer (Phase 2)
@@ -286,11 +293,12 @@ and neither is fixed. Written down rather than discovered twice.
 
 ## Bleat 2: a host opens to the herdr-core gate (12 Nov 2026)
 
-`RouteView`'s `.peer` route resolves to `HerdrCoreGateView`, not
-`PeerDetailView`. The host list's row shows the peer's
-`HerdrCoreReadiness.State` in place of its detail line when it is not ready.
-The sections below describe the 1.x screens, which are unreachable until the hc
-terminal screens replace them. How the check works, and when it runs, is in
+`RouteView`'s `.peer` route resolves to `HerdrCoreGateView` (1.x's
+`PeerDetailView` is gone). The host list's row shows the peer's
+`HerdrCoreReadiness.State` in place of its detail line when it is not ready. A
+ready host shows `TerminalsView`, with the load bar under it; a row opens
+`HcTerminalScreen` through `Route.terminal`. The 1.x screens other sections
+describe were removed with the herdr backend, 12 Nov 2026. How the check works, and when it runs, is in
 [`bleat-2-plan.md`](bleat-2-plan.md#the-migration-gate-built-12-nov-2026).
 
 - **Previews and tests never check.** `AppContext(checksHerdrCore: false)`;

@@ -20,6 +20,10 @@ struct TerminalsView: View {
         TerminalsList(hostKey: model.peer.hostKey, terminals: model.terminals)
             .overlay { overlay }
             .navigationTitle(model.peer.name)
+            // The host's load, and its settings behind a tap. Here, the host's
+            // own screen, and not on a terminal: there a bar that comes and
+            // goes would resize the terminal on someone's Mac.
+            .hostLoadBar(for: model.peer)
             .task(id: attempt) { await model.run() }
             // iOS takes the socket in the background, and `RootView` releases
             // the connection there too. Coming back, a list that failed for

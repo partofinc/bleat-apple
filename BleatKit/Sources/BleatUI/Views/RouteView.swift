@@ -14,40 +14,15 @@ struct RouteView: View {
         switch route {
         case .peer(let hostKey):
             if let peer = peer(hostKey) {
-                // Bleat 2: a host goes through the herdr-core gate. The 1.x
-                // session screens below it stay in the code, unreachable,
-                // until the hc screens replace them.
+                // Every host goes through the herdr-core gate: its terminals
+                // once it has hc, and what stands in the way until then.
                 HerdrCoreGateView(peer: peer)
-            } else {
-                unpaired
-            }
-        case .workspaces(let hostKey, let session):
-            if let peer = peer(hostKey) {
-                WorkspacesView(peer: peer, session: session, connections: context.connections, peers: context.peers)
-            } else {
-                unpaired
-            }
-        case .agents(let hostKey, let session, let workspace, let label):
-            if let peer = peer(hostKey) {
-                AgentsView(
-                    peer: peer, session: session, workspace: workspace, title: label,
-                    connections: context.connections
-                )
             } else {
                 unpaired
             }
         case .terminal(let hostKey, let address, let title):
             if let peer = peer(hostKey) {
                 HcTerminalScreen(peer: peer, address: address, title: title, connections: context.connections)
-            } else {
-                unpaired
-            }
-        case .pane(let hostKey, let session, let target, let title, let mode):
-            if let peer = peer(hostKey) {
-                PaneView(
-                    peer: peer, session: session, target: target, title: title,
-                    mode: mode, connections: context.connections
-                )
             } else {
                 unpaired
             }

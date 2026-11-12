@@ -1,3 +1,4 @@
+#if os(macOS)
 import BleatKit
 import Foundation
 import Testing
@@ -33,3 +34,4 @@ struct LocalShellRunnerTests {
         #expect(HerdrCoreLookup.version(inOutput: printed) == nil)
     }
 }
+#endif

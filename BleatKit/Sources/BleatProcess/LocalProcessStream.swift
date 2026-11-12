@@ -1,14 +1,14 @@
 // `Foundation.Process` does not exist on iOS, and a whole-package iOS build
 // compiles every target whether or not it is vended as a product. The `#if` ban
 // in CLAUDE.md applies to BleatKit, whose whole point is being platform-free;
-// this target is for machines that run herdr — macOS and Linux —, so guarding it is the honest way to
-// say so rather than a workaround.
+// this target is for the machines that run herdr-core — macOS and Linux —, so
+// guarding it is the honest way to say so rather than a workaround.
 #if !os(iOS)
 import BleatKit
 import Foundation
 
-/// A long-lived `herdr` child process presented as a `HerdrStream`.
-final class LocalProcessStream: HerdrStream, @unchecked Sendable {
+/// A long-lived child process — `hc connect` — presented as a `DuplexStream`.
+final class LocalProcessStream: DuplexStream, @unchecked Sendable {
     private let process = Process()
     private let inPipe = Pipe()
     private let outPipe = Pipe()
@@ -55,19 +55,19 @@ final class LocalProcessStream: HerdrStream, @unchecked Sendable {
             let tail = outHandle.availableData
             if !tail.isEmpty { continuation.yield(tail) }
 
-            // `terminal.release` makes the host close the stream and exit 0,
-            // so a zero status is a clean detach. A non-zero status is also
-            // clean when we are the ones who terminated it: a read-only
-            // `observe` never exits on its own, so detaching means signalling
-            // it, and SIGTERM must not be reported as a failure.
+            // A zero status is a clean end. A non-zero one is also clean when
+            // we are the ones who terminated it: `hc connect` runs until its
+            // stdin closes or it is signalled, and SIGTERM on detach must not
+            // be reported as a failure.
             if process.terminationStatus == 0 || closing.current {
                 continuation.finish()
             } else {
                 continuation.finish(
-                    throwing: HerdrError.fromStderr(
-                        command: args,
+                    throwing: ShellError(
+                        command: ([executable.path] + args).joined(separator: " "),
                         exitCode: process.terminationStatus,
-                        stderr: stderrBuffer.current
+                        stderr: String(decoding: stderrBuffer.current, as: UTF8.self)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
                     )
                 )
             }

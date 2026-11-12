@@ -103,28 +103,17 @@ public struct PeerRegistry: Sendable {
         try write(peers)
     }
 
-    /// Notes where `herdr` lives, for a record that predates pairing storing it.
+    /// Notes what the host said about herdr-core, and the address it said it
+    /// on.
     ///
     /// A targeted mutation rather than `save` of an edited copy, and the
     /// difference matters: `save` merges, and merging takes the *newer*
     /// record's `lastGoodEndpoint` when it has one. An edited copy made from a
     /// peer loaded a moment earlier carries the endpoint from before this
-    /// connection, so saving it would quietly undo the winner recorded on the
-    /// line above.
-    public func recordHerdrPath(_ path: String, forHostKey hostKey: String) throws {
-        var peers = try all()
-        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return }
-        guard peers[index].herdrPath != path else { return }
-        peers[index].herdrPath = path
-        try write(peers)
-    }
-
-    /// Notes what the host said about herdr-core, and the address it said it
-    /// on.
+    /// connection, so saving it would quietly undo a winner just recorded.
     ///
-    /// A targeted mutation for the reason `recordHerdrPath` is one. One write
-    /// for both, and only when either changed: every launch asks again, and
-    /// each write reloads every host list and re-mirrors the watch.
+    /// One write for both, and only when either changed: every launch asks
+    /// again, and each write reloads every host list and re-mirrors the watch.
     ///
     /// - Returns: whether the record changed.
     @discardableResult
@@ -146,7 +135,7 @@ public struct PeerRegistry: Sendable {
 
     /// Lays what the host just said it is over what was known.
     ///
-    /// A targeted mutation for the reason `recordHerdrPath` is one. Writes only
+    /// A targeted mutation for the reason `recordHerdrCore` is one. Writes only
     /// when something changed: this runs after every status read, and nearly
     /// every one of them says what the last one did.
     ///
@@ -164,7 +153,7 @@ public struct PeerRegistry: Sendable {
 
     /// Folds a fresh report of the host's own addresses into the stored record.
     ///
-    /// A targeted mutation for the reason `recordHerdrPath` is one, and here it
+    /// A targeted mutation for the reason `recordHerdrCore` is one, and here it
     /// matters more: `save` merges, and merging takes the *newer* record's
     /// `lastGoodEndpoint`. A copy edited from a peer loaded before this
     /// connection carries the previous winner, so saving it would undo the one
@@ -210,79 +199,6 @@ public struct PeerRegistry: Sendable {
         guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
         guard !peers[index].endpoints.contains(endpoint) else { return peers[index] }
         peers[index].endpoints.append(endpoint)
-        try write(peers)
-        return peers[index]
-    }
-
-    /// Remembers that this phone started `session` on the host.
-    ///
-    /// A targeted mutation for the reason `recordHerdrPath` is one: `save`
-    /// merges, and a merge takes the newer record's `lastGoodEndpoint` — this
-    /// runs moments after `recordSuccess`, so writing back an edited copy
-    /// loaded a moment earlier would undo the endpoint that had just won.
-    @discardableResult
-    public func recordCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
-        var peers = try all()
-        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
-        guard !peers[index].createdHere(session) else { return peers[index] }
-        peers[index].createdSessions = (peers[index].createdSessions ?? []) + [session]
-        try write(peers)
-        return peers[index]
-    }
-
-    /// Records that this phone is why `session` is running, which is what the
-    /// stop confirmation reads. See `PairedPeer.startedSessions`.
-    @discardableResult
-    public func recordStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
-        var peers = try all()
-        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
-        guard !peers[index].startedHere(session) else { return peers[index] }
-        peers[index].startedSessions = (peers[index].startedSessions ?? []) + [session]
-        try write(peers)
-        return peers[index]
-    }
-
-    /// Drops that claim once the session is down again.
-    ///
-    /// **Called on stop, and this is what keeps the claim honest.** It means
-    /// "this phone is why it is running", so a session that is no longer
-    /// running has no such reason. Left standing, starting and stopping the
-    /// user's own `work` session from the phone would leave a permanent claim on
-    /// that name — and the stop confirmation would then describe whatever they
-    /// started next under it as this phone's own doing.
-    @discardableResult
-    public func forgetStartedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
-        var peers = try all()
-        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
-        guard peers[index].startedHere(session) else { return peers[index] }
-        let remaining = (peers[index].startedSessions ?? []).filter { $0 != session }
-        peers[index].startedSessions = remaining.isEmpty ? nil : remaining
-        try write(peers)
-        return peers[index]
-    }
-
-    /// Forgets a session this phone started, once it is gone from the host.
-    ///
-    /// **Called on delete, and that is not bookkeeping.** The name is the only
-    /// thing tying a session to this install, so a name left in the list
-    /// outlives the session it referred to — and the next session of that name,
-    /// made by whoever is at the Mac, would inherit the Delete action as if the
-    /// phone had created it. Deleting is exactly when the claim stops being
-    /// true.
-    @discardableResult
-    public func forgetCreatedSession(_ session: String, forHostKey hostKey: String) throws -> PairedPeer? {
-        var peers = try all()
-        guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return nil }
-        guard peers[index].createdHere(session) || peers[index].startedHere(session) else {
-            return peers[index]
-        }
-        let remaining = (peers[index].createdSessions ?? []).filter { $0 != session }
-        peers[index].createdSessions = remaining.isEmpty ? nil : remaining
-        // A deleted session is not running either, so the other claim goes with
-        // it — otherwise a session of that name made later at the Mac would be
-        // described by the stop confirmation as one this phone had started.
-        let started = (peers[index].startedSessions ?? []).filter { $0 != session }
-        peers[index].startedSessions = started.isEmpty ? nil : started
         try write(peers)
         return peers[index]
     }

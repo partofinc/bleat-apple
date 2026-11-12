@@ -21,11 +21,11 @@ import SwiftUI
 /// pull-to-refresh. A read already in flight or under ten seconds old turns
 /// the extra asks away.
 ///
-/// On the host's screen, a session's and a workspace's. **Not on a pane**:
-/// layout there is the stream's size, and a bar that comes and goes with the
-/// connection would resize the pty on someone's Mac.
+/// On the host's screen, its terminal list. **Not on a terminal**: layout
+/// there is the attach's size, and a bar that comes and goes with the
+/// connection would resize the terminal on someone's Mac.
 ///
-/// **Tapping it opens the host's settings**, on all three screens: the bar is
+/// **Tapping it opens the host's settings**: the bar is
 /// the host, and what is known about it is behind it. Through the router, as
 /// the swipe on the peer list is — two `.sheet`s on one intent is a
 /// presentation SwiftUI silently drops. See `PeerSettingsFlow`. With no

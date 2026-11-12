@@ -5,18 +5,15 @@ public struct HostEntry: Codable, Sendable, Identifiable, Hashable {
     public let name: String
     public let spec: String
     public let keyPath: String
-    /// Absolute path to `herdr` when a non-login shell lacks it on `PATH`.
-    public var herdrPath: String
-    public var session: String?
 
     public var id: String { name }
 
-    public init(name: String, spec: String, keyPath: String, herdrPath: String = "herdr", session: String? = nil) {
+    /// A 1.x entry also carried `herdrPath` and `session`; both are ignored
+    /// on decode, as unknown keys always are.
+    public init(name: String, spec: String, keyPath: String) {
         self.name = name
         self.spec = spec
         self.keyPath = keyPath
-        self.herdrPath = herdrPath
-        self.session = session
     }
 
     public func host() throws -> SSHHost { try SSHHost(parsing: spec) }

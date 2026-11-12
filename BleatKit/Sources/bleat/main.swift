@@ -1,5 +1,5 @@
 // The `bleat` console tool runs on macOS and Linux, never iOS: it drives a real
-// terminal (termios raw mode, SIGWINCH) and spawns `herdr` as a child process.
+// terminal (the pairing code's screen) and spawns `hc connect` as a child process.
 // SwiftPM cannot gate a target by platform, and a whole-package iOS build
 // compiles every target, so the guard is how this target states what it is. The `#if`
 // ban in CLAUDE.md is about BleatKit, which exists to be platform-free.
@@ -9,19 +9,12 @@ import BleatProcess
 import Foundation
 
 let usage = """
-bleat \(bleatVersion) — the host side of Bleat, a native remote for Herdr
+bleat \(bleatVersion) — the host side of Bleat, a native remote for herdr-core (hc)
 
 Hosts:
-  bleat hosts add <name> <user@host[:port]> --key PATH [--herdr PATH] [--session NAME]
+  bleat hosts add <name> <user@host[:port]> --key PATH
   bleat hosts list
   bleat hosts remove <name>
-
-Against a host (omit <host> to use the local herdr; --herdr PATH says which herdr):
-  bleat sessions   [host]
-  bleat workspaces [host] [--session NAME]
-  bleat agents     [host] [--session NAME]
-  bleat attach     [host] <target> [--takeover] [--cols N] [--rows M]
-  bleat schema     [host]
 
 On herdr-core (omit <host> for this machine's hc; --hc PATH says which hc):
   bleat terminals  [host] [--watch]          # live terminals, most urgent first
@@ -40,22 +33,15 @@ Pairing (the side a phone takes; here for testing the host side):
   bleat peers
 
   bleat --version
-
-Ctrl-] detaches: sends terminal.release and exits cleanly.
 """
 
 struct Options {
-    var session: String?
     var port: Int?
     var timeout: Int?
     var endpoints: [String] = []
     var keyPath: String?
-    var herdrPath: String?
     var hcPath: String?
     var watch = false
-    var takeover = false
-    var cols: Int?
-    var rows: Int?
     var positional: [String] = []
 }
 
@@ -68,14 +54,9 @@ func parse(_ argv: [String]) -> Options {
             return index < argv.endIndex ? argv[index] : nil
         }
         switch argv[index] {
-        case "--session":  options.session = next()
         case "--key":      options.keyPath = next()
-        case "--herdr":    options.herdrPath = next()
         case "--hc":       options.hcPath = next()
         case "--watch":    options.watch = true
-        case "--takeover": options.takeover = true
-        case "--cols":     options.cols = next().flatMap(Int.init)
-        case "--rows":     options.rows = next().flatMap(Int.init)
         case "--port":
             // Validated here, not passed through: an out-of-range port makes
             // `Endpoint(string:)` reject every endpoint the QR carries, so the
@@ -121,29 +102,12 @@ func fail(_ message: String) -> Never {
 
 let registry = HostRegistry.standard()
 
-/// Builds the transport for a resolved host.
-///
-/// With no host the local `herdr` is used, which is what makes the tool usable
-/// on the machine running Herdr without inventing a loopback SSH hop.
-///
-/// `--herdr` names the herdr to run on either side: here, or on a saved host
-/// over its stored path. The local one is otherwise found by `LocalHerdr`.
-func makeTransport(_ selection: HostSelection, session: String?, herdrPath: String?) throws -> any HerdrTransport {
-    switch selection {
-    case .local:
-        guard let path = LocalHerdr.resolve(herdrPath) else {
-            fail(herdrPath.map { "bleat: no herdr at '\($0)' and none by that name on PATH." }
-                ?? "bleat: herdr is not on PATH, and a login shell ($SHELL -l) did not find it either. Pass --herdr PATH.")
-        }
-        return LocalProcessTransport(executable: URL(fileURLWithPath: path), session: session)
-    case .saved(let entry):
-        return SSHTransport(
-            host: try entry.host(),
-            privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath),
-            herdrPath: herdrPath ?? entry.herdrPath,
-            session: session ?? entry.session
-        )
-    }
+/// The SSH transport for a saved host.
+func transport(for entry: HostEntry) throws -> SSHTransport {
+    SSHTransport(
+        host: try entry.host(),
+        privateKey: try SSHTransport.privateKey(atPath: (entry.keyPath as NSString).expandingTildeInPath)
+    )
 }
 
 func describe(_ error: HostArgumentError) -> String {
@@ -152,7 +116,7 @@ func describe(_ error: HostArgumentError) -> String {
         let list = known.isEmpty ? "none saved yet" : known.joined(separator: ", ")
         return "unknown host '\(name)'. Saved hosts: \(list).\nAdd one with: bleat hosts add \(name) user@host --key PATH"
     case .missingTarget:
-        return "attach needs a target, e.g. w1:p1"
+        return "this command needs a target"
     case .unexpectedArguments(let extra):
         return "unexpected argument(s): \(extra.joined(separator: " "))"
     }
@@ -234,10 +198,8 @@ do {
                 fail("bleat: hc is not on PATH or in ~/.local/bin. Pass --hc PATH.")
             }
             try await Terminals.run(opener: LocalHc(), hcPath: path, watch: options.watch)
-        case .saved:
-            guard let transport = try makeTransport(selection, session: nil, herdrPath: nil) as? SSHTransport else {
-                fail("bleat: this host's transport cannot reach herdr-core")
-            }
+        case .saved(let entry):
+            let transport = try transport(for: entry)
             // The path is the host's, found the way the app's gate finds it:
             // a bare `hc` misses `~/.local/bin`, which a non-login exec
             // channel does not have on PATH.
@@ -251,60 +213,12 @@ do {
         exit(0)
     }
 
-    // Before choosing a transport, which for the local herdr may start a
-    // login shell: a mistyped command is answered with the usage, not with
-    // the outcome of looking for herdr.
     // stderr: this is an error, and a script capturing stdout must not
     // mistake the usage for output.
-    guard ["sessions", "workspaces", "agents", "schema", "attach"].contains(command) else {
-        FileHandle.standardError.write(Data(("bleat: unknown command '\(command)'\n\n" + usage + "\n").utf8))
-        exit(2)
-    }
-
-    let (selection, rest) = try HostArguments.resolve(
-        positional: options.positional,
-        expectsTarget: command == "attach",
-        hosts: try registry.all()
-    )
-    let client = HerdrClient(transport: try makeTransport(selection, session: options.session, herdrPath: options.herdrPath))
-
-    switch command {
-    case "sessions":
-        for session in try await client.sessions() {
-            print("\(session.running ? "●" : "○") \(session.name)\(session.isDefault ? "  (default)" : "")")
-        }
-
-    case "workspaces":
-        for workspace in try await client.workspaces() {
-            print("\(workspace.agentStatus.rawValue.padded(9)) \(workspace.workspaceID.padded(18)) \(workspace.label)")
-        }
-
-    case "agents":
-        for agent in try await client.agents() {
-            print("\(agent.agentStatus.rawValue.padded(9)) \(agent.paneID.padded(18)) \(agent.displayTitle.padded(24)) \(agent.cwd ?? "")")
-        }
-
-    case "schema":
-        FileHandle.standardOutput.write(try await client.schema())
-
-    case "attach":
-        let target = rest[0]
-        try await Attach.run(
-            client: client,
-            target: target,
-            cols: options.cols ?? 80,
-            rows: options.rows ?? 24,
-            takeover: options.takeover
-        )
-
-    default:
-        print(usage)
-        exit(2)
-    }
+    FileHandle.standardError.write(Data(("bleat: unknown command '\(command)'\n\n" + usage + "\n").utf8))
+    exit(2)
 } catch let error as HostArgumentError {
     fail("bleat: \(describe(error))")
-} catch let error as HerdrError {
-    fail("\(error)")
 } catch let error as HcError {
     fail("bleat: herdr-core: \(error)")
 } catch let error as HcProtocolError {

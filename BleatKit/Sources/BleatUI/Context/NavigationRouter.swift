@@ -8,8 +8,8 @@ import SwiftUI
 /// puts the host list in the sidebar and everything below a host in the detail
 /// column's stack, so the host is a *selection* and the rest is a path. On a
 /// phone the split view collapses and the two behave as the single drill-down
-/// they always were — hosts → session → workspaces → agents → pane — with the
-/// selection acting as the first push.
+/// they always were — hosts → terminals → a terminal — with the selection
+/// acting as the first push.
 ///
 /// A tab router joins this when there is a second tab to route to; adding one
 /// now would be a router with a single case.
@@ -20,10 +20,10 @@ public final class NavigationRouter {
     ///
     /// Computed over a stored property so that **changing it clears the stack
     /// in the same write**. Everything on the path is a screen *of the host
-    /// being left* — its sessions, its workspaces, one of its panes — and
-    /// SwiftUI evaluates the detail column from the new selection and the old
-    /// path together. Clearing it afterwards in an `onChange` would draw one
-    /// host's workspaces under another host's name for a frame first.
+    /// being left* — one of its terminals — and SwiftUI evaluates the detail
+    /// column from the new selection and the old path together. Clearing it
+    /// afterwards in an `onChange` would draw one host's terminal under another
+    /// host's name for a frame first.
     public var selectedPeer: String? {
         get { browsing }
         set {
@@ -55,26 +55,9 @@ public final class NavigationRouter {
         /// including its answer for a host that has been unpaired while its
         /// screens were up.
         case peer(peer: String)
-        case workspaces(peer: String, session: String?)
-        // `label` is display text, not an identifier, and it is here for the
-        // same reason `pane` carries a title: the alternative is a screen
-        // headed `w653998617a6031`. Workspace ids are opaque — CLAUDE.md is
-        // explicit that they are not for display — and the label is in hand at
-        // the moment the route is made.
-        case agents(peer: String, session: String?, workspace: String?, label: String)
-        /// `mode` is the reading the pane opens in. It is part of the route
-        /// rather than a default inside the screen because the two entrances want
-        /// different ones: an agent row opens the chat, which is the reading that
-        /// reflows to a phone, while "Open the pane" on a blocked agent has to
-        /// show the dialog — and a transcript is exactly what that user does not
-        /// need. It is part of the route's identity, which is correct: the same
-        /// pane opened two ways is two screens.
-        case pane(
-            peer: String, session: String?, target: String, title: String, mode: PaneMode = .chat
-        )
-        /// Bleat 2: one herdr-core terminal's live screen. `address` is hc's
-        /// (`t58`); `title` is what the list called it, for the same reason
-        /// `pane` carries one.
+        /// One herdr-core terminal's live screen. `address` is hc's (`t58`);
+        /// `title` is what the list called it — display text, carried because
+        /// the alternative is a screen headed with an address.
         case terminal(peer: String, address: String, title: String)
     }
 

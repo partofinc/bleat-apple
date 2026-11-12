@@ -2,7 +2,7 @@ import Foundation
 
 /// herdr-core answered a call with an error: the host was reached and said no.
 ///
-/// The hc counterpart of `HerdrError`. `kind` is the schema's stable
+/// `kind` is the schema's stable
 /// `data.kind`, which is what to branch on; `message` is written for a person.
 public struct HcError: Error, Sendable, Equatable, Decodable {
     public let code: Int

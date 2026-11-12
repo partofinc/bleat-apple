@@ -10,8 +10,7 @@ struct PeerConnectionTests {
             hostKey: "ssh-ed25519 AAAAKEY",
             name: "Mac",
             username: "robin",
-            endpoints: endpoints.compactMap { Endpoint(string: $0) },
-            herdrPath: "/opt/homebrew/bin/herdr"
+            endpoints: endpoints.compactMap { Endpoint(string: $0) }
         )
     }
 
@@ -25,7 +24,7 @@ struct PeerConnectionTests {
         #expect(lanOnly.endpointsToTry(from: .offLink).isEmpty)
 
         await #expect(throws: TransportError.self) {
-            try await PeerConnection.connect(
+            try await PeerConnection.open(
                 to: lanOnly, deviceKey: SSHKeyPair(), link: .offLink
             )
         }
@@ -52,7 +51,7 @@ struct PeerConnectionTests {
     @Test("a peer with no endpoints says so rather than reporting a failed dial")
     func noEndpoints() async {
         await #expect(throws: TransportError.self) {
-            try await PeerConnection.connect(
+            try await PeerConnection.open(
                 to: peer([]), deviceKey: SSHKeyPair(), link: .localLink
             )
         }
@@ -82,7 +81,7 @@ struct PeerConnectionTests {
         #expect(mdnsOnly.endpointsToTry(from: tunnelled).isEmpty)
 
         await #expect(throws: TransportError.self) {
-            try await PeerConnection.connect(
+            try await PeerConnection.open(
                 to: mdnsOnly, deviceKey: SSHKeyPair(), link: tunnelled
             )
         }
@@ -96,7 +95,7 @@ struct PeerConnectionTests {
     @Test("an mDNS-only peer is never told a VPN would help")
     func mdnsOnlyPeerIsNotOfferedAVPN() async {
         await #expect(throws: TransportError.self) {
-            try await PeerConnection.connect(
+            try await PeerConnection.open(
                 to: peer(["mac.local"]), deviceKey: SSHKeyPair(), link: .offLink
             )
         }
@@ -117,7 +116,7 @@ struct PeerConnectionTests {
     /// race starts, which is exactly what these two tests are about.
     private func messageFromConnecting(_ peer: PairedPeer, link: LinkState) async -> String {
         do {
-            _ = try await PeerConnection.connect(
+            _ = try await PeerConnection.open(
                 to: peer, deviceKey: SSHKeyPair(), link: link
             )
             return ""

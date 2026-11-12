@@ -13,8 +13,9 @@ import SwiftUI
 /// therefore stands aside; `PeersView` and `PeerSettingsFlow` were doing it by
 /// hand first.
 ///
-/// But the sheets that *write* — starting a session, creating a workspace,
-/// starting an agent — are the only place their outcome is ever reported, which
+/// But a sheet that *writes* — 1.x's for starting a session, creating a
+/// workspace or starting an agent; none in Bleat 2 yet — is the only place
+/// its outcome is ever reported, which
 /// is why each refuses an interactive dismissal while its work is in flight.
 /// Tearing one down from here would defeat that: a start that took the full
 /// thirty seconds and came back "something may be running in that pane" would

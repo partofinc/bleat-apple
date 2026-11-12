@@ -15,7 +15,7 @@ struct NavigationRouterTests {
         let router = NavigationRouter()
         router.selectedPeer = hostKey
         for i in 0..<deep {
-            router.push(.workspaces(peer: hostKey, session: "s\(i)"))
+            router.push(.terminal(peer: hostKey, address: "t\(i)", title: "t\(i)"))
         }
         return router
     }

@@ -2,7 +2,7 @@
 /// Something the tool cannot do, phrased for the person who typed the command.
 ///
 /// A message rather than a case per cause: these are printed and never
-/// switched on. The typed errors — `HerdrError`, `TransportError`,
+/// switched on. The typed errors — `HcError`, `TransportError`, `ShellError`,
 /// `PairingError` — all come from `BleatKit` and describe themselves; this one
 /// exists for the failures that belong to the command line itself.
 struct ToolFailure: Error, CustomStringConvertible {

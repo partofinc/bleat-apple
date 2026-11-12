@@ -1,5 +1,11 @@
 # The watch app
 
+> **Bleat 2 (12 Nov 2026):** the watch no longer runs herdr commands through
+> the phone — `RelayRequest.herdr` was removed with the herdr backend. It shows
+> the mirrored host list and the gate; a ready host reads "On iPhone for now".
+> The relay keeps `.peers`, `.shell`, `.release` and `.note`. A herdr-core relay
+> is still to be designed: hc speaks a framed stream, not one command at a time.
+
 Started 1 Oct 2026, ahead of the phase plan, because it was asked for. It is
 the same screens as the phone — hosts, a host's sessions, a session's
 workspaces, a workspace's agents — over a different transport.

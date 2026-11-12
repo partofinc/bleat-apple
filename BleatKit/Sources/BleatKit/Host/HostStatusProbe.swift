@@ -2,9 +2,8 @@ import Foundation
 
 /// Asking a host what it is and how busy it is.
 ///
-/// Plain shell rather than herdr, because herdr reports none of it but its own
-/// version: so this goes through `ConnectionStore.shell`, and leaves the
-/// session prefix alone exactly as the pairing commands do.
+/// Plain shell, through `ConnectionStore.shell`: neither herdr-core nor
+/// anything else on the host reports this.
 ///
 /// **One command, one exec channel.** Everything below is a dozen small reads,
 /// and a channel each would be a dozen round trips over a cellular link for a
@@ -40,7 +39,7 @@ public enum HostStatusProbe {
     /// The script, for `/bin/sh`.
     ///
     /// **No single quote and no backslash-quote anywhere in it**, because it
-    /// travels inside single quotes — see `command(herdrPath:)`.
+    /// travels inside single quotes — see `command(sampling:)`.
     ///
     /// - `PATH` is set rather than inherited. Resolving `df` through the
     ///   user's `PATH` is a way to run something else entirely, and these four
@@ -51,16 +50,14 @@ public enum HostStatusProbe {
     ///   throws on a non-zero exit, and the last read failing is ordinary.
     /// - `/proc/device-tree/model` ends in a NUL and no newline, so it is
     ///   stripped and given one, or the next line is glued to it.
-    /// - `$2`, when set, leaves out the processor sample: the one read that
+    /// - `$1`, when set, leaves out the processor sample: the one read that
     ///   takes a second, and the one pairing has no use for.
     static let script = """
         exec 2>/dev/null
         PATH=/usr/bin:/bin:/usr/sbin:/sbin
-        h=$1
-        i=$2
+        i=$1
         p() { sed "s/^/\(prefix)$1:/"; }
         uname -srm | p uname
-        [ -n "$h" ] && "$h" --version | p herdr
         getconf _NPROCESSORS_ONLN | p cores
         df -Pk "$HOME" | p df
         case $(uname -s) in
@@ -94,10 +91,6 @@ public enum HostStatusProbe {
         true
         """
 
-    /// - Parameter herdrPath: where herdr is on the host, as the peer records
-    ///   it. nil leaves the version out; it is not searched for, because
-    ///   `PATH` here is deliberately not the user's.
-    ///
     /// **Handed to `/bin/sh` rather than run by the login shell.** An exec
     /// channel goes through whatever shell the account logs into, and the
     /// script is POSIX: `case`, a function, `$(…)`. Wrapped like this, the
@@ -107,8 +100,8 @@ public enum HostStatusProbe {
     /// - Parameter sampling: false leaves out the processor's usage, which
     ///   costs a second of waiting on the host. Pairing asks only what the
     ///   host is, and the user is watching a spinner while it does.
-    public static func command(herdrPath: String?, sampling: Bool = true) -> String {
-        "/bin/sh -c '\(script)' sh \(quote(herdrPath ?? ""))" + (sampling ? "" : " info")
+    public static func command(sampling: Bool = true) -> String {
+        "/bin/sh -c '\(script)' sh" + (sampling ? "" : " info")
     }
 
     /// Reads a reply. Lines without the prefix are ignored, and so is anything
@@ -131,9 +124,6 @@ public enum HostStatusProbe {
             status.info.architecture = String(uname[2])
         }
 
-        // `herdr 0.9.3`.
-        let herdr = fields(lines("herdr").first)
-        if herdr.count == 2, herdr[0] == "herdr" { status.info.herdrVersion = String(herdr[1]) }
 
         status.load.cores = number(lines("cores").first)
         status.info.model = lines("model").lazy.map(trimmed).first { !$0.isEmpty }

@@ -83,7 +83,7 @@ final class PaneTerminalController: UIViewController {
     private(set) var repaints = 0
 
     /// Where the drawn viewport sits relative to the live screen. Equal means
-    /// the terminal is showing the bottom — what herdr is actually painting.
+    /// the terminal is showing the bottom — what the program is painting now.
     var scrollStateForTesting: (position: Double, canScroll: Bool) {
         (terminalView.scrollPosition, terminalView.canScroll)
     }
@@ -110,37 +110,17 @@ final class PaneTerminalController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         terminalView.terminalDelegate = self
-        // **There is no scrollback here, and there cannot be.** Left on
-        // because it costs nothing and a program that does scroll would then
-        // work — but a stream frame never scrolls the terminal, so nothing
-        // is ever pushed into `TerminalView`'s buffer. Measured 6 Sept 2026: a
-        // frame is 3.6KB of absolute cursor positioning (`ESC[19;3H`) and SGR
-        // colour, with **zero newlines and zero carriage returns**. Lines are
-        // painted in place; none scroll off.
+        // **SwiftTerm does not handle the drag itself.** `PaneScrollGesture`
+        // takes it and turns it into notches, and `TerminalHost`'s scroller
+        // decides what a notch is: a wheel click for a program that asked for
+        // the mouse, arrows on the alternate screen, or this terminal's own
+        // history on the main one — which hc paints first (`history` on the
+        // attach), so for a shell there is a buffer to move. Moving it is
+        // `scrollUp`/`scrollDown`, which work with this off.
         //
-        // What does work is asking the host: `terminal.scroll` makes herdr
-        // repaint the pane scrolled, which is what `PaneScrollGesture` sends.
-        //
-        // **And no setting here can change that**, which is worth stating
-        // because it is the obvious place to look. Measured 8 Sept 2026 on a
-        // pane that had genuinely scrolled — `seq 1 200` through 30 rows, 172
-        // rows of scrollback on the host — the stream still sent four frames of
-        // exactly 30 rows with **LF=0 and CR=0 in every one**. Herdr renders
-        // its own buffer and ships absolute positioning, so nothing is pushed
-        // off the top here and this buffer stays empty by construction. Not a
-        // sizing problem, not a SwiftTerm option.
-        //
-        // History, where a pane has any, comes from `pane read` instead
-        // (`HerdrClient.paneText`). An agent's pane usually has none even
-        // there: its TUI is on the alternate screen, whose rows never enter
-        // herdr's scrollback. What holds an agent's history is its transcript,
-        // which is what chat mode reads.
-        //
-        // **So this is off**, and that is what frees the drag. It was left on
-        // for a while on the theory that a program which did scroll would then
-        // work — but nothing can, so all it did was consume every vertical
-        // swipe on behalf of an empty buffer. With it off, `PaneScrollGesture`
-        // gets the drag and turns it into `terminal.scroll` requests.
+        // (1.x had no history here at all: herdr shipped one viewport of
+        // absolute positioning, and scrolled with `terminal.scroll`. Measured
+        // 6 and 8 Sept 2026; see `docs/pane-view.md`.)
         terminalView.isScrollEnabled = false
 
         // **Taking the keyboard re-arms mouse reporting, and that undoes the
@@ -324,8 +304,8 @@ final class PaneTerminalController: UIViewController {
         let cursor = terminal.getCursorLocation().y
         for row in stride(from: terminal.rows - 1, to: cursor, by: -1) {
             guard let line = terminal.getLine(row: row) else { continue }
-            // herdr paints blank cells as spaces as readily as it skips them,
-            // so "has content" has to mean something visible.
+            // A blank cell can arrive as a space as readily as be skipped, so
+            // "has content" has to mean something visible.
             let drawn = line.translateToString(trimRight: true)
                 .contains { !$0.isWhitespace && $0 != "\0" }
             if drawn { return row }
@@ -371,15 +351,15 @@ extension PaneTerminalController: TerminalViewDelegate {
     }
 
     func setTerminalTitle(source: TerminalView, title: String) {
-        // The screen is titled from `agent list`, which is a name the user
-        // recognises; a pane's own title changes with whatever it is running.
+        // The screen is titled from the terminal list, which is a name the
+        // user recognises; the program's own title changes as it runs.
     }
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
         // Straight through, unexamined. These are the bytes a terminal would
-        // have sent, escape sequences and all, and `PaneModel` drops them when
+        // have sent, escape sequences and all, and the model drops them when
         // there is no stream to carry them — which is the only gate that
         // belongs on them. Filtering here would break the very sequences an
         // agent's UI is driven by.

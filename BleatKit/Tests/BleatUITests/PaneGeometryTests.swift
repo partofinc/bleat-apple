@@ -74,8 +74,8 @@ struct PaneGeometryTests {
         // one: a hosting controller merely given a frame evaluates the body but
         // never appears, so the representable's child controller never lays out
         // and reports no grid at all.
-        func viewport(inPhase phase: PaneModel.Phase) -> TerminalGrid? {
-            let model = PaneModel(previewing: phase)
+        func viewport(inPhase phase: PanePhase) -> TerminalGrid? {
+            let model = HcPaneModel(previewing: phase)
             let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: 759))
             window.rootViewController = UIHostingController(
                 rootView: PaneSurface(model: model, isActive: true)
@@ -272,7 +272,7 @@ struct PaneGeometryTests {
 
         func height(_ mode: PaneAccessoryMode, typingInPane: Bool = false) -> CGFloat {
             UserDefaults.standard.set(mode.rawValue, forKey: key)
-            let model = PaneModel(previewing: .live)
+            let model = HcPaneModel(previewing: .live)
             model.setWantsKeyboard(typingInPane)
             let host = UIHostingController(rootView: PaneKeyBar(model: model, isActive: true))
             return host.sizeThatFits(in: CGSize(width: 393, height: 800)).height
@@ -298,7 +298,7 @@ struct PaneGeometryTests {
         UserDefaults.standard.set(PaneAccessoryMode.input.rawValue, forKey: key)
 
         let host = UIHostingController(
-            rootView: PaneKeyBar(model: PaneModel(previewing: .live), isActive: true)
+            rootView: PaneKeyBar(model: HcPaneModel(previewing: .live), isActive: true)
         )
         let window = TestWindow.make(frame: CGRect(x: 0, y: 0, width: 393, height: 200))
         window.rootViewController = host

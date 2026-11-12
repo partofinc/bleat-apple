@@ -44,8 +44,8 @@ final class PaneTerminalView: TerminalView {
     /// It installs a `TerminalAccessory` — Esc, Tab, Ctrl, arrows — from its
     /// `setup()`, so without this there are two bars: SwiftTerm's riding the
     /// keyboard and `PaneKeyBar` above it. One set of keys, and it is ours,
-    /// because ours is the one wired to `PaneModel` and gated on holding the
-    /// pane.
+    /// because ours is the one wired to the model and gated on the terminal
+    /// being live.
     ///
     /// **Assigned, not overridden.** `TerminalView.inputAccessoryView` is a
     /// settable `public override var` backed by SwiftTerm's own storage, so a

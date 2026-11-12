@@ -137,9 +137,7 @@ public struct PairingClient: Sendable {
     /// command if it is still running.
     private func hostInfo(over session: SSHTransport?) async -> HostInfo? {
         guard let session else { return nil }
-        // No herdr path: Bleat 2 does not resolve herdr, and the probe leaves
-        // its version out without one.
-        let command = HostStatusProbe.command(herdrPath: nil, sampling: false)
+        let command = HostStatusProbe.command(sampling: false)
         return await Self.first(within: Self.hostInfoDeadline) {
             guard let output = try? await session.run(shell: command) else { return nil }
             let info = HostStatusProbe.status(fromOutput: output).info

@@ -52,8 +52,6 @@ public struct RelayResponder: Sendable {
         switch request {
         case .peers:
             return .peers(await peers())
-        case .herdr(let hostKey, let args, let session):
-            return .output(try await link(hostKey).run(args, inSession: session))
         case .shell(let hostKey, let command):
             return .output(Data(try await link(hostKey).run(shell: command).utf8))
         case .release(let hostKey):

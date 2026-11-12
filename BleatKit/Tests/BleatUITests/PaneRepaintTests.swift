@@ -19,10 +19,12 @@ import UIKit
 @MainActor
 struct PaneRepaintTests {
 
-    /// Real frames off a real `terminal session control --takeover` stream,
-    /// captured while typing. They carry synchronized-output markers
-    /// (`ESC[?2026h`/`l`), which is the part a synthesised frame would miss —
-    /// SwiftTerm suppresses every repaint while that mode is open.
+    /// Real frames captured while typing into Claude Code (under 1.x's herdr,
+    /// whose records wrap the bytes in base64). What matters is the bytes,
+    /// which come from the program and reach the terminal the same way over
+    /// hc's attach: they carry synchronized-output markers (`ESC[?2026h`/`l`),
+    /// the part a synthesised frame would miss — SwiftTerm suppresses every
+    /// repaint while that mode is open.
     private func capturedFrames() throws -> [Data] {
         let url = URL(filePath: #filePath)
             .deletingLastPathComponent()

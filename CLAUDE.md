@@ -1,28 +1,36 @@
 # Bleat — native iOS remote for Herdr
 
-Bleat is a thin native client for [Herdr](https://herdr.dev) sessions. It shows
-workspaces and agents sorted by attention state, renders live panes, and lets the
-user answer approvals, send prompts, and type into a pane from a phone. Herdr and
-the agents always run on the host; Bleat never owns a process. App Store name:
-"Bleat for Herdr".
+Bleat is a thin native client for [Herdr](https://herdr.dev). Bleat 2 talks to
+**herdr-core (`hc`)**, the terminal runtime under the Herdr desktop app: it
+shows a host's terminals sorted by attention state, renders a terminal live,
+and lets the user answer approvals, send prompts and type into it from a phone.
+herdr-core and the agents always run on the host; Bleat never owns a process.
+App Store name: "Bleat for Herdr".
 
-The product promise is **zero host setup beyond Herdr itself**. Transport v1 is
-plain SSH: the app runs `herdr` CLI commands over exec channels and speaks
-Herdr's own JSON. No daemon, no relay, no plugin on the host.
+The product promise is **zero host setup beyond herdr-core itself**. The
+transport is plain SSH: one `hc connect` exec channel per screen, speaking
+herdr-core's framed JSON-RPC, plus plain shell for pairing and the host's load.
+No daemon, no relay, no plugin on the host. **Bleat 1.x drove the herdr TUI's
+CLI; that backend was removed on 12 Nov 2026**, and a host without hc lands on
+"Install herdr-core".
 
-## Current phase: Bleat 2, A — Pipe (planned)
+## Current phase: Bleat 2, B — App on hc (in progress)
 
 Bleat 2.0 moves the engine from the herdr TUI CLI to herdr-core (`hc`): one
-framed `hc connect` stream per host, events instead of polling. It is a full
-transition with no dual backend; the herdr code is deleted in Phase B. The
-plan, what is already settled and the open questions (each tagged with the
-phase it must close before) are in [`docs/bleat-2-plan.md`](docs/bleat-2-plan.md).
-Facts about `hc`, with their sources, are in [`docs/hc-facts.md`](docs/hc-facts.md).
+framed `hc connect` stream per screen, events instead of polling. A full
+transition with no dual backend. The plan, what is settled and the open
+questions (each tagged with the phase it must close before) are in
+[`docs/bleat-2-plan.md`](docs/bleat-2-plan.md); facts about `hc`, with their
+sources, in [`docs/hc-facts.md`](docs/hc-facts.md).
 
-Read the phase gates before proposing work outside them. Three product
-questions in the plan (1.x users still on the TUI, the listing's name and
-promise, and whether 1.x's unbuilt Control items carry over) are Ravil's to
-decide; question 3 must close before Phase A starts.
+**Built app-first, not console-first**, at Ravil's direction (12 Nov 2026):
+the herdr-core gate for 1.x peers (#77); `HcClient` and a host's live terminal
+list (#78); attaching to a terminal (#79); pairing on hc (#80); the herdr
+backend removed. Phase A's console gate is met only in part — `bleat
+terminals --watch` follows events; attaching from the console is not built.
+**Left for B:** installing herdr-core from Bleat, creating terminals, and the
+watch on hc. Two product questions are Ravil's before release: the listing's
+name and promise, and whether 1.x's unbuilt Control items carry over.
 
 | Phase | Deliverable | Gate to next phase |
 |---|---|---|
@@ -34,10 +42,7 @@ decide; question 3 must close before Phase A starts.
 Out of scope until after Phase D: pairing/relay transport (iroh or WebRTC),
 push notifications, Live Activities, multi-account badges.
 
-Until Phase B deletes it, the herdr backend below is what ships, and the
-herdr rules in [Rules that bite](#rules-that-bite) still apply to it.
-
-### Bleat 1.x (herdr TUI) — shipped
+### Bleat 1.x (herdr TUI) — shipped; its backend removed in Bleat 2
 
 Phase 1 met over real SSH. **The Phase 2 gate was met 7 Sept 2026**: paired
 and connected from an iPhone on cellular with Wi-Fi off, over Tailscale.
@@ -71,21 +76,20 @@ shipped once, written down so it does not ship twice.
 |---|---|
 | [`docs/bleat-2-plan.md`](docs/bleat-2-plan.md) | the 2.0 move to `hc`: what is settled, architecture, domain mapping, phases, open questions |
 | [`docs/hc-facts.md`](docs/hc-facts.md) | herdr-core: framed mode and its frame layout, viewers and size, status, reconnect, creating terminals — each fact with its source |
-| [`docs/herdr-facts.md`](docs/herdr-facts.md) | herdr's two command families, envelopes, errors on stderr, agent states, the pane stream protocol |
-| [`docs/ssh-transport.md`](docs/ssh-transport.md) | Citadel, host keys, session selection by command prefix, clean detach |
+| [`docs/ssh-transport.md`](docs/ssh-transport.md) | Citadel, host keys, clean detach (and 1.x's session selection by command prefix) |
 | [`docs/pairing.md`](docs/pairing.md) | the enrollment-key swap, pairing another device from a paired one, peer identity, the QR, endpoint discovery and refresh, Tailscale, addresses by hand, local network permission, unpairing, endpoint selection |
-| [`docs/app-screens.md`](docs/app-screens.md) | `ConnectionStore`, the list screens, the iPad split view, the host screen, what a host says about itself (stored info, the live load bar), previews, the pairing UI |
+| [`docs/app-screens.md`](docs/app-screens.md) | `ConnectionStore`, the herdr-core gate, the iPad split view, the host screen, what a host says about itself (stored info, the live load bar), previews, the pairing UI |
 | [`docs/watch.md`](docs/watch.md) | the watch app: why it relays through the phone, `RelayTransport`, the phone's `WatchRelayHost`, the mirrored host list, what is and is not on the watch, driving a simulator with `DebugLaunch` |
-| [`docs/creating-from-the-phone.md`](docs/creating-from-the-phone.md) | starting, stopping and deleting sessions; workspaces; agents (including `agent_not_ready`); tabs; terminal rows — with the 0.9.3 re-measurement |
-| [`docs/pane-view.md`](docs/pane-view.md) | pane sizing (`--cols` crops), the phone session, scrolling, the terminal always holding the pane, the key bar, typing, the keychain dead end, the repaint investigation |
-| [`docs/console-tool.md`](docs/console-tool.md) | `bleat` commands: `pair`, `redeem`, `keys`, and the `authorized_keys` anchoring rules |
+| [`docs/pane-view.md`](docs/pane-view.md) | the terminal screen over hc (take over on open, the scroller), the key bar, typing, the keychain dead end, the repaint investigation — and 1.x's pane sizing, as history |
+| [`docs/console-tool.md`](docs/console-tool.md) | `bleat` commands: `pair`, `redeem`, `keys`, `terminals`, and the `authorized_keys` anchoring rules |
 | [`docs/repository-layout.md`](docs/repository-layout.md) | the full layout, why `BleatProcess` exists, the static Linux build, the SDK's ARMv8.1 allocator and what the port needed |
-| [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the `RemoteList` `deinit`, approachable concurrency and what is `@concurrent` |
+| [`docs/concurrency.md`](docs/concurrency.md) | Swift settings on both sides of the seam, the release-build gate, approachable concurrency and what is `@concurrent` |
 | [`docs/app-icon.md`](docs/app-icon.md) | the icon, `Design/icon.swift`, and authoring a `.icon` by hand |
 | [`docs/releasing.md`](docs/releasing.md) | the app's `v` tags and Xcode Cloud, the tool's `cli-` tags, `release-cli.sh`, `install.sh`, the Homebrew tap, signing |
 | [`docs/demo-host.md`](docs/demo-host.md) | the demo host on Fly that App Review pairs with: the pairing page, why no agent runs there, why it is safe to hand out |
-| [`docs/testing.md`](docs/testing.md) | a scratch herdr session, a scratch sshd, testing pairing without touching your own keys |
+| [`docs/testing.md`](docs/testing.md) | a scratch hc terminal, a scratch sshd, testing pairing without touching your own keys |
 | [`docs/phase-history.md`](docs/phase-history.md) | how each phase gate was verified |
+| [`docs/archive/`](docs/archive/) | 1.x's herdr TUI backend: `herdr-facts.md`, `creating-from-the-phone.md` — the record, not the code |
 
 ## Repository layout
 
@@ -99,11 +103,11 @@ BleatKit/                   # the local Swift package
   Sources/
     BleatKit/               # domain + transport. No SwiftUI. Builds for iOS and watchOS.
     BleatUI/                # SwiftUI shared between app targets; MainActor by default
-    BleatProcess/           # macOS and Linux only: LocalProcessTransport, QR encoder
+    BleatProcess/           # macOS and Linux only: local `hc connect`, pairing's host side, QR encoder
     bleat/                  # executable target, the console tool
-  Tests/BleatKitTests/      # unit tests: codec, models, fake transport
+  Tests/BleatKitTests/      # unit tests: frames, events, models, scripted cores
   Tests/BleatUITests/       # lays views out for real; needs a simulator
-  Fixtures/                 # schema.json + captured CLI output (source of truth)
+  Fixtures/                 # schema.json (hc's OpenRPC) + captured hc replies (source of truth)
 Support/Info.plist          # the two keys that cannot be build settings
 ci_scripts/ci_post_clone.sh # macro fingerprint defaults + `swift test` gate
 Scripts/build-linux.sh      # the console tool for Linux: aarch64 (ARMv8.0 and up), or x86_64 (untried on hardware)
@@ -117,26 +121,30 @@ docs/                       # the detail behind this file
 
 Each of these shipped as a bug or cost a day. The why is in the linked doc.
 
-- **Never experiment against the `work` session**, and never call
-  `agent focus` — it clears the `done` marker for whoever is at the Mac.
-  Use a scratch session ([Testing against a live host](#testing-against-a-live-host)).
-- **herdr has two command families.** Socket-API commands print enveloped JSON
-  and reject `--json`; client-side commands (`session …`) need `--json` and
-  have no envelope. Errors go to **stderr**. The session is chosen by
-  environment (`HERDR_SESSION`, unset `HERDR_SOCKET_PATH`), never a flag.
-  ([herdr facts](docs/herdr-facts.md))
-- **herdr says yes when nothing happened.** `session delete` of a missing
-  session answers `deleted: true`; `workspace create` with a missing `--cwd`
-  succeeds in `$HOME`. Read the host back; never trust the reply.
-  ([creating](docs/creating-from-the-phone.md))
-- **`pane_id` is already the full target** (`w2:p1`). Build test data from
+- **Never experiment on the live terminals or agents.** Attaching takes a
+  terminal's size and input lands in a real agent. Use a scratch terminal,
+  started with **`--no-parent --no-notify`** — from inside an hc terminal,
+  where this session runs, hc otherwise makes it a child and types its exit
+  notes into the session. Never write `herdr.*` labels outside a scratch
+  terminal: `herdr.seen` is the Mac's "done, not yet looked at" marker.
+  ([testing](docs/testing.md))
+- **A plain hc connection cannot subscribe and still take requests.** After
+  `events.subscribe` it "carries only notifications". `HcClient` goes framed
+  straight after `hello`. ([hc facts](docs/hc-facts.md))
+- **A login shell misses `~/.local/bin` on a Mac.** zsh reads `.zprofile`,
+  not `.zshrc`, for `-lc`, so `command -v hc` comes back empty where `hc`
+  works in every terminal. The lookup also tries `~/.local/bin/hc`.
+  ([plan](docs/bleat-2-plan.md))
+- **Credit follows consumption, not arrival.** Granting it as bytes land in
+  a buffer means a stalled consumer never fills the core's window and the
+  buffer grows without limit. ([hc facts](docs/hc-facts.md))
+- **An address is the full target** (`t58`; `adam/t8` for a federated
+  machine's mirror, which the list leaves out). Build test data from
   `Fixtures/`, not from memory.
-- **The terminal stream carries one viewport and no history.** Scrolling is
-  `terminal.scroll`, which herdr applies to its own history or hands to the
-  program as a wheel event. ([pane view](docs/pane-view.md))
-- **Layout is the stream's size.** The terminal derives its grid from its
-  bounds and the pane's pty is `stty`'d to match, so anything in a safe area
-  that varies with state reopens the stream on someone's Mac.
+- **Attaching takes the terminal over at the phone's size**, and leaving gives
+  it back to the Mac. Anything in a safe area that varies with state changes
+  the grid and reflows the terminal on someone's Mac — the load bar is on the
+  terminal list for that reason, never on a terminal. ([pane view](docs/pane-view.md))
 - **The watch cannot open a socket, and the simulator lets it.** Anything
   the watch needs from a host goes through the phone as a `RelayRequest`; a
   direct connection works on every simulator and on no watch.
@@ -151,8 +159,9 @@ Each of these shipped as a bug or cost a day. The why is in the linked doc.
   `swift build`.** The stock static SDK's allocator is ARMv8.1 code, and its
   binaries die with SIGILL before `main` on a Pi 4 or CM4.
   ([layout](docs/repository-layout.md))
-- **`RemoteList`'s empty `deinit` must stay**: without it the optimiser
-  segfaults and only the archive fails. ([concurrency](docs/concurrency.md))
+- **Run the release build of `BleatUI` before an archive** (`swift build -c
+  release --target BleatUI`, as `ci_post_clone.sh` does): an optimiser crash
+  once failed only the archive. ([concurrency](docs/concurrency.md))
 
 ## Concurrency settings
 
@@ -165,28 +174,33 @@ says `@concurrent`. The settings on each side, and why, are in
 
 - **Transport is an interface.** Everything above it must not know it is SSH.
   ```swift
-  protocol HerdrTransport: Sendable {
-      func run(_ args: [String]) async throws -> Data                   // one-shot herdr command
-      func openStream(_ args: [String]) async throws -> HerdrStream     // long-lived NDJSON channel
+  protocol HcStreamOpening: Sendable {          // a byte stream to herdr-core
+      func openHcConnection(hcPath: String) async throws -> any DuplexStream
+  }
+  protocol PeerLink: ShellRunner {              // a shell on the host, and letting go
+      func disconnect() async
   }
   ```
-  `HerdrStream` exposes `AsyncThrowingStream<Data, Error>` for stdout lines and
-  `send(Data)` for stdin. The second transport exists: `RelayTransport`, the
-  watch asking the phone. It was added without touching `HerdrClient`.
-- **Herdr JSON is the contract.** Models are generated/derived from
-  `BleatKit/Fixtures/schema.json`. Do not hand-invent fields; if a field is missing,
-  re-capture the fixture and update the model. Unknown keys are ignored, never
-  fatal.
-- **The pane stream is bytes, not text.** `terminal.frame` records carry base64
-  ANSI. Decode to `Data` and hand it to the renderer untouched. Never strip or
-  interpret escape sequences in BleatKit.
-- **One writable controller.** Herdr allows one input owner per pane. Attach
-  with `--takeover` only when the user asks; surface who currently holds control.
-- **Reconnect is normal.** iOS will drop the socket. `HerdrClient` must be
-  reusable after a transport failure; `terminal session control` replays the
-  current rendered screen on attach, so re-attach is the recovery path.
-- **Multiple channels, one connection.** List polling and the pane stream run on
-  separate exec channels over a single SSH connection.
+  `DuplexStream` is stdout in (`AsyncThrowingStream<Data, Error>`), stdin out
+  (`send(Data)`). `SSHTransport` implements both; `LocalHc` opens `hc connect`
+  locally for the console tool; `RelayTransport` is the watch's `PeerLink`.
+- **herdr-core's schema is the contract.** `BleatKit/Fixtures/schema.json` is
+  `hc schema --json` (OpenRPC). Do not hand-invent fields; capture replies into
+  `Fixtures/` and derive the models from them. Unknown keys are ignored, never
+  fatal; a record that does not read is skipped, not fatal to the list.
+- **Events are applied as herdr-core applies them.** `HcTerminalSet` keeps each
+  terminal as its JSON record and sets keys per event exactly as `remote.rs`
+  does, then reads `HcTerminal` out.
+- **The terminal stream is bytes, not text.** An attach channel's DATA goes to
+  SwiftTerm untouched. Never strip or interpret escape sequences in BleatKit.
+- **The latest active viewer owns the size.** hc lets several viewers type;
+  whoever typed, resized or focused last sets the grid. Bleat attaches active
+  and takes over on open; closing the channel hands it back.
+- **Reconnect is normal.** iOS will drop the socket. An `HcClient` is not
+  reused after its stream ends: dial again, `hello`, re-subscribe, re-attach —
+  the snapshot and the first paint rebuild everything.
+- **Multiple channels, one connection.** The terminal list and an open terminal
+  each run their own `hc connect` exec channel over one SSH connection.
 
 ## Conventions
 
@@ -194,13 +208,15 @@ says `@concurrent`. The settings on each side, and why, are in
   `Sendable` everywhere in BleatKit.
 - One type per file. Folders by feature, not by kind.
 - `async/await` only; no Combine, no callbacks.
-- Errors are typed: `HerdrError` (host said no), `TransportError` (network),
-  `DecodingError` (contract drift). Never swallow stderr.
-- Tests use `FakeTransport` fed from `Fixtures/`. No test touches the network.
+- Errors are typed: `HcError` (herdr-core said no), `ShellError` (a command
+  ran and failed), `TransportError` (network), `DecodingError` (contract
+  drift). Never swallow stderr.
+- Tests use scripted cores and shells fed from `Fixtures/`. No test touches
+  the network.
 - Third-party dependencies: **Citadel** and **SwiftTerm**, both approved. Ask
   before adding a third. SwiftTerm is a real VT100/xterm emulator and there is
-  no honest alternative: `terminal.frame` payloads carry cursor positioning and
-  synchronized-output markers *inside* the bytes, so anything that approximated
+  no honest alternative: a terminal's bytes carry cursor positioning and
+  synchronized-output markers inside them, so anything that approximated
   ANSI would render an agent's pane as nonsense. It is linked by `BleatUI`
   only — `BleatKit` stays free of rendering, and the console tool writes the
   same bytes to a terminal that already knows how to read them. It ships a
@@ -244,17 +260,18 @@ says `@concurrent`. The settings on each side, and why, are in
   (`CLAUDE_CONFIG_DIR` per directory). A pane's `cwd` implies the account;
   Bleat may show that as a badge later. Not a Phase 1 concern.
 
-## Open questions (resolve against the live host, then delete)
+## Open questions
 
-- Whether the host ever sends a non-`terminal.frame` record on stdout. Only
-  frames have been observed; `TerminalRecord.unknown` covers the rest.
+They live in [`docs/bleat-2-plan.md`](docs/bleat-2-plan.md), each tagged with
+the phase it must close before. Resolve against the live host, record the
+answer in the doc for its area, then strike it there.
 
 ## Testing against a live host
 
-herdr runs on this Mac, so `LocalProcessTransport` needs no SSH. Never
-experiment against the `work` session: start a scratch one with
-`script -q /dev/null herdr session attach bleat-test &` and stop it with
-`herdr session stop <name>`. **Testing pairing against a scratch sshd needs
-`SetEnv HOME=<scratch>`**, or it writes to your real `authorized_keys`. The
-scratch sshd recipe and the `PATH` and `NSHomeDirectory` traps are in
-[`docs/testing.md`](docs/testing.md).
+herdr-core runs on this Mac, so `bleat terminals [--watch]` needs no SSH: it
+runs `hc connect` locally. Never experiment on the live terminals: start a
+scratch one with `hc run --bg --no-parent --no-notify --name bleat-scratch --
+/bin/sh -i`, and remove it with `hc kill` and `hc rm`. **Testing pairing
+against a scratch sshd needs `SetEnv HOME=<scratch>`**, or it writes to your
+real `authorized_keys`. The scratch sshd recipe and the `PATH` and
+`NSHomeDirectory` traps are in [`docs/testing.md`](docs/testing.md).

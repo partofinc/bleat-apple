@@ -59,52 +59,8 @@ struct SSHHostTests {
     }
 }
 
-@Suite("Remote command construction")
+@Suite("Remote command quoting")
 struct RemoteCommandTests {
-
-    private func transport(session: String?, herdrPath: String = "herdr") throws -> SSHTransport {
-        SSHTransport(
-            host: try SSHHost(parsing: "robin@example:22"),
-            privateKey: Curve25519.Signing.PrivateKey(),
-            hostKeys: .knownHosts(KnownHostsStore(url: URL(fileURLWithPath: "/dev/null"))),
-            herdrPath: herdrPath,
-            session: session
-        )
-    }
-
-    @Test("session is a command prefix, because channel env needs PermitUserEnvironment")
-    func sessionPrefix() throws {
-        let command = try transport(session: "work").command(for: ["agent", "list"])
-        #expect(command == "env -u HERDR_SOCKET_PATH HERDR_SESSION='work' 'herdr' 'agent' 'list'")
-    }
-
-    @Test("a command can name its own session without changing the selected one")
-    func explicitSession() throws {
-        // What the phone does for a watch: each relayed command says which
-        // session it is for, and the prefix the phone's own screens share is
-        // not touched.
-        let transport = try transport(session: "work")
-        #expect(transport.command(for: ["agent", "list"], session: "scratch")
-            == "env -u HERDR_SOCKET_PATH HERDR_SESSION='scratch' 'herdr' 'agent' 'list'")
-        #expect(!transport.command(for: ["session", "list"], session: nil).contains("HERDR_SESSION"))
-        #expect(transport.command(for: ["agent", "list"]).contains("HERDR_SESSION='work'"))
-    }
-
-    @Test("an inherited HERDR_SOCKET_PATH is always cleared")
-    func clearsSocketPath() throws {
-        // Left set, it pins the command to the wrong session and silently
-        // overrides HERDR_SESSION.
-        let command = try transport(session: nil).command(for: ["pane", "list"])
-        #expect(command.hasPrefix("env -u HERDR_SOCKET_PATH "))
-        #expect(!command.contains("HERDR_SESSION"))
-    }
-
-    @Test("absolute herdr path survives quoting")
-    func absolutePath() throws {
-        let command = try transport(session: nil, herdrPath: "/opt/homebrew/bin/herdr")
-            .command(for: ["api", "schema", "--json"])
-        #expect(command.contains("'/opt/homebrew/bin/herdr'"))
-    }
 
     @Test("arguments are single-quoted so a shell cannot reinterpret them")
     func quoting() {

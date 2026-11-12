@@ -3,9 +3,10 @@ import Observation
 
 /// The one live connection, and which peer it belongs to.
 ///
-/// One at a time, deliberately. A phone drills into a single host — sessions,
-/// then workspaces, then a pane — and every one of those screens wants the same
-/// SSH connection rather than a new handshake each. Browsing a second host
+/// One at a time, deliberately. A phone drills into a single host — its
+/// terminal list, then a terminal — and every one of those screens rides the
+/// same SSH connection, an `hc connect` channel each, rather than a new
+/// handshake each. Browsing a second host
 /// closes the first, which is also what should happen: an idle SSH session left
 /// open on someone's Mac is untidy at best.
 ///
@@ -30,7 +31,6 @@ public final class ConnectionStore {
 
     /// What a dial produced, whichever kind it was.
     private struct Connection: Sendable {
-        let client: HerdrClient
         let link: any PeerLink
         /// The address that won. Nil through a relay, where the phone did the
         /// racing and keeps the answer.
@@ -97,57 +97,16 @@ public final class ConnectionStore {
         current?.hostKey == peer.hostKey ? current?.id : nil
     }
 
-    /// A client for this peer, connecting if there is not one already.
-    ///
-    /// - Parameter session: The Herdr session to select. Applied to the live
-    ///   connection rather than being part of its identity: session selection
-    ///   is an environment prefix on each command, so drilling from the session
-    ///   list into a session's workspaces costs no second handshake.
-    public func client(for peer: PairedPeer, session: String? = nil) async throws -> HerdrClient {
-        let connected = try await connected(for: peer, session: session)
-        // Applied on every path, including a fresh dial. The three used to
-        // differ — a reused or joined connection took `session ?? peer.session`
-        // while a new one took only `session` — and a screen could not tell
-        // which it had got. (`peer.session` is unset today, so this changes
-        // nothing yet; it stops the paths disagreeing when it is not.)
-        connected.link.useSession(session ?? peer.session)
-        return connected.client
-    }
-
-    /// A client for a command that does not care which session is selected.
-    ///
-    /// **Deliberately does not call `useSession`**, for the reason `shell` does
-    /// not: the prefix is shared mutable state on one transport, read at
-    /// command dispatch rather than when the client was handed out. A screen
-    /// that is inside a session now asks two questions over one connection —
-    /// `workspace list`, which needs the prefix, and `session list`, which does
-    /// not — and passing `session: nil` for the second would clear the prefix
-    /// out from under the first if the two overlapped. `.task` and
-    /// `.refreshable` overlap routinely.
-    ///
-    /// `session list`, `session stop` and `session delete` are all client-side
-    /// commands that name their session explicitly and report every session
-    /// whichever one is selected, so leaving the prefix alone costs nothing.
-    public func sessionAgnosticClient(for peer: PairedPeer) async throws -> HerdrClient {
-        try await connected(for: peer, session: nil).client
-    }
-
-    /// A shell on the peer, over the same connection every screen uses.
-    ///
-    /// Pairing and unpairing are plain shell, not herdr — installing and
-    /// removing a key in `authorized_keys` has nothing to do with sessions, so
-    /// this deliberately does **not** touch `useSession`. The prefix is shared
-    /// mutable state on a shared transport, and setting it here would change
-    /// which session a list screen behind the sheet is reading.
+    /// A shell on the peer, over the same connection every screen uses:
+    /// unpairing, the host's load, endpoint refreshes.
     public func shell(for peer: PairedPeer) async throws -> any ShellRunner {
-        try await connected(for: peer, session: nil).link
+        try await connected(for: peer).link
     }
 
-    /// The connection itself, for a caller that names the session on every
-    /// command — the relay answering a watch. Does not touch `useSession`, for
-    /// the reason `shell` does not.
+    /// The connection itself: what `hc connect` is opened on, and what the
+    /// relay answering a watch runs its commands over.
     public func link(for peer: PairedPeer) async throws -> any PeerLink {
-        try await connected(for: peer, session: nil).link
+        try await connected(for: peer).link
     }
 
     /// A shell on the live connection to this peer, with that connection's
@@ -176,10 +135,7 @@ public final class ConnectionStore {
 
     /// The one dial, shared by both. Everything about joining, cancelling and
     /// not leaking a transport lives here rather than being written twice.
-    private func connected(
-        for peer: PairedPeer,
-        session: String?
-    ) async throws -> Connection {
+    private func connected(for peer: PairedPeer) async throws -> Connection {
         let link = reachability.link
         if let live = current,
            ConnectionPolicy.canReuse(
@@ -219,12 +175,12 @@ public final class ConnectionStore {
             // Nothing is dialled: the phone connects when the first command
             // reaches it, and that command is what reports a host that cannot
             // be reached.
-            let transport = RelayTransport(hostKey: peer.hostKey, session: session, channel: relay)
+            let transport = RelayTransport(hostKey: peer.hostKey, channel: relay)
             let previous = detach()
             task = Task {
                 await self.close(previous)
                 return Connection(
-                    client: HerdrClient(transport: transport), link: transport,
+                    link: transport,
                     endpoint: nil
                 )
             }
@@ -236,11 +192,11 @@ public final class ConnectionStore {
                 // Released while the old one was closing: not worth a dial
                 // nobody is waiting for.
                 try Task.checkCancellation()
-                let connected = try await PeerConnection.connect(
-                    to: peer, deviceKey: deviceKey, link: link, session: session
+                let connected = try await PeerConnection.open(
+                    to: peer, deviceKey: deviceKey, link: link
                 )
                 return Connection(
-                    client: connected.client, link: connected.transport,
+                    link: connected.transport,
                     endpoint: connected.endpoint
                 )
             }
@@ -295,9 +251,9 @@ public final class ConnectionStore {
     /// Drops the connection when an error means the connection itself is
     /// finished, so the next attempt races the peer's addresses again.
     ///
-    /// `HerdrError` deliberately does not qualify: the host was reached and
-    /// said no, and throwing away a working connection over one failed command
-    /// would make every retry pay for a fresh handshake.
+    /// `HcError` and `ShellError` deliberately do not qualify: the host was
+    /// reached and said no, and throwing away a working connection over one
+    /// failed command would make every retry pay for a fresh handshake.
     ///
     /// Without this a cached client outlives the network it was made on. Move
     /// from Wi-Fi to cellular and it is still pinned to the `.local` name that

@@ -103,3 +103,10 @@ extension Sequence<HcTerminal> {
         }
     }
 }
+
+extension String {
+    /// Address order, numbers compared as numbers: `t9` before `t10`.
+    func precedesAsTarget(_ other: String) -> Bool {
+        compare(other, options: [.numeric]) == .orderedAscending
+    }
+}

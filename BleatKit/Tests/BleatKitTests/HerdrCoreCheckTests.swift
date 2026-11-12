@@ -26,7 +26,7 @@ struct HerdrCoreCheckTests {
     @Test("the lookup asks a login shell for hc, and absence is empty output")
     func locateCommand() {
         #expect(HerdrCoreLookup.locate == "${SHELL:-/bin/sh} -lc 'command -v hc' || true")
-        #expect(HerdrLookup.command == "${SHELL:-/bin/sh} -lc 'command -v herdr' || true")
+        #expect(LoginShellLookup.command(locating: "tool") == "${SHELL:-/bin/sh} -lc 'command -v tool' || true")
     }
 
     @Test("the version is asked of the absolute path, quoted")
@@ -145,14 +145,21 @@ struct HerdrCoreCheckTests {
 
     // MARK: - The record
 
-    /// Every peer paired under 1.x was written without the key, and an
-    /// undecodable file would strand every one of them.
-    @Test("a 1.x peer record decodes, with nothing known about herdr-core")
+    /// Every peer paired under 1.x was written without `herdrCore` and with
+    /// four keys this build no longer has. An undecodable file strands every
+    /// paired host, so all of them must be ignored rather than fatal.
+    @Test("a 1.x peer record decodes, its herdr keys ignored and nothing known about herdr-core")
     func oldRecordDecodes() throws {
-        let json = #"{"hostKey":"ssh-ed25519 AAAAKEY","name":"Mac","username":"robin","endpoints":[],"herdrPath":"/opt/homebrew/bin/herdr"}"#
+        let json = #"""
+        {"hostKey":"ssh-ed25519 AAAAKEY","name":"Mac","username":"robin","endpoints":[],
+         "herdrPath":"/opt/homebrew/bin/herdr","session":"work",
+         "createdSessions":["scratch"],"startedSessions":["scratch"],
+         "hostInfo":{"system":"macOS 27.0.1","herdrVersion":"0.9.3"}}
+        """#
         let peer = try JSONDecoder().decode(PairedPeer.self, from: Data(json.utf8))
         #expect(peer.herdrCore == nil)
-        #expect(peer.herdrPath == "/opt/homebrew/bin/herdr")
+        #expect(peer.name == "Mac")
+        #expect(peer.hostInfo?.system == "macOS 27.0.1")
     }
 
     @Test("the answer survives a round trip and a re-pair")

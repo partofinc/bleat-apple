@@ -31,7 +31,7 @@ struct PaneShortcutStrip: View {
         }
         .scrollIndicators(.hidden)
         .clipShape(.capsule)
-        // A key pressed with no stream is dropped by `PaneModel.send` anyway,
+        // A key pressed with no stream is dropped by the model anyway,
         // and a dead tap that looks live is worse than a greyed one.
         .disabled(model.phase != .live)
     }
@@ -39,7 +39,7 @@ struct PaneShortcutStrip: View {
 
 #if DEBUG
 #Preview("Shortcuts", traits: .sampleData) {
-    PaneShortcutStrip(model: PaneModel(previewing: .live))
+    PaneShortcutStrip(model: HcPaneModel(previewing: .live))
         .frame(height: 38)
         .padding()
 }

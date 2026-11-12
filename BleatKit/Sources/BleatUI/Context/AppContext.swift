@@ -12,8 +12,7 @@ public final class AppContext {
     public let reachability: Reachability
     public let connections: ConnectionStore
     /// How busy the connected host is. Here rather than in a screen's `@State`
-    /// because the bar that shows it is carried down the drill-down — host,
-    /// session, workspace — and those are three screens reading one answer.
+    /// so the reading outlives a trip into a terminal and back.
     public let hostLoad: HostLoadStore
     /// The unpair flow. Here rather than in a screen's `@State` because it
     /// spans two of them — the peer list and a peer's detail — and because

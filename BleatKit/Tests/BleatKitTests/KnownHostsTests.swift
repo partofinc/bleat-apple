@@ -93,11 +93,11 @@ struct HostRegistryTests {
 
         #expect(try registry.all().isEmpty)
         try registry.save(HostEntry(name: "dev", spec: "robin@10.0.0.5", keyPath: "~/.bleat/id_ed25519"))
-        try registry.save(HostEntry(name: "box", spec: "robin@box:2222", keyPath: "~/k", session: "work"))
+        try registry.save(HostEntry(name: "box", spec: "robin@box:2222", keyPath: "~/k"))
 
         let entries = try registry.all()
         #expect(entries.map(\.name) == ["box", "dev"])          // sorted
-        #expect(try registry.entry(named: "box")?.session == "work")
+        #expect(try registry.entry(named: "box")?.host().port == 2222)
         #expect(try registry.entry(named: "dev")?.host().port == 22)
 
         try registry.remove(named: "dev")

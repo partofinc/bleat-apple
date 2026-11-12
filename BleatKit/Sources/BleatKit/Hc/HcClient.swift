@@ -47,7 +47,14 @@ public actor HcClient {
     private var channels: [UInt32: AsyncThrowingStream<Data, any Error>.Continuation] = [:]
     /// DATA for a channel nobody has opened yet. A subscription's first events
     /// can follow its reply before the caller has had a turn to listen.
+    /// Bounded by the core's window: nothing here grants credit for it.
     private var early: [UInt32: [Data]] = [:]
+    /// Channels the core closed before anyone opened them. Without this the
+    /// close was dropped, and the channel opened later never finished.
+    private var closedEarly: Set<UInt32> = []
+    /// Channels whose listener went away. Their late DATA is dropped rather
+    /// than kept in `early` for good, and the core is told to close them.
+    private var abandoned: Set<UInt32> = []
     private var failure: (any Error)?
 
     public private(set) var hello: Hello?
@@ -104,13 +111,15 @@ public actor HcClient {
             }
         }
         if let error = reply["error"] {
-            var refused = try error.decode(HcError.self)
+            // As lenient as `call`: a refusal without a well-formed message is
+            // still a refusal, not contract drift.
+            var refused = (try? error.decode(HcError.self)) ?? HcError(code: error["code"]?.int ?? 0, message: "herdr-core refused the handshake")
             refused.method = "hello"
             throw refused
         }
         guard let result = reply["result"] else { throw HcProtocolError.noHello }
         guard case .bool(true)? = result["framed"] else { throw HcProtocolError.notFramed }
-        let generation = Int(result["generation"]?.number ?? 0)
+        let generation = result["generation"]?.int ?? 0
         guard generation == Self.generation else { throw HcProtocolError.unsupportedGeneration(generation) }
         var features: [String] = []
         if case .array(let listed)? = result["features"] { features = listed.compactMap(\.string) }
@@ -152,12 +161,14 @@ public actor HcClient {
 
     // MARK: - Channels
 
-    /// The DATA arriving on `channel`, with credit returned as it is taken.
+    /// The DATA arriving on `channel`.
     ///
-    /// Credit is granted once a chunk has been handed on, which is when it is
-    /// "consumed" as far as the core can tell; a consumer that stops reading
-    /// stops the credit with it, and the core repaints it rather than queue
-    /// without limit (`wire.rs`, `MAX_PENDING`).
+    /// **The consumer grants credit, with `grant(_:on:)`, once it has dealt
+    /// with a chunk.** Granting it here, as the chunk went into this stream's
+    /// buffer, meant a consumer that stalled never let the core's window fill:
+    /// the core never fell back to a repaint (`wire.rs`, `MAX_PENDING`), and
+    /// the buffer grew without limit. Granted after use, a stalled consumer
+    /// stops the credit, and the core stops sending.
     public func channel(_ channel: UInt32) -> AsyncThrowingStream<Data, any Error> {
         let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
         if let failure {
@@ -168,10 +179,22 @@ public actor HcClient {
         continuation.onTermination = { [weak self] _ in
             Task { await self?.forget(channel) }
         }
+        abandoned.remove(channel)
         for data in early.removeValue(forKey: channel) ?? [] {
-            deliver(data, on: channel)
+            continuation.yield(data)
+        }
+        if closedEarly.remove(channel) != nil {
+            channels[channel] = nil
+            continuation.finish()
         }
         return stream
+    }
+
+    /// Returns `bytes` of credit on `channel`: the consumer has dealt with
+    /// that much of what arrived.
+    public func grant(_ bytes: Int, on channel: UInt32) {
+        guard failure == nil, bytes > 0 else { return }
+        outgoing.yield(HcFrame.credit(bytes, on: channel).encoded())
     }
 
     /// Sends a frame on a channel: keys, a resize, a close.
@@ -180,8 +203,13 @@ public actor HcClient {
         outgoing.yield(frame.encoded())
     }
 
+    /// The listener went away: close the channel at the core, and drop what
+    /// still arrives on it.
     private func forget(_ channel: UInt32) {
-        channels[channel] = nil
+        guard channels.removeValue(forKey: channel) != nil else { return }
+        abandoned.insert(channel)
+        guard failure == nil else { return }
+        outgoing.yield(HcFrame(channel: channel, kind: .close).encoded())
     }
 
     // MARK: - Reading
@@ -218,7 +246,11 @@ public actor HcClient {
             case (let channel, .data):
                 deliver(frame.payload, on: channel)
             case (let channel, .close):
-                channels.removeValue(forKey: channel)?.finish()
+                if let continuation = channels.removeValue(forKey: channel) {
+                    continuation.finish()
+                } else if !abandoned.contains(channel) {
+                    closedEarly.insert(channel)
+                }
             default:
                 // CREDIT, RESIZE, FOCUS, FACTS from the core: nothing here
                 // acts on them yet, and an unknown kind is skipped.
@@ -229,19 +261,18 @@ public actor HcClient {
 
     private func reply(_ payload: Data) {
         guard let message = try? JSONDecoder().decode(HcJSON.self, from: payload),
-              let id = message["id"]?.number.map(Int.init),
+              let id = message["id"]?.int,
               let waiter = pending.removeValue(forKey: id)
         else { return }
         waiter.continuation.resume(returning: message)
     }
 
     private func deliver(_ data: Data, on channel: UInt32) {
-        guard let continuation = channels[channel] else {
+        if let continuation = channels[channel] {
+            continuation.yield(data)
+        } else if !abandoned.contains(channel) {
             early[channel, default: []].append(data)
-            return
         }
-        continuation.yield(data)
-        outgoing.yield(HcFrame.credit(data.count, on: channel).encoded())
     }
 
     private func fail(_ error: any Error) {

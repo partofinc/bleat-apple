@@ -149,16 +149,23 @@ struct HcClientTests {
         await client.close()
     }
 
+    /// The subscribe request the client sent, and its id.
+    private func subscribeRequest(_ core: ScriptedCore) async throws -> Int {
+        let frame = try #require(try await core.frames(atLeast: 1).first)
+        let request = try JSONDecoder().decode(HcJSON.self, from: frame.payload)
+        #expect(request["method"]?.string == "events.subscribe")
+        return try #require(request["id"]?.int)
+    }
+
     /// A subscription's first events can follow its reply before the caller
-    /// has opened the channel; they must wait for it, and be credited once
-    /// taken.
-    @Test("a subscription keeps events that beat it to the channel, and credits them")
+    /// has opened the channel; they must wait for it. Credit is owed only once
+    /// the caller has dealt with them — granted on arrival, a stalled consumer
+    /// never filled the core's window and buffered without limit.
+    @Test("early events wait for the channel, and are credited only once consumed")
     func subscriptionAndCredit() async throws {
         let (client, core) = try await connected()
         async let subscribing = client.subscribe()
-        let request = try JSONDecoder().decode(HcJSON.self, from: try #require(try await core.frames(atLeast: 1).first).payload)
-        #expect(request["method"]?.string == "events.subscribe")
-        let id = Int(request["id"]?.number ?? 0)
+        let id = try await subscribeRequest(core)
         let event = json(#"{"jsonrpc":"2.0","method":"event","params":{"type":"title","terminal":"t1","seq":6,"data":{"title":"x"}}}"#) + json("\n")
         core.reply(
             HcFrame(channel: 0, kind: .data, payload: json(#"{"jsonrpc":"2.0","id":\#(id),"result":{"channel":1,"seq":5,"terminals":[]}}"#)).encoded()
@@ -172,11 +179,48 @@ struct HcClientTests {
             return
         }
         #expect(params["terminal"]?.string == "t1")
+        #expect(try await core.frames().allSatisfy { $0.knownKind != .credit }, "not consumed yet")
 
-        // The subscribe request, then the credit for the event.
+        // Coming back for the next line is what says the last one was dealt with.
+        let waiting = Task { [iterator] in
+            var iterator = iterator
+            return try await iterator.next()
+        }
         let credit = try await core.frames(atLeast: 2).first { $0.knownKind == .credit }
         #expect(credit?.channel == 1)
         #expect(credit.map { Array($0.payload) } == Array(HcFrame.credit(event.count, on: 1).payload))
+        await client.close()
+        _ = try? await waiting.value
+    }
+
+    /// Dropped once: the subscription then sat "live" on a dead channel.
+    @Test("a channel the core closed before anyone listened still ends")
+    func closedBeforeListening() async throws {
+        let (client, core) = try await connected()
+        // A call answered after the frames: once it returns, the reader has
+        // taken them, so the channel is opened only after its CLOSE arrived.
+        let pending = Task { try await client.call("server.status") }
+        let request = try JSONDecoder().decode(HcJSON.self, from: try #require(try await core.frames(atLeast: 1).first).payload)
+        let id = try #require(request["id"]?.int)
+        core.reply(
+            HcFrame(channel: 9, kind: .data, payload: json("last\n")).encoded()
+                + HcFrame(channel: 9, kind: .close).encoded()
+                + HcFrame(channel: 0, kind: .data, payload: json(#"{"jsonrpc":"2.0","id":\#(id),"result":{}}"#)).encoded()
+        )
+        _ = try await pending.value
+        var iterator = await client.channel(9).makeAsyncIterator()
+        #expect(try await iterator.next() == json("last\n"))
+        #expect(try await iterator.next() == nil)
+        await client.close()
+    }
+
+    @Test("a channel number that is not one is refused, not trapped on")
+    func badChannelNumber() async throws {
+        let (client, core) = try await connected()
+        let subscribing = Task { try await client.subscribe() }
+        let id = try await subscribeRequest(core)
+        core.reply(HcFrame(channel: 0, kind: .data, payload: json(#"{"jsonrpc":"2.0","id":\#(id),"result":{"channel":-1,"seq":1}}"#)).encoded())
+        await #expect(throws: HcProtocolError.notFramed) { try await subscribing.value }
         await client.close()
     }
 

@@ -235,11 +235,18 @@ do {
             }
             try await Terminals.run(opener: LocalHc(), hcPath: path, watch: options.watch)
         case .saved:
-            // Over SSH the path is the host's; `hc` relies on its PATH.
-            guard let opener = try makeTransport(selection, session: nil, herdrPath: nil) as? any HcStreamOpening else {
+            guard let transport = try makeTransport(selection, session: nil, herdrPath: nil) as? SSHTransport else {
                 fail("bleat: this host's transport cannot reach herdr-core")
             }
-            try await Terminals.run(opener: opener, hcPath: options.hcPath ?? "hc", watch: options.watch)
+            // The path is the host's, found the way the app's gate finds it:
+            // a bare `hc` misses `~/.local/bin`, which a non-login exec
+            // channel does not have on PATH.
+            var hcPath = options.hcPath
+            if hcPath == nil, case .installed(let found, _) = try await HerdrCoreCheck.find(over: transport) {
+                hcPath = found
+            }
+            guard let hcPath else { fail("bleat: herdr-core is not installed on that host. Pass --hc PATH if it is.") }
+            try await Terminals.run(opener: transport, hcPath: hcPath, watch: options.watch)
         }
         exit(0)
     }

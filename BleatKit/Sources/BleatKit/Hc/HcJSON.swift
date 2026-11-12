@@ -56,6 +56,20 @@ public enum HcJSON: Sendable, Equatable, Codable {
         if case .number(let value) = self { value } else { nil }
     }
 
+    /// The number as an `Int`, or nil when it is not a whole number that fits.
+    ///
+    /// **Never `Int(number)`.** That traps on `1e20` or `NaN`, and these
+    /// numbers come from the host: a core sending something odd must produce
+    /// an error, not crash the app.
+    public var int: Int? {
+        number.flatMap { Int(exactly: $0) }
+    }
+
+    /// The number as a channel id, or nil when it is not one.
+    public var uint32: UInt32? {
+        number.flatMap { UInt32(exactly: $0) }
+    }
+
     /// Reads a typed value back out, through the same decoder the host's
     /// replies go through.
     public func decode<T: Decodable>(_ type: T.Type) throws -> T {

@@ -57,7 +57,15 @@ final class TerminalsModel {
         } catch {
             guard !Task.isCancelled else { return }
             phase = .failed(ErrorMessage.of(error))
-            await connections.handle(error)
+            if case HcProtocolError.closed = error {
+                // The stream ended without an error, which is how a dead SSH
+                // connection can look from here. `handle` keeps the connection
+                // for anything but a `TransportError`, so Try Again would reuse
+                // the same dead link; dropping it makes the retry dial afresh.
+                await connections.release()
+            } else {
+                await connections.handle(error)
+            }
         }
     }
 
@@ -85,9 +93,7 @@ final class TerminalsModel {
         if !Task.isCancelled { throw HcProtocolError.closed }
     }
 
-    /// This host's own live terminals. Mirrors of machines it federates are
-    /// left out: Bleat pairs those directly, and would list them twice.
     private func publish(_ set: HcTerminalSet) {
-        terminals = set.terminals.filter { $0.isLocal && $0.isLive }.sortedByAttention()
+        terminals = set.listed
     }
 }

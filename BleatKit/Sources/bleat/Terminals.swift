@@ -47,7 +47,7 @@ enum Terminals {
     /// Live terminals on this core only; mirrors of federated machines are
     /// listed by connecting to those machines.
     static func render(_ set: HcTerminalSet) -> String {
-        let rows = set.terminals.filter { $0.isLocal && $0.isLive }.sortedByAttention().map { terminal in
+        let rows = set.listed.map { terminal in
             let state = terminal.isUnseenDone ? "done*" : terminal.status.flatMap(\.state).map(label) ?? "-"
             let place = terminal.location.map { [$0.space, $0.tab].compactMap { $0 }.joined(separator: " / ") } ?? ""
             return "\(state.padded(8)) \(terminal.address.padded(6)) \(terminal.displayName.padded(28)) \(place)"

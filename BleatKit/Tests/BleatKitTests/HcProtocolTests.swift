@@ -78,6 +78,8 @@ struct HcProtocolTests {
         #expect(t58.displayName == "project Backend", "the title, not foreground.name, which is Claude Code's version")
         #expect(terminals.contains { !$0.isLocal }, "adam/t10 is a mirror")
         #expect(terminals.contains { !$0.isLive })
+        // What a list shows: the three local live ones, no mirror, nothing finished.
+        #expect(Set(set.listed.map(\.address)) == ["t58", "t59", "t5b"])
     }
 
     /// Captured from a scratch terminal's whole life (hc 0.1.20).

@@ -56,7 +56,7 @@ struct LocalShell: ShellRunner {
 @Suite("The pairing swap, against a real shell")
 struct EnrollmentShellTests {
 
-    /// A home directory with a `herdr` on the login shell's PATH, a chatty
+    /// A home directory with an `hc` stub on the login shell's PATH, a chatty
     /// profile, and an `authorized_keys` holding a key the user put there.
     private func scratchHome(withHerdrCore: Bool = true) throws -> URL {
         let home = URL(fileURLWithPath: NSTemporaryDirectory())

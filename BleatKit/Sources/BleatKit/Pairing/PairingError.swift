@@ -18,9 +18,6 @@ public enum PairingError: Error, Sendable, Equatable {
     /// Never a prompt — the fingerprint travelled out of band precisely so this
     /// can be a hard stop.
     case hostKeyMismatch(expected: String, actual: String)
-    /// The host has no `herdr`, so pairing it would produce an app that can
-    /// list nothing.
-    case herdrNotFound
     /// The host has no herdr-core (`hc`), so Bleat 2 would pair a machine it
     /// can show nothing from. Checked by both ends before anything is
     /// written: `bleat pair` before it shows a code, the phone before it
@@ -61,8 +58,6 @@ extension PairingError: CustomStringConvertible {
             "this pairing code needs a newer version of Bleat (format \(version))"
         case .hostKeyMismatch(let expected, let actual):
             "the host key does not match the pairing code (expected \(expected), got \(actual))"
-        case .herdrNotFound:
-            "herdr is not installed on that host"
         case .herdrCoreNotFound:
             "herdr-core (hc) is not installed on that host — install Herdr there, then pair again"
         case .noSupportedHostKey:

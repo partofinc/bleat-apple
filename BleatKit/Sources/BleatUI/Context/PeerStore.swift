@@ -83,14 +83,6 @@ public final class PeerStore {
         reload()
     }
 
-    /// Stores a `herdr` path that had to be discovered, so the next connection
-    /// does not have to ask again. Only happens for a peer paired before the
-    /// path was recorded.
-    public func recordHerdrPath(_ path: String, for peer: PairedPeer) {
-        try? registry.recordHerdrPath(path, forHostKey: peer.hostKey)
-        reload()
-    }
-
     /// Keeps what the host just said it is, so the host list can show it
     /// without a connection. Reloads only when the record changed — this runs
     /// after every status read, and a reload redraws every list of hosts.

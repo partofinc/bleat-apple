@@ -80,9 +80,6 @@ struct PeerSettingsView: View {
                     if let model = info.model {
                         LabeledContent(info.modelName == nil ? "Model" : "Identifier", value: model)
                     }
-                    if let version = info.herdrVersion {
-                        LabeledContent("herdr version", value: version)
-                    }
                 } header: {
                     Text("System")
                 } footer: {

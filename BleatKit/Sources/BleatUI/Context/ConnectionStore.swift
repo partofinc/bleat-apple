@@ -35,7 +35,6 @@ public final class ConnectionStore {
         /// The address that won. Nil through a relay, where the phone did the
         /// racing and keeps the answer.
         let endpoint: Endpoint?
-        let discoveredHerdrPath: String?
     }
 
     private struct Live {
@@ -226,7 +225,7 @@ public final class ConnectionStore {
                 await self.close(previous)
                 return Connection(
                     client: HerdrClient(transport: transport), link: transport,
-                    endpoint: nil, discoveredHerdrPath: nil
+                    endpoint: nil
                 )
             }
         } else {
@@ -242,7 +241,7 @@ public final class ConnectionStore {
                 )
                 return Connection(
                     client: connected.client, link: connected.transport,
-                    endpoint: connected.endpoint, discoveredHerdrPath: connected.discoveredHerdrPath
+                    endpoint: connected.endpoint
                 )
             }
         }
@@ -269,9 +268,6 @@ public final class ConnectionStore {
         // connection into an error over bookkeeping, so it does not.
         if let endpoint = connected.endpoint {
             peers.recordSuccess(endpoint: endpoint, for: peer)
-        }
-        if let path = connected.discoveredHerdrPath {
-            peers.recordHerdrPath(path, for: peer)
         }
 
         // Ask the host what its addresses are now, so a Mac that moved network

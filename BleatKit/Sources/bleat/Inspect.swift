@@ -10,9 +10,9 @@ import Foundation
 /// a phone is involved is the difference between "pairing failed" and "the
 /// address it offered was the Tailscale one and the tunnel is down".
 enum Inspect {
-    static func run(options: Options) throws {
+    static func run(options: Options) async throws {
         let port = options.port ?? 22
-        let report = try HostInspector().inspect(
+        let report = try await HostInspector().inspect(
             port: port,
             // Re-parsed here so an endpoint given without a port inherits
             // --port rather than silently defaulting to 22.

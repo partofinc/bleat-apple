@@ -179,12 +179,12 @@ do {
     }
 
     if command == "inspect" {
-        try Inspect.run(options: options)
+        try await Inspect.run(options: options)
         exit(0)
     }
 
     if command == "pair" {
-        try Pair.run(options: options)
+        try await Pair.run(options: options)
         exit(0)
     }
 

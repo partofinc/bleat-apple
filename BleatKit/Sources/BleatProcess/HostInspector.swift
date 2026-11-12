@@ -101,10 +101,10 @@ public struct HostInspector: Sendable {
     ///   - extraEndpoints: Endpoints detection cannot find. Overlays like
     ///     Twingate never tell the host its own resolvable name, so those are
     ///     supplied by the user rather than guessed at.
-    public func inspect(port: Int = 22, extraEndpoints: [Endpoint] = []) throws -> Report {
+    public func inspect(port: Int = 22, extraEndpoints: [Endpoint] = []) async throws -> Report {
         // Bleat 2 talks to herdr-core, so that is what a host must have; herdr
         // itself is no longer asked for.
-        guard case .installed(let hcPath, let hcVersion)? = locateHerdrCore() else {
+        guard let (hcPath, hcVersion) = await locateHerdrCore() else {
             throw PairingError.herdrCoreNotFound
         }
         guard let hostKey = readHostKey(port: port) else { throw PairingError.noSupportedHostKey }
@@ -204,25 +204,19 @@ public struct HostInspector: Sendable {
         return HerdrLookup.path(inOutput: output)
     }
 
-    /// Finds herdr-core here, the way the phone's gate finds it over SSH: the
-    /// login shell's `PATH`, then `~/.local/bin` where Herdr.app installs it,
-    /// and `hc --version` must answer as herdr-core. Nil when it is not here.
+    /// Finds herdr-core here with the phone's own lookup, `HerdrCoreCheck.find`,
+    /// run through a local shell: the login shell's `PATH`, then
+    /// `~/.local/bin` where Herdr.app installs `hc`, and `hc --version` must
+    /// answer as herdr-core. Nil when it is not here.
     ///
-    /// The commands and the reading of their answers are `HerdrCoreLookup`'s,
-    /// in `BleatKit`, so both ends ask the same questions — the Mac whose
-    /// `~/.local/bin` only `.zshrc` puts on `PATH` is found by both.
-    public func locateHerdrCore() -> HerdrCore? {
-        var path = run("/bin/sh", ["-c", HerdrCoreLookup.locate], timeout: 10)
-            .flatMap { HerdrCoreLookup.path(inOutput: $0) }
-        if path == nil {
-            path = run("/bin/sh", ["-c", HerdrCoreLookup.installedByHerdrApp], timeout: 5)
-                .flatMap { HerdrCoreLookup.path(inOutput: $0) }
-        }
-        guard let path,
-              let printed = run(path, ["--version"], timeout: 10),
-              let version = HerdrCoreLookup.version(inOutput: printed)
+    /// The same code rather than the same steps: two copies of the lookup
+    /// would drift, and `bleat pair` would then show a code for a host the
+    /// phone refuses. The Mac whose `.zshrc` alone puts `~/.local/bin` on
+    /// `PATH` is found by both.
+    public func locateHerdrCore() async -> (path: String, version: String)? {
+        guard case .installed(let path, let version)? = try? await HerdrCoreCheck.find(over: LocalShellRunner())
         else { return nil }
-        return .installed(path: path, version: version)
+        return (path, version)
     }
 
     /// The host key the phone will actually be shown.

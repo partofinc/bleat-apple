@@ -38,7 +38,7 @@ enum Pair {
     /// its own deadline anyway, so this only applies when the tool is gone.
     static let expiryGrace: TimeInterval = Invitation.expiryGrace
 
-    static func run(options: Options) throws {
+    static func run(options: Options) async throws {
         let port = options.port ?? 22
         // `main.swift` already rejects a malformed --endpoint, so this re-parse
         // cannot legitimately drop one. Checked rather than assumed: a silent
@@ -48,7 +48,7 @@ enum Pair {
         guard extra.count == options.endpoints.count else {
             throw ToolFailure("an --endpoint could not be resolved against port \(port)")
         }
-        let report = try HostInspector().inspect(port: port, extraEndpoints: extra)
+        let report = try await HostInspector().inspect(port: port, extraEndpoints: extra)
 
         guard !report.endpoints.isEmpty else {
             throw ToolFailure("no reachable address found for this host; pass one with --endpoint")

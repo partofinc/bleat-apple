@@ -319,14 +319,17 @@ Alongside it, three redundancies went:
 ask `HerdrCoreLookup`'s questions — the login shell's `PATH`, then
 `~/.local/bin` where Herdr.app installs `hc` (a Mac whose `.zshrc` alone adds
 it is missed by a login shell), and `hc --version` must answer as herdr-core:
-`bleat pair` through `HostInspector.locateHerdrCore` before it shows a code,
-the phone through `HerdrCoreCheck.find` in `Enrollment` before it writes
-anything. A host without hc is refused with `herdrCoreNotFound`, nothing
+both through the same code, `HerdrCoreCheck.find` — `bleat pair` over a
+local shell (`LocalShellRunner`, in `HostInspector.locateHerdrCore`) before
+it shows a code, the phone over SSH in `Enrollment` before it writes
+anything — so the two cannot disagree about a host. A host without hc is refused with `herdrCoreNotFound`, nothing
 written. The answer is stored on the peer as `herdrCore`, so a freshly paired
-host passes the gate at once. `herdrPath` is no longer resolved at pairing,
-and `PeerConnection.connect` only tries to find herdr — best effort, never a
-refusal — for a peer that has no herdr-core: refusing a host for lacking
-herdr also refused unpairing it. The paragraph below is 1.x's.
+host passes the gate at once. **herdr is not looked for at all any more**,
+neither at pairing nor by `PeerConnection.connect`: nothing Bleat 2 shows runs
+it, a 1.x peer already has its path stored, and looking refused hosts without
+herdr (unpairing them too), or, made best effort, cost a login-shell round trip
+on every connection. `PairingError.herdrNotFound` is gone with it. The
+paragraph below is 1.x's.
 
 **`herdrPath` is deliberately not in the QR; the client resolves it.** A baked
 path costs 24 bytes and goes stale the moment herdr moves, so discovering it is

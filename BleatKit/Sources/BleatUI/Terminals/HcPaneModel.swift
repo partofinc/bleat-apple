@@ -16,24 +16,35 @@ import Observation
 /// active one — the Mac's Herdr.app. 1.x had to `stty` a pty and put it back
 /// by hand; there is no counterpart here.
 ///
-/// **A rotation is a RESIZE frame, not a reopen.** The viewer's size changes
-/// in place and hc repaints. Reopening is kept for what needs it: a failure, a
-/// retry, coming back after being hidden.
+/// **A rotation is a RESIZE frame, not a reopen**, sent through the same
+/// ordered queue as keys so the two cannot overtake each other.
 ///
-/// One `hc connect` per screen, on the shared SSH connection; the list
-/// behind it has its own. The bytes are never inspected: they go to SwiftTerm
-/// exactly as they arrived.
+/// **Every attach is checked against being replaced, at each point it could
+/// write.** A retry or a return to the screen starts a new attach while the
+/// old one may still be mid-flight; one that resumes after being replaced
+/// must neither install itself nor paint its buffered bytes into the
+/// terminal the new one is drawing.
+///
+/// One `hc connect` per attach, on the shared SSH connection; the list behind
+/// it has its own. The bytes are never inspected: they go to SwiftTerm exactly
+/// as they arrived.
 @Observable
 final class HcPaneModel: PaneDriving {
     private(set) var wantsKeyboard = false
-    private(set) var phase: PaneModel.Phase = .opening
-    /// The grid the terminal shows and this viewer was attached or resized at.
+    private(set) var phase: PanePhase = .opening
+    /// The grid the core last accepted for this viewer.
     private(set) var grid: TerminalGrid?
     private(set) var rowHeight: CGFloat?
 
-    let peer: PairedPeer
     let address: String
-    private let connections: ConnectionStore
+
+    /// Opens a fresh `hc connect` byte stream. The app's goes through
+    /// `ConnectionStore`; a test passes a scripted one.
+    private let open: () async throws -> any HerdrStream
+    /// Told about a failure, so a dead SSH connection is dropped and the next
+    /// attach dials afresh. **Never `release()` here**: one terminal's stream
+    /// ending says nothing about the connection the list is also using.
+    private let report: (any Error) async -> Void
 
     private var sink: ((Data) -> Void)?
     /// Frames that arrived before the renderer. The first is the first paint;
@@ -46,24 +57,51 @@ final class HcPaneModel: PaneDriving {
     private var reader: Task<Void, Never>?
     /// What the terminal last measured, and so what to attach or resize at.
     private var viewport: TerminalGrid?
+    /// Whether the screen is on show. Off screen, nothing is attached: the
+    /// Mac has the terminal back.
     private var isActive = true
-    /// Set first in `close()`: nothing may attach once the screen is going.
+    /// Set first in `close()`: nothing may attach once the screen is gone.
     private var isClosing = false
 
-    /// Input waiting to go out, oldest first. One drainer at a time, so keys
-    /// arrive in the order they were pressed — see `PaneModel.outgoing`.
-    private var outgoing: [Data] = []
+    /// What goes out on the channel, in the order it was asked for.
+    private enum Outgoing {
+        case data(Data)
+        case resize(TerminalGrid)
+    }
+
+    /// One drainer at a time, so keys and resizes arrive in the order they
+    /// happened — see `PaneModel.outgoing` for the race this avoids.
+    private var outgoing: [Outgoing] = []
     private var isDraining = false
 
     /// How many lines of scrollback the first paint carries. hc paints them
     /// only for a program on the main screen (a shell); a full-screen program
-    /// scrolls itself, by wheel clicks — see `scroll`.
+    /// scrolls itself — see `TerminalHost`.
     static let history = 2000
 
-    init(peer: PairedPeer, address: String, connections: ConnectionStore) {
-        self.peer = peer
+    convenience init(peer: PairedPeer, address: String, connections: ConnectionStore) {
+        self.init(
+            address: address,
+            open: {
+                guard let hcPath = peer.herdrCore?.path else {
+                    throw HcPaneFailure.notChecked
+                }
+                let link = try await connections.link(for: peer)
+                guard let opener = link as? any HcStreamOpening else { throw HcPaneFailure.noRoute }
+                return try await opener.openHcConnection(hcPath: hcPath)
+            },
+            report: { error in await connections.handle(error) }
+        )
+    }
+
+    init(
+        address: String,
+        open: @escaping () async throws -> any HerdrStream,
+        report: @escaping (any Error) async -> Void
+    ) {
         self.address = address
-        self.connections = connections
+        self.open = open
+        self.report = report
     }
 
     // MARK: - The renderer
@@ -78,29 +116,18 @@ final class HcPaneModel: PaneDriving {
         self.scroller = scroller
     }
 
-    /// The terminal measured itself. On first layout this attaches; after
-    /// that, a different size is sent as a RESIZE on the live channel.
+    /// The terminal measured itself. The first time, this attaches; after
+    /// that, a different size goes out as a RESIZE on the live channel.
     func show(_ grid: TerminalGrid) {
         guard grid.isUsable else { return }
         viewport = grid
-        guard let attached, phase == .live else {
+        guard attached != nil, phase == .live else {
             // Not attached yet: the attach in flight catches up with the
             // latest size once it lands.
             if reader == nil { start() }
             return
         }
-        guard grid != self.grid else { return }
-        resize(to: grid, on: attached)
-    }
-
-    /// Changes this viewer's size in place; hc reflows the program and repaints.
-    private func resize(to grid: TerminalGrid, on attached: (client: HcClient, channel: UInt32)) {
-        self.grid = grid
-        var payload = Data()
-        payload.append(littleEndian: UInt16(clamping: grid.cols))
-        payload.append(littleEndian: UInt16(clamping: grid.rows))
-        let frame = HcFrame(channel: attached.channel, kind: .resize, payload: payload)
-        Task { try? await attached.client.send(frame) }
+        Task { await enqueue([.resize(grid)]) }
     }
 
     func setRowHeight(_ height: CGFloat) {
@@ -113,8 +140,11 @@ final class HcPaneModel: PaneDriving {
         start()
     }
 
-    /// Hidden, the viewer goes away and the Mac gets its size back; shown
-    /// again, it attaches afresh and the first paint redraws everything.
+    /// On screen, attach; off it, let go, so the Mac has the terminal back.
+    ///
+    /// **Off screen is not gone.** A covering sheet or an iPad column change
+    /// takes the screen away with its state kept, and it comes back. Treating
+    /// that as the end left a frozen frame that still claimed to be live.
     func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
@@ -151,31 +181,44 @@ final class HcPaneModel: PaneDriving {
     /// blocked program, which suits an agent sending to another agent. Here the
     /// person at the phone is the one typing.
     func submit(_ line: SubmittedLine) async {
-        await enqueue([Data(line.text.utf8), TerminalKey.enter.bytes])
+        await enqueue([.data(Data(line.text.utf8)), .data(TerminalKey.enter.bytes)])
     }
 
     func send(bytes: Data) async {
         guard !bytes.isEmpty else { return }
-        await enqueue([bytes])
+        await enqueue([.data(bytes)])
     }
 
-    /// hc has no scroll command: the terminal on screen decides — wheel clicks
-    /// for a program that asked for the mouse, its own history otherwise. See
+    /// hc has no scroll command: the terminal on screen decides. See
     /// `TerminalHost`.
     func scroll(_ direction: ScrollDirection, notches: Int) async {
         guard notches > 0 else { return }
         scroller?(direction, notches)
     }
 
-    private func enqueue(_ chunks: [Data]) async {
-        outgoing.append(contentsOf: chunks)
+    private func enqueue(_ items: [Outgoing]) async {
+        outgoing.append(contentsOf: items)
         guard !isDraining else { return }
         isDraining = true
         defer { isDraining = false }
         while !outgoing.isEmpty {
             guard let attached else { return outgoing.removeAll() }
-            let frame = HcFrame(channel: attached.channel, kind: .data, payload: outgoing.removeFirst())
-            try? await attached.client.send(frame)
+            let item = outgoing.removeFirst()
+            switch item {
+            case .data(let bytes):
+                try? await attached.client.send(HcFrame(channel: attached.channel, kind: .data, payload: bytes))
+            case .resize(let size):
+                guard size != grid else { continue }
+                var payload = Data()
+                payload.append(littleEndian: UInt16(clamping: size.cols))
+                payload.append(littleEndian: UInt16(clamping: size.rows))
+                // The grid is what the core accepted, so it moves only once the
+                // frame is on its way; a send that failed leaves it as it was.
+                do {
+                    try await attached.client.send(HcFrame(channel: attached.channel, kind: .resize, payload: payload))
+                    grid = size
+                } catch {}
+            }
         }
     }
 
@@ -206,63 +249,61 @@ final class HcPaneModel: PaneDriving {
 
     private func run() async {
         guard let size = viewport else { return }
-        guard let hcPath = peer.herdrCore?.path else {
-            phase = .failed("this host has not been checked for herdr-core")
-            return
-        }
         var client: HcClient?
         do {
-            let link = try await connections.link(for: peer)
-            guard let opener = link as? any HcStreamOpening else {
-                phase = .failed("herdr-core is not reachable this way yet")
-                return
-            }
-            let stream = try await opener.openHcConnection(hcPath: hcPath)
+            let stream = try await open()
             try await withTaskCancellationHandler {
                 let connected = try await HcClient.connect(over: stream)
                 client = connected
-                let result = try await connected.call("terminal.attach", [
+                let attachment = try HcAttachment(reply: try await connected.call("terminal.attach", [
                     "terminal": .string(address),
                     "cols": .number(Double(size.cols)),
                     "rows": .number(Double(size.rows)),
                     "history": .number(Double(Self.history)),
-                ])
-                guard let channel = result["channel"]?.uint32 else { throw HcProtocolError.notFramed }
-                // Replaced by a newer attach while this one was opening:
-                // installing it would orphan a viewer on the host.
+                ]))
+                let screen = await connected.channel(attachment.channel)
+                // **After the last suspension, right before anything is
+                // written.** Checked any earlier, a run replaced while it hopped
+                // onto the client would still install itself as live, and keys
+                // and resizes would go to a client nobody reads.
                 try Task.checkCancellation()
-                let screen = await connected.channel(channel)
-                attached = (connected, channel)
+                attached = (connected, attachment.channel)
                 grid = size
                 phase = .live
-                // Measured again while the attach was opening (a rotation).
-                if let latest = viewport, latest != size { resize(to: latest, on: (connected, channel)) }
+                // Measured again while the attach was opening — a rotation.
+                if let latest = viewport, latest != size { await enqueue([.resize(latest)]) }
                 for try await chunk in screen {
+                    // A replaced attach can still have chunks buffered; painted
+                    // into the terminal the new one is drawing, they would mix
+                    // two screens.
+                    guard !Task.isCancelled else { break }
                     deliver(chunk)
                     // Credit once the bytes are in the terminal, which is when
                     // they have been dealt with.
-                    await connected.grant(chunk.count, on: channel)
+                    await connected.grant(chunk.count, on: attachment.channel)
                 }
+                guard !Task.isCancelled else { return }
                 // The core closed the channel: the program ended, or the
-                // terminal was removed.
-                if !Task.isCancelled {
-                    phase = .ended
-                    wantsKeyboard = false
-                }
+                // terminal was removed. Nothing is left to type into, and the
+                // `hc connect` behind it is closed rather than left open.
+                attached = nil
+                outgoing.removeAll()
+                await connected.close()
+                phase = .ended
+                wantsKeyboard = false
             } onCancel: {
                 Task { await stream.close() }
             }
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                await client?.close()
+                return
+            }
             await client?.close()
             attached = nil
             phase = .failed(ErrorMessage.of(error))
             wantsKeyboard = false
-            if case HcProtocolError.closed = error {
-                await connections.release()
-            } else {
-                await connections.handle(error)
-            }
+            await report(error)
         }
     }
 
@@ -271,12 +312,14 @@ final class HcPaneModel: PaneDriving {
         sink(data)
     }
 
-    /// The screen is going: the viewer leaves, and the Mac gets its size back.
+    /// The screen is gone for good: the viewer leaves, and the Mac gets its
+    /// size back. `setActive(false)` is the one for a screen that may return.
     func close() async {
         isClosing = true
         wantsKeyboard = false
         let attached = self.attached
         detach()
+        phase = .ended
         if let attached { await attached.client.close() }
     }
 
@@ -284,12 +327,8 @@ final class HcPaneModel: PaneDriving {
     private var isPreview = false
 
     /// Parked in one phase, for `#Preview`.
-    convenience init(previewing phase: PaneModel.Phase) {
-        let peers = PeerStore(registry: .sample())
-        self.init(
-            peer: .preview, address: "t58",
-            connections: ConnectionStore(peers: peers, reachability: Reachability())
-        )
+    convenience init(previewing phase: PanePhase) {
+        self.init(address: "t58", open: { throw CancellationError() }, report: { _ in })
         isPreview = true
         self.phase = phase
         grid = TerminalGrid(cols: 53, rows: 30)

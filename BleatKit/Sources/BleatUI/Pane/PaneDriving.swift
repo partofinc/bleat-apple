@@ -9,7 +9,7 @@ import Foundation
 /// SwiftTerm controller are the same for both, so they take this rather than
 /// either model, and deleting the herdr one later touches no view.
 protocol PaneDriving: AnyObject {
-    var phase: PaneModel.Phase { get }
+    var phase: PanePhase { get }
     var wantsKeyboard: Bool { get }
     var rowHeight: CGFloat? { get }
 

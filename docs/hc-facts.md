@@ -87,7 +87,8 @@ When the host disagrees with this file, the host wins.
 ## Attaching (live, hc 0.1.20, 12 Nov 2026, on a scratch shell)
 
 - `terminal.attach {terminal, cols, rows, history}` on channel 0 answers
-  `{channel, automatic_input, resize_notifications, terminal: {…record}}`.
+  `{channel, automatic_input, resize_notifications, terminal: {…record}}`
+  (`Fixtures/hc-attach.json`; read by `HcAttachment`).
   The record already shows the attach's size: **an active attach takes the
   terminal over at once** (`cols: 40` straight after attaching at 40).
 - The first paint and live output are DATA on that channel, credited as they

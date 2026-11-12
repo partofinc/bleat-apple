@@ -1,0 +1,50 @@
+{
+ "id": 1,
+ "jsonrpc": "2.0",
+ "result": {
+  "automatic_input": true,
+  "channel": 1,
+  "resize_notifications": false,
+  "terminal": {
+   "address": "t5n",
+   "argv": [
+    "/bin/sh",
+    "-i"
+   ],
+   "cols": 40,
+   "created_ms": 1794475278225,
+   "cwd": "/Users/robin/scratch",
+   "die_with_parent": false,
+   "exit_code": null,
+   "finished_ms": null,
+   "foreground": {
+    "argv": [
+     "/bin/sh",
+     "-i"
+    ],
+    "cwd": "/Users/robin/scratch",
+    "name": "bash",
+    "pid": 92043
+   },
+   "identity": "ghostty",
+   "keep": false,
+   "labels": {},
+   "name": "bleat-scratch",
+   "notify": false,
+   "parent": null,
+   "pid": 92043,
+   "reason": null,
+   "reported": false,
+   "rm": false,
+   "rows": 12,
+   "screen": "exact",
+   "signal": null,
+   "state": "live",
+   "status": null,
+   "status_ms": null,
+   "template": null,
+   "title": "",
+   "turn": 0
+  }
+ }
+}

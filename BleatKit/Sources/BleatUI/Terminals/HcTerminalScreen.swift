@@ -17,7 +17,7 @@ struct HcTerminalScreen: View {
     }
 
     #if DEBUG
-    init(title: String, previewing phase: PaneModel.Phase) {
+    init(title: String, previewing phase: PanePhase) {
         self.title = title
         _model = State(wrappedValue: HcPaneModel(previewing: phase))
     }
@@ -37,8 +37,12 @@ struct HcTerminalScreen: View {
                 guard phase == .active, case .failed = model.phase else { return }
                 model.retry()
             }
-            // Leaving is what gives the Mac its size back.
-            .onDisappear { Task { await model.close() } }
+            // Off screen lets go, so the Mac has its size back; back on
+            // screen attaches again. Not `close()`: a covering sheet or an
+            // iPad column change takes the screen away and brings it back
+            // with its state, and a closed model never attaches again.
+            .onAppear { model.setActive(true) }
+            .onDisappear { model.setActive(false) }
     }
 }
 

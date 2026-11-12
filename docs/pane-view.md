@@ -25,9 +25,19 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
 - **Take over on open**, as 1.x does, but with nothing to undo: hc gives the
   size to the latest active viewer and back to the Mac when the phone leaves.
   No `stty`, no restore. A rotation is a RESIZE frame, not a reopen.
-- **Scrolling** has no host command. `TerminalHost` registers a scroller:
-  wheel clicks through SwiftTerm's `sendEvent` when the program asked for the
-  mouse, SwiftTerm's own `scrollUp`/`scrollDown` otherwise.
+- **Scrolling** has no host command. `TerminalHost` registers a scroller that
+  tells three cases apart, as a real terminal does: wheel clicks through
+  SwiftTerm's `sendEvent` when the program asked for the mouse (Claude Code);
+  Up/Down arrows on the alternate screen when it did not (less, man, vim —
+  xterm's alternate-scroll), in the program's cursor-key mode; SwiftTerm's own
+  `scrollUp`/`scrollDown` on the main screen (a shell).
+- **Off screen is not gone.** The screen calls `setActive(false)` when it
+  disappears and `setActive(true)` when it comes back: a covering sheet or an
+  iPad column change returns with its state, and a model closed for good left
+  a frozen frame that still claimed to be live.
+- **One terminal's failure is reported, never `release()`d**: the list shares
+  the SSH connection, and one `hc connect` ending says nothing about it.
+  Keys and resizes share one ordered queue.
 - **No chat reading.** It came from herdr's transcript; the hc screen is
   terminal only.
 

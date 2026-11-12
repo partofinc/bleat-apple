@@ -26,10 +26,16 @@ struct TerminalHost: UIViewControllerRepresentable {
                 terminal?.feed(byteArray: ArraySlice(data))
             }
             // How a scroll reaches a program over hc, which has no scroll
-            // command: a program that asked for the mouse gets wheel clicks,
-            // encoded in the protocol it asked for and sent like any other
-            // input; anything else scrolls the history this terminal holds.
-            model.attachScroller { [weak terminal] direction, notches in
+            // command — the three cases a real terminal tells apart:
+            //
+            // - The program asked for the mouse (Claude Code): wheel clicks,
+            //   encoded in the protocol it asked for, sent like any input.
+            // - A full-screen program that did not (less, man, vim): the
+            //   alternate screen keeps no history to scroll, so arrows, as
+            //   xterm's alternate-scroll mode sends — in the program's cursor
+            //   key mode, `ESC O A` once it has set DECCKM, as less does.
+            // - Anything else (a shell): the history this terminal holds.
+            model.attachScroller { [weak terminal, model] direction, notches in
                 guard let terminal, notches > 0 else { return }
                 let engine = terminal.getTerminal()
                 if engine.mouseMode != .off {
@@ -40,6 +46,11 @@ struct TerminalHost: UIViewControllerRepresentable {
                     for _ in 0..<notches {
                         engine.sendEvent(buttonFlags: flags, x: engine.cols / 2, y: engine.rows / 2)
                     }
+                } else if engine.isCurrentBufferAlternate {
+                    let final: UInt8 = direction == .up ? 0x41 : 0x42      // A, B
+                    let arrow = Data([0x1B, engine.applicationCursor ? 0x4F : 0x5B, final])
+                    let bytes = Data(Array(repeating: arrow, count: notches).joined())
+                    Task { await model.send(bytes: bytes) }
                 } else if direction == .up {
                     terminal.scrollUp(lines: notches)
                 } else {

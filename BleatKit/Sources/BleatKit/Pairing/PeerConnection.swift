@@ -18,19 +18,21 @@ public enum PeerConnection {
         public let discoveredHerdrPath: String?
     }
 
-    /// Races the peer's endpoints and returns a client on the winner.
+    /// The SSH half of `connect`: races the peer's endpoints and returns the
+    /// winning transport, with no `herdr` call on it.
     ///
-    /// - Parameter link: Where the phone is standing. Endpoints that provably
-    ///   cannot work from there are dropped rather than ordered last, since
-    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
+    /// Separate so that something can ask a host a plain shell question without
+    /// first needing herdr to be there — `HerdrCoreCheck` asks whether `hc` is
+    /// installed, on hosts where herdr may already be gone.
+    ///
     /// - Throws: `TransportError.connectionFailed` when nothing answered, or
     ///   `.hostKeyMismatch` when something answered and was not this peer.
-    public static func connect(
+    public static func open(
         to peer: PairedPeer,
         deviceKey: SSHKeyPair,
         link: LinkState,
         session: String? = nil
-    ) async throws -> Connected {
+    ) async throws -> PeerConnector.Connection {
         let endpoints = peer.endpointsToTry(from: link)
         guard !endpoints.isEmpty else {
             // Distinguished from "nothing answered": the addresses were not
@@ -63,7 +65,7 @@ public enum PeerConnection {
         // always needs the tunnel, including on Wi-Fi; an ordinary private one
         // needs it only off the local link, where it is a candidate at all only
         // because a tunnel was detected.
-        let connection = try await PeerConnector.connect(
+        return try await PeerConnector.connect(
             endpoints: endpoints,
             username: peer.username,
             hostKey: peer.hostKey,
@@ -75,6 +77,22 @@ public enum PeerConnection {
             session: session ?? peer.session,
             everyCandidateNeedsATunnel: endpoints.allSatisfy { $0.needsTunnel(from: link) }
         )
+    }
+
+    /// Races the peer's endpoints and returns a client on the winner.
+    ///
+    /// - Parameter link: Where the phone is standing. Endpoints that provably
+    ///   cannot work from there are dropped rather than ordered last, since
+    ///   attempting one only spends the timeout — `endpointsToTry` applies it.
+    /// - Throws: `TransportError.connectionFailed` when nothing answered, or
+    ///   `.hostKeyMismatch` when something answered and was not this peer.
+    public static func connect(
+        to peer: PairedPeer,
+        deviceKey: SSHKeyPair,
+        link: LinkState,
+        session: String? = nil
+    ) async throws -> Connected {
+        let connection = try await open(to: peer, deviceKey: deviceKey, link: link, session: session)
 
         var discovered: String?
         if peer.herdrPath == nil {

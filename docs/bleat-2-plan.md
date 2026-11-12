@@ -137,6 +137,52 @@ Re-verify before relying on any of it; the host wins over this file.
 Out of scope until after D: the same list as for 1.x (pairing/relay
 transport, push notifications, Live Activities).
 
+## The migration gate (built 12 Nov 2026)
+
+The first Bleat 2 change. It keeps 1.x's peers and moves each one through a
+check before any hc screen uses it.
+
+- **The check** (`HerdrCoreCheck`): `PeerConnection.open` — the 1.x endpoint
+  race, host key pin and device key, without resolving `herdr`, since a host
+  that has moved to hc may no longer have it. Then two commands:
+  `${SHELL:-/bin/sh} -lc 'command -v hc' || true` (the `HerdrLookup` pattern),
+  and `'<path>' --version`, which must print `hc <version>`. The connection
+  is closed before the check returns.
+- **The login shell misses `~/.local/bin` on a Mac.** Found on the first
+  phone run, 12 Nov 2026: this Mac read "Install herdr-core" with hc 0.1.20
+  installed, because `~/.local/bin` is added to `PATH` in `.zshrc`, which
+  `zsh -lc` does not read (`herdr` was still found, in `/opt/homebrew/bin`
+  from `.zprofile`). The Pis were fine: Debian's `.profile` adds it. So when
+  `PATH` has no `hc`, the check also tries `$HOME/.local/bin/hc`, where
+  Herdr.app installs it, and `--version` still decides.
+- **The answer is stored on the peer** as `PairedPeer.herdrCore`:
+  `.installed(path, version)` or `.missing`. Nil on every 1.x record until
+  checked; old records decode. It reaches the watch with the mirrored list.
+  An unreachable host said nothing, so that is held in memory for one run.
+- **When it runs** (`HerdrCoreReadiness`): on the host list's first
+  appearance, on pull-to-refresh, on every return to the foreground, and from
+  the gate screen's Check Again. Only peers not yet installed are asked, all at
+  once. A ready peer is never asked again.
+- **What the user sees:** a ready host's row is unchanged. Otherwise the
+  detail line reads "Install herdr-core", "Not reachable", "Check failed" (a
+  problem on the phone: its key, or saving the answer) or, only while a check
+  is really running, "Checking for herdr-core…". A host paired while the app
+  is open is checked straight away.
+- **Cancelled is not an answer.** A check cancelled part way (the list's task
+  ending as a phone's split view collapses) records nothing. It was once read
+  as "missing" and stored, telling the user to install hc they had.
+- **The version line may say more.** `hc <digit…>` is enough; words after it
+  are ignored, so a later hc's longer `--version` does not read as missing. Opening a host shows `HerdrCoreGateView`: the reason and Check
+  Again, or, for a ready host, a placeholder until the hc terminal screens
+  land. The 1.x session screens stay in the code, unreachable, until those
+  screens replace them.
+- **Verified:** the lookup command on adam (Debian, hc 0.1.18) found
+  `/home/pi/.local/bin/hc` and answered empty for a missing tool with exit 0.
+  `hc --version` reads `hc 0.1.20` on the Mac (`Fixtures/hc-version.txt`) and
+  `hc 0.1.18` on adam. Not yet run end to end from a phone.
+- **Not handled yet:** a ready host whose `hc` later moves or is removed. The
+  hc client's first failed connect is the place to re-check.
+
 ## Open questions
 
 Each one is resolved against the live host or the source (or by Ravil, where
@@ -145,11 +191,13 @@ here. **Must be closed before:** the phase named.
 
 ### Product (Ravil decides)
 
-1. **Existing 1.x users on the herdr TUI.** A 2.0 that speaks only `hc` stops
-   working for anyone still running the TUI the moment it auto-updates.
-   Options: accept the break and say so in the release notes; keep 1.x on the
-   store as a separate app; or require hc and refuse an old host with a clear
-   message at connect. *Before D; better before B.*
+1. ~~**Existing 1.x users on the herdr TUI.**~~ Decided by Ravil, 12 Nov
+   2026: **keep every peer and gate it.** Nothing is re-paired. At launch each
+   peer is checked for `hc` over the SSH path it already uses, and marked
+   ready, "Install herdr-core" or "Not reachable". A host without hc is not
+   refused at pairing yet (that is the pairing PR); it is held at the gate.
+   See "The migration gate" below. Sessions and workspaces are dropped:
+   Bleat 2 shows what hc has.
 2. **Name and positioning.** "Bleat for Herdr" still fits if Herdr is the
    umbrella for the app and hc. Does the listing, or the "zero host setup
    beyond Herdr itself" promise, need new words when the host is a bare `hc`

@@ -4,6 +4,9 @@ import SwiftUI
 /// One paired host in the list.
 struct PeerRow: View {
     let peer: PairedPeer
+    /// Whether the host has herdr-core yet. A ready host's row says nothing
+    /// about it; every other state takes the detail line.
+    var readiness: HerdrCoreReadiness.State = .ready
 
     var body: some View {
         HStack(spacing: 12) {
@@ -17,14 +20,26 @@ struct PeerRow: View {
                 Text(peer.name)
                     .font(.headline)
                     .lineLimit(1)
-                Text(detail)
+                Text(status ?? detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(status == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                     // One line, cut in the middle: on a watch an address
                     // wraps, and the ends are the parts that tell hosts apart.
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+        }
+    }
+
+    /// The migration state, when there is one to show. Nil for a ready host,
+    /// and for one not checked yet, which shows where it is as before.
+    private var status: String? {
+        switch readiness {
+        case .ready, .unknown: nil
+        case .needsHerdrCore: "Install herdr-core"
+        case .unreachable: "Not reachable"
+        case .failed: "Check failed"
+        case .checking: "Checking for herdr-core…"
         }
     }
 
@@ -49,8 +64,10 @@ struct PeerRow: View {
         // A Mac, a Pi, and one that has never been connected to — which has no
         // mark of its own and still says where it is.
         ForEach(PairedPeer.samples) { peer in
-            PeerRow(peer: peer)
+            PeerRow(peer: peer, readiness: peer.herdrCore == .missing ? .needsHerdrCore : .ready)
         }
+        PeerRow(peer: .previewSparse, readiness: .unreachable("nothing answered"))
+        PeerRow(peer: .previewSparse, readiness: .checking)
     }
 }
 #endif

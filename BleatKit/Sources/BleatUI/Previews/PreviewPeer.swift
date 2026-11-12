@@ -33,6 +33,7 @@ extension PairedPeer {
         )
         peer.lastGoodEndpoint = Endpoint(host: "192.168.50.54")
         peer.hostInfo = .sampleMac
+        peer.herdrCore = .installed(path: "/Users/robin/.local/bin/hc", version: "0.1.19")
         return peer
     }
 
@@ -50,7 +51,8 @@ extension PairedPeer {
             ],
             herdrPath: "/usr/local/bin/herdr",
             deviceMarker: "bleat-device-3d70b8c5",
-            hostInfo: .sampleLinux
+            hostInfo: .sampleLinux,
+            herdrCore: .missing
         )
     }
 

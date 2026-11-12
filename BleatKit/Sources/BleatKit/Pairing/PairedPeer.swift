@@ -120,6 +120,13 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
     /// description, never an identity: the host key is that.
     public var hostInfo: HostInfo?
 
+    /// What the host last said about herdr-core, the runtime Bleat 2 talks to.
+    ///
+    /// Nil until `HerdrCoreCheck` has had an answer: every record paired under
+    /// Bleat 1.x, and one whose host has never been reachable since. Optional
+    /// for the reason `createdSessions` is — an old record must still decode.
+    public var herdrCore: HerdrCore?
+
     public var id: String { hostKey }
 
     /// Whether this phone is why `session` is currently running. Creating one
@@ -155,7 +162,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         hostReport: EndpointDiscovery.Report? = nil,
         createdSessions: [String]? = nil,
         startedSessions: [String]? = nil,
-        hostInfo: HostInfo? = nil
+        hostInfo: HostInfo? = nil,
+        herdrCore: HerdrCore? = nil
     ) {
         self.hostKey = hostKey
         self.name = name
@@ -169,6 +177,7 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         self.createdSessions = createdSessions
         self.startedSessions = startedSessions
         self.hostInfo = hostInfo
+        self.herdrCore = herdrCore
     }
 
     public init(payload: PairingPayload) {
@@ -231,6 +240,8 @@ public struct PairedPeer: Sendable, Codable, Equatable, Identifiable {
         // known field by field, as every other report is, so a part of the
         // probe that did not answer this time erases nothing.
         merged.hostInfo = other.hostInfo.map { hostInfo?.updated(with: $0) ?? $0 } ?? hostInfo
+        // A re-pair builds `other` from a QR, which says nothing about hc.
+        merged.herdrCore = other.herdrCore ?? herdrCore
         return merged
     }
 

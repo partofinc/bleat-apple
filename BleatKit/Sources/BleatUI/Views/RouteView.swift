@@ -14,7 +14,10 @@ struct RouteView: View {
         switch route {
         case .peer(let hostKey):
             if let peer = peer(hostKey) {
-                PeerDetailView(peer: peer, connections: context.connections, peers: context.peers)
+                // Bleat 2: a host goes through the herdr-core gate. The 1.x
+                // session screens below it stay in the code, unreachable,
+                // until the hc screens replace them.
+                HerdrCoreGateView(peer: peer)
             } else {
                 unpaired
             }

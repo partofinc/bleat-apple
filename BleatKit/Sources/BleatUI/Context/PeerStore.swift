@@ -100,6 +100,19 @@ public final class PeerStore {
         reload()
     }
 
+    /// Keeps what the host said about herdr-core, and the address that
+    /// answered, in one write. Reloads only when something changed — every
+    /// launch asks again. Not sent upstream: only the phone checks, and the
+    /// watch gets the answer in the next mirrored list.
+    ///
+    /// **Throws, unlike `recordSuccess`.** The answer is the whole point of
+    /// the check: dropped silently, the peer would stay unanswered and the
+    /// check would look as if it had never finished.
+    public func recordHerdrCore(_ herdrCore: HerdrCore, reachedAt endpoint: Endpoint, for peer: PairedPeer) throws {
+        guard try registry.recordHerdrCore(herdrCore, reachedAt: endpoint, forHostKey: peer.hostKey) else { return }
+        reload()
+    }
+
     /// Remembers that this phone created a session on the host, which is what
     /// lets it be deleted from here later. See `PairedPeer.createdSessions`.
     ///

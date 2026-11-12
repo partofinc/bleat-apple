@@ -295,6 +295,21 @@ public final class SSHTransport: PeerLink, @unchecked Sendable {
     }
 }
 
+/// Bleat 2's one connection per host: `hc connect` on an exec channel, its
+/// stdin and stdout the framed JSON-RPC byte stream `HcClient` speaks.
+///
+/// Its own command rather than `openStream`: that one builds a `herdr`
+/// command line with the session prefix, and hc chooses its session by
+/// `--session`, never by environment.
+extension SSHTransport: HcStreamOpening {
+    @concurrent
+    public func openHcConnection(hcPath: String) async throws -> any HerdrStream {
+        let connection = try await connected()
+        let command = Self.quote(hcPath) + " connect"
+        return await SSHStream(client: connection, command: command, args: [hcPath, "connect"])
+    }
+}
+
 /// Pairing runs shell commands, not `herdr` commands: installing a key in
 /// `authorized_keys` and finding where `herdr` lives are both plain shell. The
 /// conformance sits on the transport so both kinds of work share one

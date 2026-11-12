@@ -223,7 +223,8 @@ here. **Must be closed before:** the phase named.
    Mac? And should the phone attach with `observe` until the user types?
    *Before B.*
 7. **What clears `done`.** hc never clears it (`status.rs`); "done and not yet
-   looked at" is the client's idea. Probably Herdr.app keeps the last turn
+   looked at" is the client's idea. **Live, 12 Nov 2026:** `herdr.seen` holds
+   the turn last looked at, and the list reads `seen < turn` as unseen. Probably Herdr.app keeps the last turn
    someone looked at in `herdr.seen` and compares it with `turn`. Confirm in
    herdr-app's source, then decide whether Bleat reads it, writes it
    deliberately when the user opens a terminal, or keeps its own. *Before B.*

@@ -38,6 +38,52 @@ When the host disagrees with this file, the host wins.
   control replies (more than 64 MiB) is dropped.
 - A reference framed client is in `crates/herdr-core/tests/common/framed.rs`.
 
+## The handshake and calls (live, hc 0.1.20, 12 Nov 2026)
+
+- `hc connect` speaks on stdin/stdout. The client writes one plain JSON line,
+  `{"jsonrpc":"2.0","id":0,"method":"hello","params":{"framed":true,"generation":1}}`,
+  and reads one line back: `result` carries `framed: true`, `generation: 1`,
+  `version`, `core: {id, name}`, `features`, `methods`. Every byte after that
+  newline is frames (`herdr-core/tests/common/framed.rs` does the same).
+- A call is one JSON-RPC request in one DATA frame on channel 0; its reply
+  comes back the same way, matched by `id`. Errors carry `data.kind`.
+- `events.subscribe` answers `{channel, seq, terminals}` on channel 0. The
+  notifications then arrive as JSON lines in DATA frames on that channel,
+  which needs CREDIT like an attach stream. A `heartbeat` (`{seq}`) every
+  15 s.
+- Built as `HcClient`; `bleat terminals [--watch]` drives it from a Mac.
+
+## Events and how to apply them (live; source: `remote.rs`)
+
+- Params are `{type, terminal, seq, data}`. `created`/`restarted` carry the
+  whole record; `removed` an empty object. The rest set fixed keys, exactly as
+  herdr-core's own mirror applies them (`remote.rs`, `apply`):
+  `finished`/`lost` → `state`, `reason`, `exit_code`, `signal`,
+  `finished_ms`, and drop `foreground`; `status` → `status`, `records`,
+  `reported`; `turn`; `title`; `labels` (the whole map); `keep`; `size` →
+  `cols`, `rows`; `foreground` → the whole object.
+- Seen live for a scratch terminal: `created`, `labels` (Herdr.app adds
+  `where` within a second), `foreground`, `labels`, `finished`, `removed`.
+- `HcTerminalSet` keeps records as JSON and applies events that way, then reads
+  `HcTerminal` out — so a key this build does not model still lands.
+- **The snapshot includes federated machines' terminals** (`adam/t8`,
+  `mika/t2`) and finished ones. Bleat lists only local (`/`-free), live ones:
+  it pairs those machines directly. `terminal.list` hides finished terminals
+  (`hidden_finished`).
+
+## What Herdr.app's labels say (live)
+
+- `where`: `"<space> / <tab>"`, e.g. `"nuvio-health / Agent"` — enough to
+  group a list by space without reading Herdr.app's doc.
+- `herdr.seen`: the turn someone last looked at. `seen 16` beside `turn 16` on
+  a `done` terminal that had been read. So "done and not yet looked at" is
+  `status.state == done && seen < turn` (no label: unseen).
+- `title` is the program's; `foreground.name` for Claude Code is its version
+  (`2.1.322`), not a name.
+- A terminal started from inside an hc terminal is that terminal's child and
+  hc types notes about it into the parent (seen live, in this Claude session).
+  Bleat sends `no_parent` and `no_notify` when it creates terminals.
+
 ## Plain mode cannot carry events and requests together (source: schema)
 
 `SubscribeResult` says that in plain line mode, after `events.subscribe`,

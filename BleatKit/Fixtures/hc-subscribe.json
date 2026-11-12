@@ -1,0 +1,260 @@
+{
+ "id": 2,
+ "jsonrpc": "2.0",
+ "result": {
+  "channel": 1,
+  "seq": 2488,
+  "terminals": [
+   {
+    "address": "t58",
+    "argv": [
+     "/bin/zsh",
+     "-lic",
+     "\"$@\"; exec \"$0\" -li",
+     "/bin/zsh",
+     "claude",
+     "--resume",
+     "00000000-0000-4000-8000-000000000000"
+    ],
+    "cols": 130,
+    "created_ms": 1794461334768,
+    "cwd": "/Users/robin/Developer/project/project",
+    "die_with_parent": false,
+    "exit_code": null,
+    "finished_ms": null,
+    "foreground": {
+     "argv": [
+      "claude",
+      "--resume",
+      "00000000-0000-4000-8000-000000000000"
+     ],
+     "cwd": "/Users/robin/Developer/project/project",
+     "name": "2.1.322",
+     "pid": 73638
+    },
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "claude.session": "00000000-0000-4000-8000-000000000000",
+     "herdr.seen": "16",
+     "herdr.space": "sp90db25a4d3cab41b5859d2845b8ef784",
+     "herdr.tab": "tb2f0f0d42377bffe75b0619ad4356ac81",
+     "where": "project / Agent"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 72959,
+    "reason": null,
+    "reported": true,
+    "rm": false,
+    "rows": 40,
+    "screen": "exact",
+    "signal": null,
+    "state": "live",
+    "status": {
+     "app": "claude-code",
+     "msg": "Finished the requested change",
+     "state": "done"
+    },
+    "status_ms": 1794468468426,
+    "template": null,
+    "title": "project Backend",
+    "turn": 16
+   },
+   {
+    "address": "t59",
+    "argv": [
+     "/bin/zsh",
+     "-lic",
+     "\"$@\"; exec \"$0\" -li",
+     "/bin/zsh",
+     "claude",
+     "--resume",
+     "00000000-0000-4000-8000-000000000000"
+    ],
+    "cols": 130,
+    "created_ms": 1794461334870,
+    "cwd": "/Users/robin/Developer/project/project",
+    "die_with_parent": false,
+    "exit_code": null,
+    "finished_ms": null,
+    "foreground": {
+     "argv": [
+      "claude",
+      "--resume",
+      "00000000-0000-4000-8000-000000000000"
+     ],
+     "cwd": "/Users/robin/Developer/project/project",
+     "name": "2.1.322",
+     "pid": 73692
+    },
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "claude.session": "00000000-0000-4000-8000-000000000000",
+     "herdr.seen": "1",
+     "herdr.space": "sp0b033bbb79be293348b1eecade2eab6f",
+     "herdr.tab": "tbbf27a18c56aac2f891d99e5537b5a272",
+     "where": "project / Agent"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 72977,
+    "reason": null,
+    "reported": true,
+    "rm": false,
+    "rows": 40,
+    "screen": "exact",
+    "signal": null,
+    "state": "live",
+    "status": {
+     "app": "claude-code",
+     "msg": "Finished the requested change",
+     "state": "done"
+    },
+    "status_ms": 1794468472090,
+    "template": null,
+    "title": "project Apple",
+    "turn": 1
+   },
+   {
+    "address": "t5b",
+    "argv": [
+     "/bin/zsh",
+     "-lic",
+     "\"$@\"; exec \"$0\" -li",
+     "/bin/zsh",
+     "claude",
+     "--resume",
+     "00000000-0000-4000-8000-000000000000"
+    ],
+    "cols": 130,
+    "created_ms": 1794461335215,
+    "cwd": "/Users/robin/Developer/project/project",
+    "die_with_parent": false,
+    "exit_code": null,
+    "finished_ms": null,
+    "foreground": {
+     "argv": [
+      "claude",
+      "--resume",
+      "00000000-0000-4000-8000-000000000000"
+     ],
+     "cwd": "/Users/robin/Developer/project/project",
+     "name": "2.1.322",
+     "pid": 73958
+    },
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "claude.session": "00000000-0000-4000-8000-000000000000",
+     "herdr.seen": "1",
+     "herdr.space": "sp52abb6fc77f03d7e0f191b5fa3652c6b",
+     "herdr.tab": "tb28cb279ceda663299dd05f50a2230d78",
+     "where": "project / 1"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 73344,
+    "reason": null,
+    "reported": true,
+    "rm": false,
+    "rows": 40,
+    "screen": "exact",
+    "signal": null,
+    "state": "live",
+    "status": {
+     "app": "claude-code",
+     "msg": "Finished the requested change",
+     "state": "done"
+    },
+    "status_ms": 1794468471618,
+    "template": null,
+    "title": "project Android",
+    "turn": 1
+   },
+   {
+    "address": "t4v",
+    "argv": [
+     "/bin/zsh",
+     "-lic",
+     "\"$@\"; exec \"$0\" -li",
+     "/bin/zsh",
+     "claude",
+     "--resume",
+     "00000000-0000-4000-8000-000000000000"
+    ],
+    "cols": 200,
+    "created_ms": 1794373827875,
+    "cwd": "/Users/robin/Developer/project/project",
+    "die_with_parent": false,
+    "exit_code": 1,
+    "finished_ms": 1794421574534,
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "claude.session": "00000000-0000-4000-8000-000000000000",
+     "herdr.seen": "73",
+     "herdr.space": "spd8935bd857e456655cda98296c476295",
+     "herdr.tab": "tbb7ac009d768d305bc7fec31374a8ed1d",
+     "where": "project / Agent"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 207,
+    "reason": "killed",
+    "reported": true,
+    "rm": false,
+    "rows": 120,
+    "screen": "exact",
+    "signal": null,
+    "state": "finished",
+    "status": null,
+    "status_ms": 1794421574534,
+    "template": null,
+    "title": "project Backend",
+    "turn": 73
+   },
+   {
+    "address": "adam/t10",
+    "argv": [
+     "/usr/bin/zsh"
+    ],
+    "cols": 130,
+    "created_ms": 1794465447889,
+    "cwd": "/home/pi",
+    "die_with_parent": false,
+    "exit_code": 0,
+    "finished_ms": 1794465870950,
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "herdr.seen": "0",
+     "herdr.space": "sp432c1cec055389bab3cc215708126e8d",
+     "herdr.tab": "tbdca5f97c4d1fb2be0c7e9ec44038e958",
+     "where": "pi / 1"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 1955410,
+    "reason": "exited",
+    "reported": false,
+    "rm": false,
+    "rows": 40,
+    "screen": "exact",
+    "signal": null,
+    "state": "finished",
+    "status": null,
+    "status_ms": null,
+    "template": null,
+    "title": "exit",
+    "turn": 0
+   }
+  ]
+ }
+}

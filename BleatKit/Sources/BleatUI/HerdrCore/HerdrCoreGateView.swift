@@ -4,8 +4,8 @@ import SwiftUI
 /// What a host opens to in Bleat 2: its terminals once it has herdr-core, and
 /// otherwise what stands in the way.
 ///
-/// **The terminals are a placeholder for now.** The hc client is the next
-/// change; this one only moves every 1.x peer through the gate.
+/// A ready host opens straight to `TerminalsView`; the gate is only ever seen
+/// for a host that is not ready.
 struct HerdrCoreGateView: View {
     @Environment(AppContext.self) private var context
     let peer: PairedPeer
@@ -15,15 +15,22 @@ struct HerdrCoreGateView: View {
             .navigationTitle(peer.name)
     }
 
+
     @ViewBuilder
     private var content: some View {
         switch context.herdrCore.state(of: peer) {
         case .ready:
-            ContentUnavailableView(
-                "Ready for herdr-core",
-                systemImage: "terminal",
-                description: Text("\(peer.name) has herdr-core. Its terminals appear here in the next build.")
-            )
+            if context.isRelayed {
+                // The watch asks the phone for everything, and the relay
+                // speaks herdr's commands, not hc's stream — yet.
+                ContentUnavailableView(
+                    "On iPhone for now",
+                    systemImage: "iphone",
+                    description: Text("\(peer.name)'s terminals are on Bleat for iPhone. The watch follows in a later update.")
+                )
+            } else {
+                TerminalsView(peer: peer, connections: context.connections)
+            }
         case .needsHerdrCore:
             ContentUnavailableView {
                 Label("Install herdr-core", systemImage: "shippingbox")

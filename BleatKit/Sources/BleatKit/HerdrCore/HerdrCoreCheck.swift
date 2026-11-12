@@ -56,35 +56,41 @@ public enum HerdrCoreCheck {
     /// an answer: it is missing.
     static func ask(_ shell: any ShellRunner, endpoint: Endpoint) async -> Outcome {
         do {
-            var path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
-            if path == nil {
-                // `PATH` first, so an hc the user put somewhere else wins;
-                // Herdr.app's own location only when `PATH` has none.
-                path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.installedByHerdrApp))
-            }
-            guard let path else {
-                return .answered(.missing, endpoint: endpoint)
-            }
-            let printed: String
-            do {
-                printed = try await shell.run(shell: HerdrCoreLookup.version(at: path))
-            } catch let error as TransportError {
-                throw error
-            } catch is CancellationError {
-                // Not an answer about hc. Caught as "missing" once, which
-                // would have been stored and shown as "Install herdr-core".
-                return .cancelled
-            } catch {
-                return .answered(.missing, endpoint: endpoint)
-            }
-            guard let version = HerdrCoreLookup.version(inOutput: printed) else {
-                return .answered(.missing, endpoint: endpoint)
-            }
-            return .answered(.installed(path: path, version: version), endpoint: endpoint)
+            return .answered(try await find(over: shell), endpoint: endpoint)
         } catch is CancellationError {
             return .cancelled
         } catch {
             return .unreachable(String(describing: error))
         }
+    }
+
+    /// Where herdr-core is on the host behind `shell`, or that it is not there.
+    ///
+    /// Also what `bleat terminals <host>` uses to find `hc` before it connects.
+    ///
+    /// - Throws: `TransportError` when the connection goes part way, and
+    ///   `CancellationError`. Neither is an answer about hc.
+    public static func find(over shell: any ShellRunner) async throws -> HerdrCore {
+        var path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
+        if path == nil {
+            // `PATH` first, so an hc the user put somewhere else wins;
+            // Herdr.app's own location only when `PATH` has none.
+            path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.installedByHerdrApp))
+        }
+        guard let path else { return .missing }
+        let printed: String
+        do {
+            printed = try await shell.run(shell: HerdrCoreLookup.version(at: path))
+        } catch let error as TransportError {
+            throw error
+        } catch is CancellationError {
+            // Not an answer about hc. Caught as "missing" once, which
+            // would have been stored and shown as "Install herdr-core".
+            throw CancellationError()
+        } catch {
+            return .missing
+        }
+        guard let version = HerdrCoreLookup.version(inOutput: printed) else { return .missing }
+        return .installed(path: path, version: version)
     }
 }

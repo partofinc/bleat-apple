@@ -11,7 +11,7 @@ struct HostInfoProbeShellTests {
     func infoOnly() async throws {
         let shell = LocalShell(home: URL(fileURLWithPath: NSHomeDirectory()))
         let started = ContinuousClock.now
-        let output = try await shell.run(shell: HostStatusProbe.command(herdrPath: nil, sampling: false))
+        let output = try await shell.run(shell: HostStatusProbe.command(sampling: false))
         let elapsed = ContinuousClock.now - started
 
         let status = HostStatusProbe.status(fromOutput: output)

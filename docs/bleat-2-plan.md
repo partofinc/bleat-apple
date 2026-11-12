@@ -121,9 +121,16 @@ Re-verify before relying on any of it; the host wins over this file.
   | `terminal.scroll` | `history` on attach and/or `terminal.read` (question 5) |
   | agent / workspace create | `terminal.run` with **`no_parent: true`, `no_notify: true`**, SwiftTerm's identity in `env` and the phone's grid in `size`; `templates.list` |
 
-- **Deleted in Phase B:** `HerdrClient`, the herdr models and CLI fixtures,
-  NDJSON `terminal.frame` decoding, session-by-environment selection, and
-  `docs/herdr-facts.md` (archived, not edited).
+- **Deleted, 12 Nov 2026** (decided by Ravil: herdr goes completely, detection
+  included; a 1.x host lands on "Install herdr-core"): `HerdrClient`, the herdr
+  models, fixtures and tests, NDJSON `terminal.frame` decoding, session-by-
+  environment selection, the sessions/workspaces/agents/pane screens and the
+  chat reading, the relay's herdr requests, the console tool's herdr commands,
+  and the peer record's `herdrPath`, `session`, `createdSessions` and
+  `startedSessions` (old records still decode: unknown keys are ignored).
+  `docs/herdr-facts.md` and `docs/creating-from-the-phone.md` moved to
+  `docs/archive/`. Next: installing herdr-core from Bleat, over the same SSH
+  exec channel (the official installer is non-interactive).
 
 ## Phases
 
@@ -289,9 +296,10 @@ here. **Must be closed before:** the phase named.
     source. Is the convention stable and public? Ask upstream. What does
     Bleat show for a core with no Herdr.app at all — a Pi, the demo host —
     where no terminal carries these labels? *Before B.*
-16. **Sessions.** Does Bleat 2 show hc sessions at all, or only the default
-    core, until someone asks? 1.x built screens for starting, stopping and
-    deleting herdr sessions (`docs/creating-from-the-phone.md`). *Before B.*
+16. ~~**Sessions.**~~ Decided 12 Nov 2026: Bleat 2 shows the host's core and
+    no session picker; 1.x's session screens were removed with the herdr
+    backend (`archive/creating-from-the-phone.md`). Revisit if someone asks
+    for a second core per host.
 17. **Federated machines versus paired hosts.** If the Mac's core federates
     adam and the phone has also paired adam directly, the same terminals
     appear twice. Is core identity (from `hello`) enough to merge them, and

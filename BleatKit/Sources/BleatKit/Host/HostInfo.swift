@@ -7,8 +7,9 @@ import Foundation
 /// without connecting to any of them. See `PairedPeer.hostInfo`.
 ///
 /// **Every field is optional, and absence is an ordinary answer** — a Linux box
-/// has no model name unless its firmware supplies one, and the herdr version is
-/// missing until the phone has learned where herdr is.
+/// has no model name unless its firmware supplies one. (The herdr version 1.x
+/// kept here is gone; a stored one is ignored on decode. herdr-core's version
+/// is on the peer, in `herdrCore`.)
 public struct HostInfo: Sendable, Codable, Equatable {
     /// The kind of machine, as far as its own report says.
     public enum Platform: Sendable, Equatable {
@@ -32,24 +33,19 @@ public struct HostInfo: Sendable, Codable, Equatable {
     /// Apple silicon says, through `ioreg`; an Intel Mac and a Linux box have
     /// only `model`.
     public var modelName: String?
-    /// The herdr this phone's commands run, which is the client binary. A
-    /// running server may be older until it is restarted.
-    public var herdrVersion: String?
 
     public init(
         system: String? = nil,
         kernel: String? = nil,
         architecture: String? = nil,
         model: String? = nil,
-        modelName: String? = nil,
-        herdrVersion: String? = nil
+        modelName: String? = nil
     ) {
         self.system = system
         self.kernel = kernel
         self.architecture = architecture
         self.model = model
         self.modelName = modelName
-        self.herdrVersion = herdrVersion
     }
 
     public var isEmpty: Bool { self == HostInfo() }
@@ -91,8 +87,7 @@ public struct HostInfo: Sendable, Codable, Equatable {
             kernel: newer.kernel ?? kernel,
             architecture: newer.architecture ?? architecture,
             model: newer.model ?? model,
-            modelName: newer.modelName ?? modelName,
-            herdrVersion: newer.herdrVersion ?? herdrVersion
+            modelName: newer.modelName ?? modelName
         )
     }
 }

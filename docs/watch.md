@@ -1,5 +1,20 @@
 # The watch app
 
+> **Bleat 2 (12 Nov 2026):** the watch no longer runs herdr commands through
+> the phone — `RelayRequest.herdr` was removed with the herdr backend. It shows
+> the mirrored host list and the gate; a ready host reads "On iPhone for now".
+> The relay keeps `.peers`, `.shell`, `.release` and `.note`. A herdr-core relay
+> is still to be designed: hc speaks a framed stream, not one command at a time.
+>
+> **The relay's wire types lost cases** (`RelayRequest.herdr`,
+> `RelayFailure.herdr`, `PeerNote`'s session notes). A phone and a watch on
+> different builds cannot decode each other's messages that use them; a
+> message that does not decode is reported as "update Bleat on both", which is
+> the right advice. The watch app ships inside the phone app and updates with
+> it, so the overlap is short, and keeping dead cases in the protocol to cover
+> it was judged not worth it. The watch's ready-host screen shows the host's
+> load, read over the relay's `.shell`.
+
 Started 1 Oct 2026, ahead of the phase plan, because it was asked for. It is
 the same screens as the phone — hosts, a host's sessions, a session's
 workspaces, a workspace's agents — over a different transport.

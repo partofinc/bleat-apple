@@ -20,24 +20,9 @@ struct RelayTests {
             if let failure { throw failure }
         }
 
-        func useSession(_ session: String?) { lock.withLock { log.append("use \(session ?? "-")") } }
-
-        func run(_ args: [String]) async throws -> Data {
-            try await run(args, inSession: nil)
-        }
-
-        func run(_ args: [String], inSession session: String?) async throws -> Data {
-            try record("herdr[\(session ?? "-")] \(args.joined(separator: " "))")
-            return Data("reply to \(args.joined(separator: " "))".utf8)
-        }
-
         func run(shell command: String) async throws -> String {
             try record("shell \(command)")
             return "ran \(command)"
-        }
-
-        func openStream(_ args: [String]) async throws -> any HerdrStream {
-            throw TransportError.notConnected
         }
 
         func disconnect() async { lock.withLock { log.append("disconnect") } }
@@ -70,36 +55,10 @@ struct RelayTests {
             )
         }
 
-        func transport(for hostKey: String = "ssh-ed25519 AAAAKEY", session: String? = nil) -> RelayTransport {
+        func transport(for hostKey: String = "ssh-ed25519 AAAAKEY") -> RelayTransport {
             let responder = responder
-            return RelayTransport(hostKey: hostKey, session: session) { await responder.reply(to: $0) }
+            return RelayTransport(hostKey: hostKey) { await responder.reply(to: $0) }
         }
-    }
-
-    @Test("a herdr command runs on the phone's connection and its output comes back")
-    func herdr() async throws {
-        let phone = Phone()
-        let output = try await phone.transport().run(["session", "list", "--json"])
-        #expect(String(decoding: output, as: UTF8.self) == "reply to session list --json")
-        #expect(phone.host.asked == ["herdr[-] session list --json"])
-    }
-
-    @Test("the session travels with each command, and the phone's own selection is left alone")
-    func session() async throws {
-        let phone = Phone()
-        let transport = phone.transport()
-        transport.useSession("scratch")
-        _ = try await transport.run(["workspace", "list"])
-        transport.useSession(nil)
-        _ = try await transport.run(["workspace", "list"])
-        _ = try await transport.run(["agent", "list"], inSession: "other")
-        // No `use …` line: selecting a session on the watch never selects one
-        // on the connection the phone shares between commands.
-        #expect(phone.host.asked == [
-            "herdr[scratch] workspace list",
-            "herdr[-] workspace list",
-            "herdr[other] agent list",
-        ])
     }
 
     @Test("a shell command comes back as text")
@@ -107,17 +66,6 @@ struct RelayTests {
         let phone = Phone()
         #expect(try await phone.transport().run(shell: "uname -srm") == "ran uname -srm")
         #expect(phone.host.asked == ["shell uname -srm"])
-    }
-
-    @Test("herdr saying no arrives as the HerdrError it was")
-    func herdrError() async throws {
-        let phone = Phone()
-        let refusal = HerdrError(
-            command: ["agent", "prompt"], exitCode: 1, stderr: "{…}",
-            code: "agent_blocked", message: "the agent is waiting on an approval"
-        )
-        phone.host.failure = refusal
-        await #expect(throws: refusal) { try await phone.transport().run(["agent", "prompt"]) }
     }
 
     @Test("a failed shell command arrives as the ShellError it was")
@@ -133,7 +81,7 @@ struct RelayTests {
         let phone = Phone()
         phone.host.failure = TransportError.channelClosed
         await #expect(throws: TransportError.channelClosed) {
-            try await phone.transport().run(["agent", "list"])
+            try await phone.transport().run(shell: "uname")
         }
         #expect(phone.seen == ["failed the connection closed"])
     }
@@ -142,7 +90,7 @@ struct RelayTests {
     func unknownPeer() async throws {
         let phone = Phone()
         await #expect(throws: TransportError.connectionFailed("this host is no longer paired on the iPhone")) {
-            try await phone.transport(for: "ssh-ed25519 GONE").run(["agent", "list"])
+            try await phone.transport(for: "ssh-ed25519 GONE").run(shell: "uname")
         }
         #expect(phone.host.asked.isEmpty)
     }
@@ -152,15 +100,6 @@ struct RelayTests {
         let phone = Phone()
         await phone.transport().disconnect()
         #expect(phone.seen == ["release ssh-ed25519 AAAAKEY"])
-    }
-
-    @Test("there is no pane stream through a relay")
-    func noStream() async throws {
-        let phone = Phone()
-        await #expect(throws: TransportError.self) {
-            _ = try await phone.transport().openStream(["terminal", "session", "control"])
-        }
-        #expect(phone.host.asked.isEmpty)
     }
 
     @Test("the phone's hosts are sent whole")
@@ -176,9 +115,10 @@ struct RelayTests {
         let phone = Phone()
         let responder = phone.responder
         _ = try await RelayTransport.send(
-            .note(hostKey: "ssh-ed25519 AAAAKEY", .startedSession("scratch"))
+            .note(hostKey: "ssh-ed25519 AAAAKEY", .hostInfo(HostInfo(system: "macOS 27.1")))
         ) { await responder.reply(to: $0) }
-        #expect(phone.seen == [#"note startedSession("scratch")"#])
+        #expect(phone.seen.count == 1)
+        #expect(phone.seen.first?.hasPrefix("note hostInfo") == true)
     }
 
     @Test("a phone that cannot be asked is the channel's own error")
@@ -187,16 +127,16 @@ struct RelayTests {
             throw TransportError.connectionFailed("the iPhone is out of reach")
         }
         await #expect(throws: TransportError.connectionFailed("the iPhone is out of reach")) {
-            try await transport.run(["agent", "list"])
+            try await transport.run(shell: "uname")
         }
     }
 
     @Test("bytes that are not a reply are a transport failure, not contract drift")
     func garbage() async throws {
         let transport = RelayTransport(hostKey: "ssh-ed25519 AAAAKEY") { _ in Data("?".utf8) }
-        // Not a `DecodingError`, which a screen reports as herdr having
-        // changed its JSON.
-        await #expect(throws: TransportError.self) { try await transport.run(["agent", "list"]) }
+        // Not a `DecodingError`, which a screen reports as the host's reply
+        // having drifted.
+        await #expect(throws: TransportError.self) { try await transport.run(shell: "uname") }
     }
 
     @Test("bytes that are not a request get an answer rather than silence")

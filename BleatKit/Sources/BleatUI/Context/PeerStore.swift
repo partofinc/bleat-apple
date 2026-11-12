@@ -10,7 +10,7 @@ import Observation
 ///
 /// It replaces the manual host list. That list existed because there was no way
 /// to acquire a host except by typing one in; pairing is the way now, and the
-/// product promise is zero host setup beyond Herdr.
+/// product promise is zero host setup beyond herdr-core.
 @Observable
 public final class PeerStore {
     public private(set) var peers: [PairedPeer] = []
@@ -105,71 +105,6 @@ public final class PeerStore {
         reload()
     }
 
-    /// Remembers that this phone created a session on the host, which is what
-    /// lets it be deleted from here later. See `PairedPeer.createdSessions`.
-    ///
-    /// Failing to record it is not worth reporting: the session is running
-    /// either way, and the only cost is that the phone will treat it as
-    /// somebody else's — the safe direction.
-    public func recordCreatedSession(_ session: String, for peer: PairedPeer) {
-        _ = try? registry.recordCreatedSession(session, forHostKey: peer.hostKey)
-        upstream?(peer.hostKey, .createdSession(session))
-        reload()
-    }
-
-    /// Records that this phone is why a session is running, which is what the
-    /// stop confirmation reads. See `PairedPeer.startedSessions`.
-    public func recordStartedSession(_ session: String, for peer: PairedPeer) {
-        _ = try? registry.recordStartedSession(session, forHostKey: peer.hostKey)
-        upstream?(peer.hostKey, .startedSession(session))
-        reload()
-    }
-
-    /// Drops that claim once the session is down again.
-    public func forgetStartedSession(_ session: String, for peer: PairedPeer) {
-        _ = try? registry.forgetStartedSession(session, forHostKey: peer.hostKey)
-        upstream?(peer.hostKey, .forgotStartedSession(session))
-        reload()
-    }
-
-    /// Drops "this phone is why it is running" for every claimed session the
-    /// host now reports as **stopped**, whoever stopped it.
-    ///
-    /// **`forgetStartedSession` only hears about a stop this phone performed**,
-    /// and that is one of several ways a session ends: the Mac reboots, or the
-    /// person at the keyboard stops it and attaches it again. The claim then
-    /// stands over a session that is theirs. While the claim gated Stop that
-    /// was an unearned button; now that it only words the confirmation it is
-    /// worse, because the sentence naming somebody else's session is the last
-    /// guard there is — so it would go quietly missing in exactly the case it
-    /// exists for.
-    ///
-    /// Called from wherever `session list` is read, which is the only place the
-    /// host's answer on this is in hand. **Keyed by host key, not by the peer
-    /// value passed in**, because the claim is read back from the store: a
-    /// caller holding a record from before the last write would otherwise
-    /// decide against a stale copy of the very field being reconciled.
-    ///
-    /// Reconciling costs a write and a reload only when something was actually
-    /// stale, so the ordinary refresh does nothing at all.
-    public func reconcileStartedSessions(with sessions: [SessionInfo], forHostKey hostKey: String) {
-        guard let stored = peers.first(where: { $0.hostKey == hostKey }) else { return }
-        let stale = sessions.filter { !$0.running && stored.startedHere($0.name) }
-        guard !stale.isEmpty else { return }
-        for session in stale {
-            _ = try? registry.forgetStartedSession(session.name, forHostKey: hostKey)
-            upstream?(hostKey, .forgotStartedSession(session.name))
-        }
-        reload()
-    }
-
-    /// Drops that claim once the session has been deleted from the host.
-    public func forgetCreatedSession(_ session: String, for peer: PairedPeer) {
-        _ = try? registry.forgetCreatedSession(session, forHostKey: peer.hostKey)
-        upstream?(peer.hostKey, .forgotCreatedSession(session))
-        reload()
-    }
-
     // MARK: - The watch's copy
 
     /// Applies something the watch did to this phone's record of the host.
@@ -178,14 +113,6 @@ public final class PeerStore {
     /// would send it upstream again on a device that had one.
     public func apply(_ note: PeerNote, forHostKey hostKey: String) {
         switch note {
-        case .createdSession(let session):
-            _ = try? registry.recordCreatedSession(session, forHostKey: hostKey)
-        case .startedSession(let session):
-            _ = try? registry.recordStartedSession(session, forHostKey: hostKey)
-        case .forgotStartedSession(let session):
-            _ = try? registry.forgetStartedSession(session, forHostKey: hostKey)
-        case .forgotCreatedSession(let session):
-            _ = try? registry.forgetCreatedSession(session, forHostKey: hostKey)
         case .hostInfo(let info):
             _ = try? registry.recordHostInfo(info, forHostKey: hostKey)
         }

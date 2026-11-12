@@ -56,19 +56,6 @@ struct RelayedStoreTests {
         #expect(peers.peers == before)
     }
 
-    @Test("the session a screen selected travels with each command")
-    func sessionTravels() async throws {
-        let phone = Phone()
-        let (connections, _) = stores(phone)
-        let peer = PairedPeer.preview
-
-        _ = try await connections.client(for: peer, session: "scratch")
-        _ = try await connections.link(for: peer).run(["workspace", "list"])
-        #expect(phone.asked == [
-            .herdr(hostKey: peer.hostKey, args: ["workspace", "list"], session: "scratch"),
-        ])
-    }
-
     @Test("leaving the host tells the phone to close what it opened")
     func releaseIsSent() async throws {
         let phone = Phone()
@@ -118,7 +105,7 @@ struct RelayedStoreTests {
 
         _ = try await connections.shell(for: old)
         let before = try #require(connections.connectionID(for: old))
-        async let list = connections.client(for: new)
+        async let list = connections.link(for: new)
         async let load = connections.shell(for: new)
         _ = try await (list, load)
         #expect(connections.connectionID(for: new) == before + 1)
@@ -127,19 +114,21 @@ struct RelayedStoreTests {
         #expect(phone.asked == [.release(hostKey: old.hostKey), .release(hostKey: new.hostKey)])
     }
 
-    @Test("herdr refusing a command does not end the connection")
-    func herdrErrorKeepsTheConnection() async throws {
+    /// The host was reached and said no: dropping the connection for that
+    /// would make every retry pay for a new one.
+    @Test("a command the host refused does not end the connection")
+    func refusalKeepsTheConnection() async throws {
         let phone = Phone()
         let (connections, _) = stores(phone)
         let peer = PairedPeer.preview
-        let refusal = HerdrError(command: ["agent", "list"], exitCode: 1, stderr: "no")
+        let refusal = ShellError(command: "uname", exitCode: 1, stderr: "no")
 
-        phone.fail(with: .herdr(refusal))
+        phone.fail(with: .shell(refusal))
         do {
-            _ = try await connections.link(for: peer).run(["agent", "list"])
+            _ = try await connections.shell(for: peer).run(shell: "uname")
             Issue.record("expected the command to fail")
         } catch {
-            #expect(error as? HerdrError == refusal)
+            #expect(error as? ShellError == refusal)
             await connections.handle(error)
         }
         #expect(connections.isConnected(to: peer))
@@ -179,19 +168,11 @@ struct RelayedStoreTests {
         peers.upstream = { _, note in sent.append(note) }
         let peer = PairedPeer.preview
 
-        peers.recordCreatedSession("scratch", for: peer)
-        peers.recordStartedSession("scratch", for: peer)
-        peers.forgetStartedSession("scratch", for: peer)
-        peers.forgetCreatedSession("scratch", for: peer)
         peers.recordHostInfo(HostInfo(system: "an OS nobody has reported"), for: peer)
         // The same report again changes nothing, so it is not sent again.
         peers.recordHostInfo(HostInfo(system: "an OS nobody has reported"), for: peer)
 
-        #expect(sent == [
-            .createdSession("scratch"), .startedSession("scratch"),
-            .forgotStartedSession("scratch"), .forgotCreatedSession("scratch"),
-            .hostInfo(HostInfo(system: "an OS nobody has reported")),
-        ])
+        #expect(sent == [.hostInfo(HostInfo(system: "an OS nobody has reported"))])
     }
 
     @Test("a note from the watch lands in the phone's record without going back out")
@@ -202,11 +183,10 @@ struct RelayedStoreTests {
         peers.upstream = { _, note in sent.append(note) }
         let hostKey = PairedPeer.preview.hostKey
 
-        peers.apply(.createdSession("scratch"), forHostKey: hostKey)
-        peers.apply(.startedSession("scratch"), forHostKey: hostKey)
+        let info = HostInfo(system: "an OS the phone had not heard of")
+        peers.apply(.hostInfo(info), forHostKey: hostKey)
         let stored = try #require(peers.peers.first { $0.hostKey == hostKey })
-        #expect(stored.createdHere("scratch"))
-        #expect(stored.startedHere("scratch"))
+        #expect(stored.hostInfo?.system == info.system)
         #expect(sent.isEmpty)
     }
 

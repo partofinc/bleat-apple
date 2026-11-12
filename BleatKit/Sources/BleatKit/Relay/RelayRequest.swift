@@ -9,16 +9,13 @@ import Foundation
 /// record, so the watch sends it the command and the phone runs it over its own
 /// SSH connection.
 ///
-/// The cut is at the transport on purpose: these cases are `HerdrTransport` and
-/// `ShellRunner` written down, so everything above — `HerdrClient`, the list
-/// models, the host status probe — runs on the watch unchanged.
+/// The cut is at the transport on purpose: these cases are `ShellRunner`
+/// written down, so the host status probe runs on the watch unchanged. A
+/// herdr-core relay for the watch is still to be designed: hc speaks a framed
+/// stream, not one command at a time.
 public enum RelayRequest: Sendable, Codable, Equatable {
     /// The paired hosts, as the phone knows them now.
     case peers
-    /// One `herdr` command. The session travels with it rather than being
-    /// selected on the phone's side, where it would be shared state between
-    /// two commands in flight.
-    case herdr(hostKey: String, args: [String], session: String?)
     /// One shell command — the host status probe.
     case shell(hostKey: String, command: String)
     /// The watch has stopped looking at this host; close what was opened for it.

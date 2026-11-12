@@ -245,7 +245,7 @@ struct EnrollmentTests {
 }
 
 @Suite("Finding herdr on the host")
-struct HerdrLookupTests {
+struct LoginShellLookupTests {
 
     /// A login shell sources the profile, and profiles print things. Taking the
     /// whole of stdout would store the banner as part of the path.
@@ -256,20 +256,20 @@ struct HerdrLookupTests {
         nvm: using node 20
         /opt/homebrew/bin/herdr
         """
-        #expect(HerdrLookup.path(inOutput: output) == "/opt/homebrew/bin/herdr")
+        #expect(LoginShellLookup.path(inOutput: output) == "/opt/homebrew/bin/herdr")
     }
 
     @Test("a trailing newline does not become the answer")
     func trailingNewline() {
-        #expect(HerdrLookup.path(inOutput: "/usr/local/bin/herdr\n") == "/usr/local/bin/herdr")
+        #expect(LoginShellLookup.path(inOutput: "/usr/local/bin/herdr\n") == "/usr/local/bin/herdr")
     }
 
     /// `command -v` also answers with builtins and functions by bare name, and
     /// a relative answer is not something a later non-login shell can resolve.
     @Test("only an absolute path counts as found")
     func rejectsRelative() {
-        #expect(HerdrLookup.path(inOutput: "herdr\n") == nil)
-        #expect(HerdrLookup.path(inOutput: "") == nil)
-        #expect(HerdrLookup.path(inOutput: "\n \n") == nil)
+        #expect(LoginShellLookup.path(inOutput: "herdr\n") == nil)
+        #expect(LoginShellLookup.path(inOutput: "") == nil)
+        #expect(LoginShellLookup.path(inOutput: "\n \n") == nil)
     }
 }

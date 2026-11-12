@@ -52,8 +52,6 @@ public enum PeerConnector {
         username: String,
         hostKey: String,
         privateKey: SSHKeyPair,
-        herdrPath: String = "herdr",
-        session: String? = nil,
         everyCandidateNeedsATunnel: Bool = false
     ) async throws -> Connection {
         guard !endpoints.isEmpty else {
@@ -82,9 +80,7 @@ public enum PeerConnector {
                                 endpoint: endpoint,
                                 username: username,
                                 hostKey: hostKey,
-                                privateKey: privateKey,
-                                herdrPath: herdrPath,
-                                session: session
+                                privateKey: privateKey
                             )
                         }
                     }
@@ -184,16 +180,12 @@ public enum PeerConnector {
         endpoint: Endpoint,
         username: String,
         hostKey: String,
-        privateKey: SSHKeyPair,
-        herdrPath: String,
-        session: String?
+        privateKey: SSHKeyPair
     ) async -> Attempt {
         let transport = SSHTransport(
             host: SSHHost(username: username, hostname: endpoint.host, port: endpoint.port),
             privateKey: privateKey.privateKey,
-            hostKeys: .expect(hostKey),
-            herdrPath: herdrPath,
-            session: session
+            hostKeys: .expect(hostKey)
         )
         do {
             // The handshake alone, with no command run over it. It already

@@ -12,7 +12,7 @@ struct HcPaneModelTests {
 
     /// Plays herdr-core over one `hc connect` stream, and records what the
     /// client sent.
-    final class FakeCore: HerdrStream, @unchecked Sendable {
+    final class FakeCore: DuplexStream, @unchecked Sendable {
         let output: AsyncThrowingStream<Data, any Error>
         private let feed: AsyncThrowingStream<Data, any Error>.Continuation
         private let lock = NSLock()
@@ -99,9 +99,13 @@ struct HcPaneModelTests {
         var painted = Data()
         model.show(TerminalGrid(cols: 53, rows: 30))
         await eventually { model.phase == .live }
-        // The renderer arrives after the first paint, which was held for it.
+        // The renderer can arrive before or after the first paint: held for
+        // it in one case, handed straight over in the other. Either way it
+        // gets the paint, once — the phase turns live as the attach lands,
+        // which can be a moment before the paint does.
         model.attach { painted.append($0) }
         #expect(model.phase == .live)
+        await eventually { painted == core.paint }
         #expect(painted == core.paint)
         let request = try #require(core.attachRequest)
         #expect(request["params"]?["cols"]?.int == 53)

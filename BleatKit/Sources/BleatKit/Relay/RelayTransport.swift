@@ -3,12 +3,12 @@ import Foundation
 /// A host reached through another device: every command is sent to the phone,
 /// which runs it and sends back what the host said.
 ///
-/// The second `HerdrTransport`. Nothing above it knows — `HerdrClient` is handed
-/// this where the phone hands it an `SSHTransport`.
+/// The watch's `PeerLink`: a shell on the host, through the phone. Nothing
+/// above it knows — the host status probe is handed this where the phone hands
+/// it an `SSHTransport`.
 ///
-/// **There is no pane stream.** A relayed message is one request and one
-/// reply, and a terminal is a channel that stays open in both directions;
-/// `openStream` throws rather than pretending.
+/// **There is no stream.** A relayed message is one request and one reply,
+/// and `hc connect` is a channel that stays open in both directions.
 public final class RelayTransport: PeerLink {
     /// Carries one encoded request to the phone and returns its encoded reply.
     ///
@@ -17,37 +17,17 @@ public final class RelayTransport: PeerLink {
 
     private let hostKey: String
     private let channel: Channel
-    private let sessionBox: LockedBox<String?>
 
-    public init(hostKey: String, session: String? = nil, channel: @escaping Channel) {
+    public init(hostKey: String, channel: @escaping Channel) {
         self.hostKey = hostKey
         self.channel = channel
-        self.sessionBox = LockedBox(session)
     }
 
-    public func useSession(_ session: String?) {
-        sessionBox.withLock { $0 = session }
-    }
-
-    public func run(_ args: [String]) async throws -> Data {
-        try await run(args, inSession: sessionBox.current)
-    }
-
-    @concurrent
-    public func run(_ args: [String], inSession session: String?) async throws -> Data {
-        try await Self.output(of: .herdr(hostKey: hostKey, args: args, session: session), over: channel)
-    }
-
-    /// `@concurrent`: the reply is decoded to a `String`, and on the watch it
-    /// can be an agent's whole conversation.
+    /// `@concurrent`: the reply is decoded off the caller's actor.
     @concurrent
     public func run(shell command: String) async throws -> String {
         let stdout = try await Self.output(of: .shell(hostKey: hostKey, command: command), over: channel)
         return String(decoding: stdout, as: UTF8.self)
-    }
-
-    public func openStream(_ args: [String]) async throws -> any HerdrStream {
-        throw TransportError.connectionFailed("a pane cannot be opened through the iPhone")
     }
 
     /// Tells the phone to close what it opened. Best effort: a phone that
@@ -60,14 +40,13 @@ public final class RelayTransport: PeerLink {
     /// One request and its reply, decoded. A `.failed` reply is thrown as the
     /// error it carries.
     ///
-    /// `@concurrent`: the watch's screens call this from the main actor, and
-    /// the reply can be an agent's whole conversation to decode.
+    /// `@concurrent`: the watch's screens call this from the main actor.
     @concurrent
     public static func send(_ request: RelayRequest, over channel: Channel) async throws -> RelayReply {
         let reply = try await channel(try JSONEncoder().encode(request))
         guard let decoded = try? JSONDecoder().decode(RelayReply.self, from: reply) else {
-            // Not a `DecodingError`: that means herdr's JSON drifted, and this
-            // is the two halves of one app disagreeing.
+            // Not a `DecodingError`: that means a host's reply drifted, and
+            // this is the two halves of one app disagreeing.
             throw TransportError.connectionFailed(
                 "the iPhone sent a reply this watch could not read; update Bleat on both"
             )

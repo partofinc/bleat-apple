@@ -69,7 +69,7 @@ final class TerminalsModel {
         }
     }
 
-    private func follow(_ stream: any HerdrStream) async throws {
+    private func follow(_ stream: any DuplexStream) async throws {
         let client = try await HcClient.connect(over: stream)
         defer { Task { await client.close() } }
         coreVersion = await client.hello?.version

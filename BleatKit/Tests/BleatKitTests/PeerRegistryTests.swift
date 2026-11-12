@@ -14,14 +14,14 @@ struct PeerRegistryTests {
     private func peer(
         key: String = "ssh-ed25519 AAAAKEY",
         endpoints: [String] = ["mac.local"],
-        herdr: String? = nil
+        herdrCore: HerdrCore? = nil
     ) -> PairedPeer {
         PairedPeer(
             hostKey: key,
             name: "Mac",
             username: "robin",
             endpoints: endpoints.compactMap { Endpoint(string: $0) },
-            herdrPath: herdr
+            herdrCore: herdrCore
         )
     }
 
@@ -51,10 +51,11 @@ struct PeerRegistryTests {
         let (store, directory) = scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        try store.save(peer(herdr: "/opt/homebrew/bin/herdr"))
+        let hc = HerdrCore.installed(path: "/Users/robin/.local/bin/hc", version: "0.1.20")
+        try store.save(peer(herdrCore: hc))
         let loaded = try #require(try store.peer(hostKey: "ssh-ed25519 AAAAKEY"))
         #expect(loaded.name == "Mac")
-        #expect(loaded.herdrPath == "/opt/homebrew/bin/herdr")
+        #expect(loaded.herdrCore == hc)
     }
 
     /// The rule the whole peer model rests on: one machine, several addresses.
@@ -189,8 +190,8 @@ struct PeerRegistryTests {
     /// other. Recording the herdr path by saving an edited copy of a peer
     /// loaded earlier would merge a stale `lastGoodEndpoint` over the winner
     /// just written — so it is a targeted mutation instead.
-    @Test("recording a herdr path does not undo the endpoint just recorded")
-    func herdrPathDoesNotClobberTheEndpoint() throws {
+    @Test("recording herdr-core does not undo the endpoint just recorded")
+    func herdrCoreDoesNotClobberTheEndpoint() throws {
         let (store, directory) = scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -200,11 +201,11 @@ struct PeerRegistryTests {
 
         let winner = try #require(Endpoint(string: "10.0.0.5"))
         try store.recordSuccess(endpoint: winner, forHostKey: stale.hostKey)
-        try store.recordHerdrPath("/opt/homebrew/bin/herdr", forHostKey: stale.hostKey)
+        try store.recordHerdrCore(.missing, forHostKey: stale.hostKey)
 
         let loaded = try #require(try store.peer(hostKey: stale.hostKey))
         #expect(loaded.lastGoodEndpoint == winner)
-        #expect(loaded.herdrPath == "/opt/homebrew/bin/herdr")
+        #expect(loaded.herdrCore == .missing)
     }
 
     /// Runs after every status read, and nearly every one says what the last
@@ -225,12 +226,12 @@ struct PeerRegistryTests {
         // A reply that had nothing in it, and one missing what the last had.
         #expect(try !store.recordHostInfo(HostInfo(), forHostKey: paired.hostKey))
         #expect(try store.recordHostInfo(
-            HostInfo(system: "macOS 27.1", herdrVersion: "0.9.3"), forHostKey: paired.hostKey
+            HostInfo(system: "macOS 27.1", architecture: "arm64"), forHostKey: paired.hostKey
         ))
 
         let loaded = try #require(try store.peer(hostKey: paired.hostKey))
         #expect(loaded.hostInfo == HostInfo(
-            system: "macOS 27.1", kernel: "Darwin 27.0.0", model: "Mac14,2", herdrVersion: "0.9.3"
+            system: "macOS 27.1", kernel: "Darwin 27.0.0", architecture: "arm64", model: "Mac14,2"
         ))
         #expect(loaded.lastGoodEndpoint == paired.lastGoodEndpoint)
         #expect(try !store.recordHostInfo(first, forHostKey: "ssh-ed25519 nobody"))

@@ -5,12 +5,11 @@ import SwiftUI
 /// Turns a drag on the terminal into wheel notches, the way a desktop terminal
 /// turns a trackpad swipe into them — including the coast after a flick.
 ///
-/// **This is still a request, not a scroll.** The stream carries one viewport
-/// and no history, so there is no buffer under the finger to move. Each notch
-/// asks the host to scroll and the host repaints: herdr moves its own history
-/// for a shell, or hands a full-screen program — Claude Code, `less` — a wheel
-/// event it answers itself. See `PaneModel.scroll`. A notch per row of travel
-/// is what makes the content follow the finger, near enough, and
+/// **A notch, not a scroll.** What a notch does is the scroller's business
+/// (`TerminalHost`): a full-screen program that asked for the mouse — Claude
+/// Code — gets a wheel click it answers itself; one that did not — `less` —
+/// gets an arrow; a shell's history scrolls here, in the terminal. A notch per
+/// row of travel is what makes the content follow the finger, near enough, and
 /// `ScrollMomentum` is what keeps it moving once the finger has gone.
 ///
 /// Natural direction: pulling **down** brings earlier output down into view,
@@ -128,8 +127,7 @@ struct PaneScrollGesture: ViewModifier {
                 // **Not awaited.** Waiting for the write would stretch the
                 // coast out over however long a slow link takes — ten seconds
                 // of scrolling after a two-second flick. Sent like the drag's
-                // instead, and `PaneModel.scroll` drops what a slow link
-                // cannot keep up with.
+                // instead.
                 let direction: ScrollDirection = notches > 0 ? .up : .down
                 Task { await model.scroll(direction, notches: abs(notches)) }
             }

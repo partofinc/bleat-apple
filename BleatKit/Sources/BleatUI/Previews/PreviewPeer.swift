@@ -9,11 +9,11 @@ import Foundation
 ///
 /// They are shaped like records a real pairing produces rather than like the
 /// happy case: one Mac with every kind of address on it, one that is only
-/// reachable over a tunnel, and one paired before `herdrPath` and the device
-/// marker were stored. The second and third are where the screens have
-/// something to say — an endpoint list that is all `overlay`, a "herdr" row
-/// with nothing to put in it — and a preview that only ever showed the first
-/// would not be exercising them.
+/// reachable over a tunnel and has no herdr-core yet, and one paired before the
+/// device marker was stored and never checked. The second and third are where
+/// the screens have something to say — an endpoint list that is all `overlay`,
+/// "Install herdr-core", a "not checked yet" row — and a preview that only ever
+/// showed the first would not be exercising them.
 extension PairedPeer {
     /// The everyday one: on the LAN, on a tailnet, and answering to its own
     /// name. Its last-good address is the LAN one, which is what a phone on
@@ -28,7 +28,6 @@ extension PairedPeer {
                 Endpoint(host: "192.168.50.54"),
                 Endpoint(host: "kestrel.tailf00d42.ts.net"),
             ],
-            herdrPath: "/opt/homebrew/bin/herdr",
             deviceMarker: "bleat-device-9f2c1a4e"
         )
         peer.lastGoodEndpoint = Endpoint(host: "192.168.50.54")
@@ -49,16 +48,15 @@ extension PairedPeer {
                 Endpoint(host: "studio.tailf00d42.ts.net", port: 2222),
                 Endpoint(host: "100.111.222.33", port: 2222),
             ],
-            herdrPath: "/usr/local/bin/herdr",
             deviceMarker: "bleat-device-3d70b8c5",
             hostInfo: .sampleLinux,
             herdrCore: .missing
         )
     }
 
-    /// Paired before `herdrPath` and the marker were recorded, and known only
-    /// by an mDNS name — so the detail screen has to say "not resolved", and
-    /// the unpair screen has no marker to name in its command. Never connected
+    /// Paired before the marker was recorded, and known only by an mDNS name —
+    /// so the settings say herdr-core is "not checked yet", and the unpair
+    /// screen has no marker to name in its command. Never connected
     /// to either, so it has not said what it is: its row falls back to where
     /// it is.
     static var previewSparse: PairedPeer {
@@ -68,24 +66,6 @@ extension PairedPeer {
             username: "robin",
             endpoints: [Endpoint(host: "mini.local")]
         )
-    }
-
-    /// The everyday peer, but with two of its sessions started from this
-    /// phone — so the session rows can show what a swipe offers and, more to
-    /// the point, what it does *not*.
-    ///
-    /// `work` and `phone` both run and so both offer Stop; `bleat-test` is
-    /// stopped and so offers Start then Delete. The row worth looking at is
-    /// `phone`, started at the Mac: it has the same swipe as `work` and a
-    /// different confirmation behind it, which is where the claim went when it
-    /// stopped being a gate.
-    static var previewOwningSessions: PairedPeer {
-        var peer = preview
-        peer.createdSessions = ["work", "bleat-test"]
-        // `work` is running because this phone started it, so its confirmation
-        // is the shorter one; `bleat-test` is down, so the claim has expired.
-        peer.startedSessions = ["work"]
-        return peer
     }
 
     /// What the peer list is drawn from.

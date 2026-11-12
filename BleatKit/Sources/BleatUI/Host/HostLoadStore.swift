@@ -1,12 +1,11 @@
 import BleatKit
 import Observation
 
-/// How busy the connected host is, for the bar carried down its screens.
+/// How busy the connected host is, for the bar under its terminal list.
 ///
 /// One reading, for one host, exactly as `ConnectionStore` holds one
-/// connection: the host, its sessions and a workspace are three screens deep
-/// in one machine, and each shows what the last one read rather than starting
-/// from nothing.
+/// connection: coming back to the list from a terminal shows what was last
+/// read rather than starting from nothing.
 ///
 /// **It never dials.** A reading is taken only over a connection that is
 /// already up and usable as it stands (`ConnectionStore.liveShell`), and
@@ -110,7 +109,7 @@ public final class HostLoadStore {
         refreshing = (peer.hostKey, connection)
         defer { if generation == self.generation { refreshing = nil } }
 
-        guard let output = try? await shell.run(shell: HostStatusProbe.command(herdrPath: peer.herdrPath)),
+        guard let output = try? await shell.run(shell: HostStatusProbe.command()),
               generation == self.generation
         else { return }
         let status = HostStatusProbe.status(fromOutput: output)

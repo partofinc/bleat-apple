@@ -26,8 +26,8 @@ struct DetailIdentityTests {
     /// reused rather than rebuilt.
     private final class Captured: @unchecked Sendable { var value = "" }
 
-    /// Stands in for `PeerDetailView`, whose `@State` is a `RemoteList` built
-    /// from the peer in `init`.
+    /// Stands in for the detail column's root — `TerminalsView`, whose `@State`
+    /// is a model built from the peer in `init`.
     private struct Screen: View {
         let key: String
         let captured: Captured

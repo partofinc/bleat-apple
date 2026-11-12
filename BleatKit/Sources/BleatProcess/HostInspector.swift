@@ -187,23 +187,6 @@ public struct HostInspector: Sendable {
         return short.isEmpty || short == "localhost" ? nil : short
     }
 
-    /// Finds `herdr` through a **login** shell.
-    ///
-    /// The question and the reading of its answer are `HerdrLookup`'s, in
-    /// `BleatKit`, because the phone asks the same thing over SSH on first
-    /// connect. Two copies of "which line of this output is the path" would
-    /// drift, and the way they would drift — a profile banner ending up in the
-    /// stored path — is silent until the first herdr call fails.
-    public func locateHerdr() -> String? {
-        // The command as well as the reading of it: `HerdrLookup.command`
-        // resolves `$SHELL` itself, so this is the same question the phone
-        // asks over SSH rather than a local restatement of it.
-        // Bounded: a profile that waits on something (an agent unlock, a
-        // network mount) would otherwise hang every command that asks.
-        guard let output = run("/bin/sh", ["-c", HerdrLookup.command], timeout: 10) else { return nil }
-        return HerdrLookup.path(inOutput: output)
-    }
-
     /// Finds herdr-core here with the phone's own lookup, `HerdrCoreCheck.find`,
     /// run through a local shell: the login shell's `PATH`, then
     /// `~/.local/bin` where Herdr.app installs `hc`, and `hc --version` must

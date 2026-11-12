@@ -90,8 +90,7 @@ bleat pair                 # show a pairing code for this computer
 bleat keys list            # every device this computer lets in
 bleat keys revoke <marker> # take a device's access away
 
-bleat sessions | workspaces | agents   # what herdr has, from the terminal
-bleat attach <pane> [--takeover]       # a pane's live stream; Ctrl-] detaches
+bleat terminals [--watch]  # this computer's herdr-core terminals, most urgent first
 ```
 
 `bleat help` lists the rest, including saved hosts for using the same commands
@@ -138,9 +137,9 @@ App/ Watch/        the two app targets (thin: an @main and assets)
 BleatKit/          the Swift package
   BleatKit/        domain and transport, no UI; iOS, watchOS, macOS, Linux
   BleatUI/         SwiftUI shared by the phone and the watch
-  BleatProcess/    macOS and Linux only: local herdr, the terminal QR
+  BleatProcess/    macOS and Linux only: local `hc connect`, the terminal QR
   bleat/           the console tool
-  Fixtures/        captured herdr output, the source of truth for the models
+  Fixtures/        herdr-core's schema and captured replies, the source of truth
 docs/              one file per area, with the reasoning behind each decision
 ```
 

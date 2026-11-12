@@ -10,6 +10,11 @@ behaviour when it moves across the seam.
 | Xcode targets | `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCURRENCY = YES`, `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` |
 | package | `swiftLanguageModes: [.v6]`; on every target `MemberImportVisibility`, `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`; `.defaultIsolation(MainActor.self)` on `BleatUI` only |
 
+- **Removed with the herdr backend, 12 Nov 2026: `RemoteList` and its empty
+  `deinit`.** The 1.x list loader is gone, and with it the workaround below;
+  `swift build -c release --target BleatUI` succeeds (checked on Swift 6.4,
+  80 s). The gate in `ci_scripts/ci_post_clone.sh` stays, as the cheap way to
+  catch an optimiser crash before an archive does. What follows is the record.
 - **`RemoteList` writes an empty `deinit`, and deleting it breaks the archive.**
   `swift-frontend` 6.3.3 segfaults optimising `BleatUI` without it — `pass
   SILFunctionTransform "EarlyPerfInliner" on SILFunction
@@ -56,7 +61,8 @@ behaviour when it moves across the seam.
       which grows with the tailnet;
     - in the console tool, `Attach.run`, so the frame loop's blocking writes
       to stdout are not on the main queue its SIGWINCH source uses;
-    - `LocalProcessTransport.run`, which blocks a thread until `herdr` exits.
+    - `LocalProcessTransport.run`, which blocked a thread until `herdr` exited
+      (removed with the herdr backend).
     `TranscriptModel.parse` was already `@concurrent`.
   - **What stays on the caller is small:**
     sorting a workspace or agent list of tens of rows after it arrives, and

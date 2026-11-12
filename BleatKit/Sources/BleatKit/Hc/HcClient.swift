@@ -32,7 +32,7 @@ public actor HcClient {
     /// The protocol generation this build speaks.
     public static let generation = 1
 
-    private let stream: any HerdrStream
+    private let stream: any DuplexStream
     private let outgoing: AsyncStream<Data>.Continuation
     private var reader: Task<Void, Never>?
     private var writer: Task<Void, Never>?
@@ -59,7 +59,7 @@ public actor HcClient {
 
     public private(set) var hello: Hello?
 
-    private init(stream: any HerdrStream) {
+    private init(stream: any DuplexStream) {
         self.stream = stream
         let (queue, continuation) = AsyncStream<Data>.makeStream()
         outgoing = continuation
@@ -75,7 +75,7 @@ public actor HcClient {
     ///
     /// - Throws: `HcProtocolError` when the core will not speak framed mode or
     ///   speaks another generation; the stream's own error when it ends first.
-    public static func connect(over stream: any HerdrStream) async throws -> HcClient {
+    public static func connect(over stream: any DuplexStream) async throws -> HcClient {
         let client = HcClient(stream: stream)
         do {
             try await client.start()

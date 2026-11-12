@@ -74,31 +74,10 @@ struct TerminalKeyTests {
         #expect(TerminalKey.controlU.bytes == Data([0x15]))
     }
 
-    /// Every key has to survive the encoding, not just the two that had tests.
-    @Test("no key is empty, and all of them encode", arguments: TerminalKey.allCases)
-    func allEncode(_ key: TerminalKey) throws {
+    /// Every key has to send something: an empty one would be a button that
+    /// does nothing.
+    @Test("no key is empty", arguments: TerminalKey.allCases)
+    func noneEmpty(_ key: TerminalKey) {
         #expect(!key.bytes.isEmpty)
-        let line = try TerminalCommand.bytes(key.bytes).ndjsonLine()
-        let object = try JSONSerialization.jsonObject(
-            with: Data(String(decoding: line, as: UTF8.self).dropLast().utf8)
-        ) as? [String: Any]
-        #expect(object?["bytes"] as? String == key.bytes.base64EncodedString())
-    }
-
-    /// The record herdr actually receives. An escape sequence has to arrive
-    /// base64-encoded, and the line has to be one JSON object with a newline.
-    @Test("a key travels as base64 in a terminal.input record")
-    func encodesAsBytes() throws {
-        let line = try TerminalCommand.bytes(TerminalKey.down.bytes).ndjsonLine()
-        let text = String(decoding: line, as: UTF8.self)
-        #expect(text.hasSuffix("\n"))
-
-        let object = try JSONSerialization.jsonObject(
-            with: Data(text.dropLast().utf8)
-        ) as? [String: Any]
-        #expect(object?["type"] as? String == "terminal.input")
-        #expect(object?["bytes"] as? String == Data("\u{1B}[B".utf8).base64EncodedString())
-        // Never as `text`: that is the form that would carry a raw ESC.
-        #expect(object?["text"] == nil)
     }
 }

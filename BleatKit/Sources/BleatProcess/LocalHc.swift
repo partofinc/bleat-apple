@@ -11,7 +11,7 @@ import Foundation
 public struct LocalHc: HcStreamOpening {
     public init() {}
 
-    public func openHcConnection(hcPath: String) async throws -> any HerdrStream {
+    public func openHcConnection(hcPath: String) async throws -> any DuplexStream {
         try LocalProcessStream(
             executable: URL(fileURLWithPath: hcPath),
             args: ["connect"],

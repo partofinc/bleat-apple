@@ -3,18 +3,19 @@
 > Moved verbatim from `CLAUDE.md` on 1 Oct 2026. Where the text says "this file", "above" or "below", it means the old single file; a **bold** section name can be found with `grep -r docs/`.
 
 ```
-bleat hosts add dev robin@10.0.0.5 --key ~/.bleat/id_ed25519 \
-      --herdr /opt/homebrew/bin/herdr --session work
+bleat hosts add dev robin@10.0.0.5 --key ~/.bleat/id_ed25519
 bleat hosts list / hosts remove dev
-bleat sessions   [host]                   # named sessions
-bleat workspaces [host] [--session NAME]  # by attention state
-bleat agents     [host] [--session NAME]  # agents, blocked first
-bleat attach     [host] w1:p1 [--takeover] [--cols N] [--rows M]
-bleat schema     [host] > BleatKit/Fixtures/schema.json
+bleat terminals  [host] [--watch]         # live terminals, most urgent first
 bleat keys list                           # what this machine still lets in
 bleat keys revoke <marker>                # take a paired phone's access back
 bleat --version                           # the bare number, e.g. 1.0.0
 ```
+
+**Bleat 2 (12 Nov 2026): the herdr commands are gone** — `sessions`,
+`workspaces`, `agents`, `attach`, `schema`, and `--herdr`/`--session`/
+`--takeover`. `terminals` reads herdr-core instead; the contract fixture is
+`hc schema --json > BleatKit/Fixtures/schema.json`. The paragraphs about the
+local `herdr` and `attach` below are 1.x's.
 
 **The tool's version is `bleatVersion` in `Sources/bleat/Version.swift`**, separate
 from the app's `MARKETING_VERSION`. A release is tagged `cli-<version>`, never
@@ -25,7 +26,8 @@ and exits 0 — anywhere, because `pair` ignores positionals and `bleat pair
 stderr and exits 2. Only `--version` prints the version: a bare `version`
 could be a saved host's name.
 
-Omitting `[host]` uses `LocalProcessTransport`, which spawns `herdr` directly.
+*(1.x)* Omitting `[host]` used `LocalProcessTransport`, which spawned `herdr`
+directly. In Bleat 2 it runs `hc connect` locally (`LocalHc`).
 That is what makes the tool usable *on* the Herdr machine without a loopback SSH
 hop, and it is how the stack is exercised in development. The local `herdr` is
 the first on `bleat`'s own `PATH`, else what a login shell finds (as `bleat

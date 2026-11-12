@@ -10,9 +10,8 @@ public enum HerdrCore: Sendable, Codable, Equatable {
     /// `hc` is on the login shell's `PATH` and answers `--version` as
     /// herdr-core.
     ///
-    /// - `path`: absolute, for the same reason `herdrPath` is — an exec channel
-    ///   runs a non-login shell, and `~/.local/bin`, where Herdr.app puts `hc`,
-    ///   is not on its `PATH`.
+    /// - `path`: absolute — an exec channel runs a non-login shell, and
+    ///   `~/.local/bin`, where Herdr.app puts `hc`, is not on its `PATH`.
     /// - `version`: what `hc --version` printed after `hc `, e.g. `0.1.19`.
     case installed(path: String, version: String)
     /// The host was asked and has no herdr-core: no `hc` at all, or an `hc`

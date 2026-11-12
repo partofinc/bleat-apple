@@ -1,5 +1,9 @@
 # The pane view (Phase 2, verified 5 Sept 2026)
 
+> **Bleat 2 (12 Nov 2026):** `PaneModel`, the chat reading and everything
+> herdr-specific below were removed with the herdr backend; the section right
+> after this note is what runs now. The 1.x measurements stay as the record.
+
 > Moved verbatim from `CLAUDE.md` on 1 Oct 2026. Where the text says "this file", "above" or "below", it means the old single file; a **bold** section name can be found with `grep -r docs/`.
 
 - **Read-only, by `terminal session observe` — superseded on 1 Oct 2026.**

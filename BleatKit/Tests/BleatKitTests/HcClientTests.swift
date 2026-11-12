@@ -7,7 +7,7 @@ struct HcClientTests {
 
     /// Plays the core's side: what the client writes is recorded, and the test
     /// decides what comes back and in which chunks.
-    final class ScriptedCore: HerdrStream, @unchecked Sendable {
+    final class ScriptedCore: DuplexStream, @unchecked Sendable {
         let output: AsyncThrowingStream<Data, any Error>
         private let feed: AsyncThrowingStream<Data, any Error>.Continuation
         private let lock = NSLock()
@@ -48,18 +48,26 @@ struct HcClientTests {
 
         /// Waits until the client has written at least `count` frames after
         /// its hello line, and returns them.
+        ///
+        /// **One snapshot for both the frames and the byte count.** Reading
+        /// them apart let a write land in between: the frames needed had
+        /// arrived, and the wait was for one byte beyond them, which never
+        /// came — a hang in about one run in eight.
         func frames(atLeast count: Int) async throws -> [HcFrame] {
             while true {
-                let frames = try await frames()
+                let snapshot = lock.withLock { written }
+                let frames = try Self.frames(in: snapshot)
                 if frames.count >= count { return frames }
-                let written = lock.withLock { self.written.count }
-                _ = await self.written(atLeast: written + 1)
+                _ = await self.written(atLeast: snapshot.count + 1)
             }
         }
 
         /// The frames written after the hello line.
         func frames() async throws -> [HcFrame] {
-            let all = lock.withLock { written }
+            try Self.frames(in: lock.withLock { written })
+        }
+
+        private static func frames(in all: Data) throws -> [HcFrame] {
             guard let newline = all.firstIndex(of: UInt8(ascii: "\n")) else { return [] }
             var decoder = HcFrameDecoder()
             return try decoder.push(Data(all[all.index(after: newline)...]))

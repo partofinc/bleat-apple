@@ -69,9 +69,9 @@ enum Redeem {
         // still on the host and this did not take it off. Reporting a bare
         // connection error left them with no idea the record was still there
         // or what to run.
-        let connection: PeerConnection.Connected
+        let connection: PeerConnector.Connection
         do {
-            connection = try await PeerConnection.connect(
+            connection = try await PeerConnection.open(
                 to: peer, deviceKey: deviceKey, link: link
             )
         } catch TransportError.authenticationFailed(let detail) {

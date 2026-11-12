@@ -12,9 +12,10 @@ import SwiftUI
 ///
 /// **No preview reaches the network.** The context is real, which means
 /// `ConnectionStore` is too, and it would happily dial if a screen asked. It
-/// never gets the chance: the screens that fetch take a preview-only
-/// initialiser that hands them a `RemoteList` which is already loaded and whose
-/// `load` does nothing. That is the seam — see `RemoteList.init(previewing:)`.
+/// never gets the chance: the screens that would connect take a preview-only
+/// initialiser instead — `TerminalsList` is handed its terminals, and
+/// `HcPaneModel(previewing:)` is parked in one phase and never attaches. The
+/// ready gate, which would open `TerminalsView` and dial, is not previewed.
 /// A preview that dialled would sit on a spinner for a connect timeout and then
 /// render a connection error, which is not the screen anyone opened the canvas
 /// to look at.

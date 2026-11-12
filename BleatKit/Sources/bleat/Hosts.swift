@@ -30,9 +30,7 @@ enum Hosts {
                 HostEntry(
                     name: rest[0],
                     spec: rest[1],
-                    keyPath: key,
-                    herdrPath: options.herdrPath ?? "herdr",
-                    session: options.session
+                    keyPath: key
                 )
             )
             print("added \(rest[0]) → \(rest[1])")
@@ -41,8 +39,7 @@ enum Hosts {
             let entries = try registry.all()
             if entries.isEmpty { print("no hosts yet"); return }
             for entry in entries {
-                let session = entry.session.map { "  --session \($0)" } ?? ""
-                print("\(entry.name)  \(entry.spec)  key=\(entry.keyPath)\(session)")
+                print("\(entry.name)  \(entry.spec)  key=\(entry.keyPath)")
             }
 
         case "remove":

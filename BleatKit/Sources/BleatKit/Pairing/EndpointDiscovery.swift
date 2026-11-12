@@ -182,7 +182,7 @@ public enum EndpointDiscovery {
 
     // MARK: - Asking a host over a shell
 
-    /// `|| true` on every one of these, for the reason `HerdrLookup.command`
+    /// `|| true` on every one of these, for the reason `LoginShellLookup.command`
     /// has it: absence is a normal answer. Without it a host without `scutil`
     /// produces a *failed command* over the exec channel, and the caller
     /// reports "the host rejected a command (exit 1)" for a machine that is

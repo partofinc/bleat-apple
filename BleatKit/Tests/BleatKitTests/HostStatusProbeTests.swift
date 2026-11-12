@@ -16,7 +16,6 @@ struct HostStatusProbeTests {
         #expect(status.info.architecture == "arm64")
         #expect(status.info.model == "MacBookAir10,1")
         #expect(status.info.modelName == "MacBook Air (M1, 2020)")
-        #expect(status.info.herdrVersion == "0.9.3")
         #expect(status.load.cores == 8)
         // Anonymous less purgeable, wired, and the compressor, in 16 KiB pages
         // — not total less free, which would read 16 GB used.
@@ -41,7 +40,6 @@ struct HostStatusProbeTests {
         #expect(status.info.architecture == "aarch64")
         #expect(status.info.model == "Raspberry Pi Compute Module 5 Rev 1.0")
         #expect(status.info.modelName == nil)
-        #expect(status.info.herdrVersion == "0.9.3")
         #expect(status.load.cores == 4)
         #expect(status.load.memory == .init(used: 775_520 * 1024, total: 8_255_824 * 1024))
         #expect(status.load.disk == .init(used: 7_712_816 * 1024, total: 29_465_692 * 1024))
@@ -138,10 +136,10 @@ struct HostStatusProbeTests {
         let known = HostInfo(
             system: "macOS 27.0.1", kernel: "Darwin 27.0.0", model: "Mac14,2", modelName: "Mac mini (2023)"
         )
-        let newer = HostInfo(system: "macOS 27.1", herdrVersion: "0.9.4")
+        let newer = HostInfo(system: "macOS 27.1", architecture: "arm64")
         #expect(known.updated(with: newer) == HostInfo(
-            system: "macOS 27.1", kernel: "Darwin 27.0.0", model: "Mac14,2",
-            modelName: "Mac mini (2023)", herdrVersion: "0.9.4"
+            system: "macOS 27.1", kernel: "Darwin 27.0.0", architecture: "arm64", model: "Mac14,2",
+            modelName: "Mac mini (2023)"
         ))
         #expect(known.updated(with: HostInfo()) == known)
     }
@@ -160,11 +158,10 @@ struct HostStatusProbeTests {
     func quotable() {
         #expect(!HostStatusProbe.script.contains("'"))
         #expect(!HostStatusProbe.script.contains("\\\\"))
-        let command = HostStatusProbe.command(herdrPath: "/opt/homebrew/bin/herdr")
+        let command = HostStatusProbe.command()
         #expect(command.hasPrefix("/bin/sh -c '"))
-        #expect(command.hasSuffix("' sh '/opt/homebrew/bin/herdr'"))
-        #expect(HostStatusProbe.command(herdrPath: nil).hasSuffix("' sh ''"))
-        #expect(HostStatusProbe.command(herdrPath: nil, sampling: false).hasSuffix("' sh '' info"))
+        #expect(command.hasSuffix("' sh"))
+        #expect(HostStatusProbe.command(sampling: false).hasSuffix("' sh info"))
     }
 
     /// A re-pair asks the host what it is, and that is laid over the record

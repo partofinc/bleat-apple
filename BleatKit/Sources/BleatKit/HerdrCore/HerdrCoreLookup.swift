@@ -6,12 +6,12 @@ import Foundation
 /// **Two commands, not one.** Finding `hc` needs the user's login shell, which
 /// may be fish; asking it for the version too would mean POSIX variable
 /// assignment inside that shell. So the login shell only runs `command -v`,
-/// exactly as `HerdrLookup` does, and the version is asked of the absolute
+/// exactly as `LoginShellLookup` does, and the version is asked of the absolute
 /// path it gave, which every shell runs the same way.
 public enum HerdrCoreLookup {
     /// `command -v hc` through a login shell. Empty output means absent; see
-    /// `HerdrLookup.command(locating:)` for why that is not a failed command.
-    public static let locate = HerdrLookup.command(locating: "hc")
+    /// `LoginShellLookup.command(locating:)` for why that is not a failed command.
+    public static let locate = LoginShellLookup.command(locating: "hc")
 
     /// Where Herdr.app installs `hc`, asked only when the login shell's `PATH`
     /// has no `hc`.
@@ -38,7 +38,7 @@ public enum HerdrCoreLookup {
 
     /// The absolute path in `locate`'s output, ignoring a profile's banner.
     public static func path(inOutput output: String) -> String? {
-        HerdrLookup.path(inOutput: output)
+        LoginShellLookup.path(inOutput: output)
     }
 
     /// The version in `hc --version` output, which reads `hc 0.1.20` (live,

@@ -12,12 +12,11 @@ struct PairedPeerTests {
         lastGood: Endpoint? = nil,
         name: String = "kestrel.air",
         user: String = "robin",
-        herdr: String = "/opt/homebrew/bin/herdr",
         marker: String? = nil
     ) -> PairedPeer {
         PairedPeer(
             hostKey: hostKey, name: name, username: user,
-            endpoints: endpoints, herdrPath: herdr, lastGoodEndpoint: lastGood,
+            endpoints: endpoints, lastGoodEndpoint: lastGood,
             deviceMarker: marker
         )
     }
@@ -74,12 +73,11 @@ struct PairedPeerTests {
 
     @Test("mutable details take the newer value, since the tool just read them off the host")
     func mergeRefreshesDetails() throws {
-        let old = peer(endpoints: [Endpoint(host: "a")], name: "old", user: "olduser", herdr: "/old/herdr")
-        let new = peer(endpoints: [Endpoint(host: "a")], name: "new", user: "newuser", herdr: "/new/herdr")
+        let old = peer(endpoints: [Endpoint(host: "a")], name: "old", user: "olduser")
+        let new = peer(endpoints: [Endpoint(host: "a")], name: "new", user: "newuser")
         let merged = try old.merging(new)
         #expect(merged.name == "new")
         #expect(merged.username == "newuser")
-        #expect(merged.herdrPath == "/new/herdr")
     }
 
     /// `merging` takes an argument built straight from a scanned QR, so a
@@ -91,7 +89,7 @@ struct PairedPeerTests {
         let mine = peer(endpoints: [Endpoint(host: "a")])
         let other = PairedPeer(
             hostKey: "ssh-ed25519 AAAAdifferent", name: "n", username: "u",
-            endpoints: [Endpoint(host: "b")], herdrPath: "/bin/herdr"
+            endpoints: [Endpoint(host: "b")]
         )
         #expect(throws: PairingError.hostKeyMismatch(
             expected: hostKey, actual: "ssh-ed25519 AAAAdifferent"
@@ -112,9 +110,9 @@ struct PairedPeerTests {
         #expect(built.hostKey == hostKey)
         #expect(built.endpoints.count == 2)
         #expect(built.lastGoodEndpoint == nil)
-        // herdrPath no longer travels in the QR: the phone resolves it on
-        // first connect, so a freshly paired peer has none yet.
-        #expect(built.herdrPath == nil)
+        // Nothing about herdr-core travels in the QR: enrollment asks the
+        // host, so a peer built from the payload alone knows nothing yet.
+        #expect(built.herdrCore == nil)
     }
 }
 
@@ -124,7 +122,7 @@ struct EndpointSelectionTests {
     private func peer(_ hosts: [String], lastGood: String? = nil) -> PairedPeer {
         PairedPeer(
             hostKey: "ssh-ed25519 AAAAx", name: "n", username: "u",
-            endpoints: hosts.map { Endpoint(host: $0) }, herdrPath: "/bin/herdr",
+            endpoints: hosts.map { Endpoint(host: $0) },
             lastGoodEndpoint: lastGood.map { Endpoint(host: $0) }
         )
     }

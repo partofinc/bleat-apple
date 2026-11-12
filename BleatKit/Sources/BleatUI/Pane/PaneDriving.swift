@@ -3,11 +3,10 @@ import Foundation
 
 /// What the terminal views drive: a live screen, its input, its size.
 ///
-/// **Two of them while Bleat moves to herdr-core.** `PaneModel` is 1.x's,
-/// over herdr's `terminal session control`; `HcPaneModel` is Bleat 2's, over
-/// hc's `terminal.attach`. The surface, the key bar, the scroll gesture and the
-/// SwiftTerm controller are the same for both, so they take this rather than
-/// either model, and deleting the herdr one later touches no view.
+/// `HcPaneModel` drives them over hc's `terminal.attach`. The surface, the key
+/// bar, the scroll gesture and the SwiftTerm controller take this rather than
+/// the model: they outlived 1.x's herdr model this way, and a preview or a
+/// test can drive them with something else.
 protocol PaneDriving: AnyObject {
     var phase: PanePhase { get }
     var wantsKeyboard: Bool { get }
@@ -38,10 +37,4 @@ extension PaneDriving {
     func scroll(_ direction: ScrollDirection) async {
         await scroll(direction, notches: 1)
     }
-}
-
-extension PaneModel: PaneDriving {
-    /// herdr scrolls the pane itself, with `terminal.scroll`; nothing on the
-    /// phone needs to.
-    func attachScroller(_ scroller: @escaping (ScrollDirection, Int) -> Void) {}
 }

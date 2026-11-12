@@ -10,8 +10,7 @@ struct ConnectionPolicyTests {
             hostKey: key,
             name: "Mac",
             username: "robin",
-            endpoints: [Endpoint(host: "mac.local")],
-            herdrPath: "/opt/homebrew/bin/herdr"
+            endpoints: [Endpoint(host: "mac.local")]
         )
     }
 
@@ -106,52 +105,13 @@ struct ConnectionPolicyTests {
     /// per retry and hide the real problem behind a reconnection that always
     /// succeeds.
     @Test("a command the host refused does not")
-    func herdrErrorIsNotFatal() {
+    func refusalIsNotFatal() {
         #expect(!ConnectionPolicy.isFatalToConnection(
-            HerdrError(command: ["agent", "list"], exitCode: 1, stderr: "no such session")
+            HcError(code: -32000, message: "no terminal t404", kind: "not_found")
         ))
         #expect(!ConnectionPolicy.isFatalToConnection(CancellationError()))
         #expect(!ConnectionPolicy.isFatalToConnection(
             ShellError(command: "true", exitCode: 1, stderr: "")
-        ))
-    }
-
-    // MARK: - Whether a failed write happened anyway
-
-    /// **A refusal is not a maybe.** A failed write is otherwise unknown — a
-    /// connection that drops between herdr running a command and its reply
-    /// arriving leaves the work done — but a `HerdrError` is the host
-    /// answering in its own error envelope, having processed the command and
-    /// declined. Nothing happened, and a retry is safe.
-    ///
-    /// Getting this wrong is not merely cautious: `NewWorkspaceModel` spends
-    /// its button on "may or may not have been created", so a refusal read as
-    /// unknown tells the user something may be on their Mac when it
-    /// demonstrably is not, and leaves reopening the sheet as the only way
-    /// back from something a retry would have fixed.
-    @Test("a refusal by the host proves the write did not happen")
-    func aRefusalIsNotAMaybe() {
-        let refusal = HerdrError(
-            command: ["workspace", "create"],
-            exitCode: 1,
-            stderr: "",
-            code: "server_not_running",
-            message: "no herdr server is running"
-        )
-        #expect(ConnectionPolicy.isRefusalByHost(refusal))
-    }
-
-    /// The two that are genuinely unknown, and they fail in opposite
-    /// directions. A dropped connection may have carried the command; a reply
-    /// this build could not read means the command **succeeded** and only the
-    /// answer was unreadable. Neither may be assumed away — both have to be
-    /// checked by reading the host back.
-    @Test("everything else leaves the write's fate unknown")
-    func everythingElseIsUnknown() {
-        #expect(!ConnectionPolicy.isRefusalByHost(TransportError.connectionFailed("closed")))
-        #expect(!ConnectionPolicy.isRefusalByHost(CancellationError()))
-        #expect(!ConnectionPolicy.isRefusalByHost(
-            DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "not json"))
         ))
     }
 }

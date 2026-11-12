@@ -193,7 +193,7 @@ struct PeerSettingsView: View {
     PeerSettingsView(hostKey: PairedPeer.preview.hostKey)
 }
 
-/// The sparse record: no `herdrPath`, no device marker, one address — so every
+/// The sparse record: herdr-core not checked, no device marker, one address — so every
 /// row that has a fallback is showing it, and the Remove swipe is hidden
 /// because removing the last address would strand the peer.
 #Preview("Sparse", traits: .sampleData) {

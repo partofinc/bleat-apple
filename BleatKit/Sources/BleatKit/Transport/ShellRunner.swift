@@ -2,10 +2,10 @@ import Foundation
 
 /// Runs a shell command on the host.
 ///
-/// Deliberately narrower than `HerdrTransport`, and deliberately separate from
-/// it: pairing does not speak Herdr at all. Installing a key in
-/// `authorized_keys` and finding where `herdr` lives are plain shell, and they
-/// happen before the app knows whether the host can answer a `herdr` command.
+/// Deliberately narrower than a connection, and separate from herdr-core:
+/// installing a key in `authorized_keys`, finding where `hc` lives and asking
+/// the host what it is are plain shell, and they happen before the app knows
+/// whether the host has herdr-core at all.
 ///
 /// A protocol rather than a concrete SSH type so the enrollment sequence — the
 /// part where a mistake locks the phone out of the host, or leaves a live key
@@ -22,8 +22,9 @@ public protocol ShellRunner: Sendable {
 
 /// A shell command ran on the host and failed.
 ///
-/// Distinct from `HerdrError` (herdr was reached and said no) and from
-/// `TransportError` (the connection itself). Pairing produces this one.
+/// Distinct from `HcError` (herdr-core was reached and said no) and from
+/// `TransportError` (the connection itself). Pairing produces this one, and so
+/// does an `hc connect` that could not start.
 public struct ShellError: Error, Sendable, Equatable, Codable {
     public let command: String
     public let exitCode: Int32

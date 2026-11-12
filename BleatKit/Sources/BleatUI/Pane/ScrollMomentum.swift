@@ -3,11 +3,11 @@ import Foundation
 /// What a flick keeps doing after the finger lifts: the same wheel notches a
 /// drag sends, at a speed that decays the way a scroll view's does.
 ///
-/// **There is still no buffer under it.** A scroll view coasts over content it
-/// already holds; this coasts over nothing, and every notch is a request the
-/// host answers with a repaint — see `PaneModel.scroll`. What it buys is that a
-/// flick carries on, which is what a swipe does in a desktop terminal attached
-/// to herdr: the trackpad goes on sending wheel events while it decelerates.
+/// **It coasts in notches, not points.** Each notch is whatever
+/// `TerminalHost`'s scroller makes of it — a wheel click, an arrow, or a line
+/// of this terminal's own history. What it buys is that a flick carries on,
+/// which is what a swipe does in a desktop terminal: the trackpad goes on
+/// sending wheel events while it decelerates.
 ///
 /// A value type with no clock of its own, so the arithmetic can be tested
 /// without waiting for it. `PaneScrollGesture` supplies the time.

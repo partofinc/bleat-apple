@@ -40,7 +40,7 @@ final class HcPaneModel: PaneDriving {
 
     /// Opens a fresh `hc connect` byte stream. The app's goes through
     /// `ConnectionStore`; a test passes a scripted one.
-    private let open: () async throws -> any HerdrStream
+    private let open: () async throws -> any DuplexStream
     /// Told about a failure, so a dead SSH connection is dropped and the next
     /// attach dials afresh. **Never `release()` here**: one terminal's stream
     /// ending says nothing about the connection the list is also using.
@@ -63,6 +63,11 @@ final class HcPaneModel: PaneDriving {
     /// Set first in `close()`: nothing may attach once the screen is gone.
     private var isClosing = false
 
+    /// Read by `PaneGeometryTests` to check that the chrome around the terminal
+    /// does not change its size between phases — the shape of bug that put an
+    /// endless spinner on a device.
+    var viewportForTesting: TerminalGrid? { viewport }
+
     /// What goes out on the channel, in the order it was asked for.
     private enum Outgoing {
         case data(Data)
@@ -70,14 +75,26 @@ final class HcPaneModel: PaneDriving {
     }
 
     /// One drainer at a time, so keys and resizes arrive in the order they
-    /// happened — see `PaneModel.outgoing` for the race this avoids.
+    /// happened.
+    ///
+    /// **Order is the whole point.** A task per keystroke is a race: each runs
+    /// on the main actor only until its send suspends, after which any number
+    /// are writing at once with nothing sequencing them. Fast typing could
+    /// transpose two characters into a live agent — and SwiftTerm's paste is
+    /// worse, calling `send` three times in one runloop turn (bracketed-paste
+    /// start, the text, the end), so the markers could land around or after the
+    /// payload they wrap. Learned on 1.x's `PaneModel`; the queue is why.
     private var outgoing: [Outgoing] = []
     private var isDraining = false
 
     /// How many lines of scrollback the first paint carries. hc paints them
     /// only for a program on the main screen (a shell); a full-screen program
     /// scrolls itself — see `TerminalHost`.
-    static let history = 2000
+    ///
+    /// SwiftTerm's own buffer: its default scrollback is 500 lines and the app
+    /// does not change it, so asking for more would send lines over a phone's
+    /// link only for the terminal to drop them.
+    static let history = 500
 
     convenience init(peer: PairedPeer, address: String, connections: ConnectionStore) {
         self.init(
@@ -96,7 +113,7 @@ final class HcPaneModel: PaneDriving {
 
     init(
         address: String,
-        open: @escaping () async throws -> any HerdrStream,
+        open: @escaping () async throws -> any DuplexStream,
         report: @escaping (any Error) async -> Void
     ) {
         self.address = address

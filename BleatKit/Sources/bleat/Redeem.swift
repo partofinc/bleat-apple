@@ -27,7 +27,7 @@ enum Redeem {
 
         print("Paired with \(peer.name) as \(peer.username).")
         print("  host key   \(peer.hostKeyFingerprint ?? peer.hostKey)")
-        print("  herdr      \(peer.herdrPath ?? "not resolved")")
+        print("  herdr-core \(peer.herdrCore.map(describe) ?? "not checked")")
         print("  reached at \(peer.lastGoodEndpoint?.description ?? "—")")
         print("  endpoints  \(peer.endpoints.map(\.description).joined(separator: ", "))")
     }
@@ -137,7 +137,7 @@ enum Redeem {
         for peer in all {
             print("\(peer.name)  \(peer.username)@\(peer.lastGoodEndpoint?.description ?? peer.endpoints.first?.description ?? "?")")
             print("  \(peer.hostKeyFingerprint ?? peer.hostKey)")
-            print("  herdr \(peer.herdrPath ?? "not resolved")  ·  \(peer.endpoints.map(\.description).joined(separator: ", "))")
+            print("  herdr-core \(peer.herdrCore.map(describe) ?? "not checked")  ·  \(peer.endpoints.map(\.description).joined(separator: ", "))")
             print("  key on host \(peer.deviceMarker ?? "not recorded")")
         }
     }
@@ -186,4 +186,11 @@ struct FileKeyStore {
     }
 }
 
+/// How a peer's herdr-core answer reads in the console tool.
+func describe(_ herdrCore: HerdrCore) -> String {
+    switch herdrCore {
+    case .installed(let path, let version): "\(path) (hc \(version))"
+    case .missing: "not installed"
+    }
+}
 #endif

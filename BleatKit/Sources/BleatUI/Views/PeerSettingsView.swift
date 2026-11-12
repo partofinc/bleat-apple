@@ -51,8 +51,18 @@ struct PeerSettingsView: View {
             Section("Host") {
                 LabeledContent("Name", value: peer.name)
                 LabeledContent("User", value: peer.username)
-                LabeledContent("herdr", value: peer.herdrPath ?? "not resolved")
-                    .font(.footnote.monospaced())
+                // What the gate last heard. herdr itself is not shown: nothing
+                // in Bleat 2 runs it.
+                switch peer.herdrCore {
+                case .installed(let path, let version):
+                    LabeledContent("herdr-core", value: "hc \(version)")
+                    LabeledContent("hc", value: path)
+                        .font(.footnote.monospaced())
+                case .missing:
+                    LabeledContent("herdr-core", value: "not installed")
+                case nil:
+                    LabeledContent("herdr-core", value: "not checked yet")
+                }
             }
 
             // What the host last said it is. Stored on the peer, so it is here
@@ -69,9 +79,6 @@ struct PeerSettingsView: View {
                     if let name = info.modelName { LabeledContent("Model", value: name) }
                     if let model = info.model {
                         LabeledContent(info.modelName == nil ? "Model" : "Identifier", value: model)
-                    }
-                    if let version = info.herdrVersion {
-                        LabeledContent("herdr version", value: version)
                     }
                 } header: {
                     Text("System")

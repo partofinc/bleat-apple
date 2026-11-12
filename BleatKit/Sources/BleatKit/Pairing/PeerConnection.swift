@@ -13,17 +13,13 @@ public enum PeerConnection {
         /// The address that won. Worth writing back to the peer: it is nearly
         /// always still right, and trying it alone beats racing again.
         public let endpoint: Endpoint
-        /// Non-nil only when the path had to be discovered — a peer paired
-        /// before `herdrPath` was recorded. The caller should persist it.
-        public let discoveredHerdrPath: String?
     }
 
     /// The SSH half of `connect`: races the peer's endpoints and returns the
     /// winning transport, with no `herdr` call on it.
     ///
-    /// Separate so that something can ask a host a plain shell question without
-    /// first needing herdr to be there — `HerdrCoreCheck` asks whether `hc` is
-    /// installed, on hosts where herdr may already be gone.
+    /// Separate so that something needing only a shell can have one —
+    /// `HerdrCoreCheck` asks whether `hc` is installed.
     ///
     /// - Throws: `TransportError.connectionFailed` when nothing answered, or
     ///   `.hostKeyMismatch` when something answered and was not this peer.
@@ -70,9 +66,9 @@ public enum PeerConnection {
             username: peer.username,
             hostKey: peer.hostKey,
             privateKey: deviceKey,
-            // `"herdr"` is the placeholder the transport starts with; every
-            // `herdr` call would fail on it, which is why the path is settled
-            // before a client is handed out.
+            // The stored path for a 1.x peer. A peer paired on hc has none,
+            // and nothing Bleat 2 runs over this transport calls herdr, so the
+            // placeholder is never used.
             herdrPath: peer.herdrPath ?? "herdr",
             session: session ?? peer.session,
             everyCandidateNeedsATunnel: endpoints.allSatisfy { $0.needsTunnel(from: link) }
@@ -94,34 +90,16 @@ public enum PeerConnection {
     ) async throws -> Connected {
         let connection = try await open(to: peer, deviceKey: deviceKey, link: link, session: session)
 
-        var discovered: String?
-        if peer.herdrPath == nil {
-            // Only reachable for a record made before pairing resolved this.
-            // Asking now costs one command on a connection that is already
-            // open, where rebuilding the transport would cost a handshake.
-            do {
-                let output = try await connection.transport.run(shell: HerdrLookup.command)
-                guard let path = HerdrLookup.path(inOutput: output) else {
-                    throw PairingError.herdrNotFound
-                }
-                connection.transport.useHerdrPath(path)
-                discovered = path
-            } catch {
-                // Every throw, not just the not-found one. This connection is
-                // the only reference to a live SSH session — a failed command
-                // does not close the channel, and neither does cancellation —
-                // so unwinding without disconnecting leaves a session open on
-                // the host, and each retry adds another.
-                await connection.transport.disconnect()
-                throw error
-            }
-        }
-
+        // **herdr is not looked for here any more** (Bleat 2, 12 Nov 2026).
+        // Nothing Bleat 2 shows runs it: every host opens through the
+        // herdr-core gate. A 1.x peer already has its path stored, and a peer
+        // paired on hc has none to find. Looking anyway refused hosts without
+        // herdr — which also refused unpairing them — and, made best effort,
+        // cost a login-shell round trip on every connection to such a host.
         return Connected(
             client: HerdrClient(transport: connection.transport),
             transport: connection.transport,
-            endpoint: connection.endpoint,
-            discoveredHerdrPath: discovered
+            endpoint: connection.endpoint
         )
     }
 }

@@ -56,18 +56,20 @@ struct LocalShell: ShellRunner {
 @Suite("The pairing swap, against a real shell")
 struct EnrollmentShellTests {
 
-    /// A home directory with a `herdr` on the login shell's PATH, a chatty
+    /// A home directory with an `hc` stub on the login shell's PATH, a chatty
     /// profile, and an `authorized_keys` holding a key the user put there.
-    private func scratchHome(withHerdr: Bool = true) throws -> URL {
+    private func scratchHome(withHerdrCore: Bool = true) throws -> URL {
         let home = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("bleat-enroll-\(UUID().uuidString)")
         let bin = home.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
 
-        if withHerdr {
-            let herdr = bin.appendingPathComponent("herdr")
-            try "#!/bin/sh\necho stub\n".write(to: herdr, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: herdr.path)
+        if withHerdrCore {
+            // Answers `--version` the way hc 0.1.20 does, which is what the
+            // lookup checks before it believes the path.
+            let hc = bin.appendingPathComponent("hc")
+            try "#!/bin/sh\necho 'hc 0.1.20'\n".write(to: hc, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hc.path)
         }
 
         // Profiles print things. A banner here is not decoration: taking the
@@ -116,7 +118,7 @@ struct EnrollmentShellTests {
         )
 
         let lines = try authorizedKeys(in: home)
-        #expect(result.herdrPath == home.appendingPathComponent("bin/herdr").path)
+        #expect(result.herdrCore == .installed(path: home.appendingPathComponent("bin/hc").path, version: "0.1.20"))
         #expect(lines.contains(usersKey))
         #expect(lines.contains { $0.hasSuffix(result.deviceMarker) })
         #expect(!lines.contains { $0.contains(marker.value) })
@@ -213,13 +215,13 @@ struct EnrollmentShellTests {
     }
 
     /// `command -v` exits 1 when it finds nothing, and the login shell exits
-    /// with it — so without the `|| true` in `HerdrLookup.command` a host
-    /// without herdr produces a *failed command*, and the user is told
+    /// with it — so without the `|| true` in `HerdrCoreLookup.locate` a host
+    /// without herdr-core produces a *failed command*, and the user is told
     /// "the host rejected a command (exit 1)" instead of what is wrong. The
-    /// guard for `herdrNotFound` was unreachable against a real shell.
-    @Test("a host without herdr says so, rather than failing the command")
-    func herdrMissingOnARealShell() async throws {
-        let home = try scratchHome(withHerdr: false)
+    /// guard for `herdrCoreNotFound` was unreachable against a real shell.
+    @Test("a host without herdr-core says so, rather than failing the command")
+    func herdrCoreMissingOnARealShell() async throws {
+        let home = try scratchHome(withHerdrCore: false)
         defer { try? FileManager.default.removeItem(at: home) }
         // A "login shell" with a PATH of its own, standing in for a host where
         // herdr is simply not installed.
@@ -230,14 +232,14 @@ struct EnrollmentShellTests {
         let shell = LocalShell(home: home, loginShell: stub.path)
 
         // The command itself must succeed and answer nothing.
-        let output = try await shell.run(shell: HerdrLookup.command)
-        #expect(HerdrLookup.path(inOutput: output) == nil)
+        let output = try await shell.run(shell: HerdrCoreLookup.locate)
+        #expect(HerdrCoreLookup.path(inOutput: output) == nil)
 
         let enrollment = SSHKeyPair()
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(
             line: enrollment.authorizedKeyLine(comment: "")
         ))
-        await #expect(throws: PairingError.herdrNotFound) {
+        await #expect(throws: PairingError.herdrCoreNotFound) {
             try await Enrollment.redeem(
                 deviceKey: SSHKeyPair(), enrollmentKey: enrollment, on: shell,
                 openDeviceSession: { shell }

@@ -22,8 +22,10 @@ import Foundation
 public enum Enrollment {
     /// What redemption produced. Everything the phone did not already know.
     public struct Redemption: Sendable, Equatable {
-        /// Absolute path to `herdr`, resolved through the host's login shell.
-        public let herdrPath: String
+        /// What the host said about herdr-core: always `.installed`, with the
+        /// absolute path to `hc` and its version — a host without it is
+        /// refused before anything is written.
+        public let herdrCore: HerdrCore
         /// The marker on the device key's line, so it can be found and revoked
         /// later without touching keys the user installed themselves.
         public let deviceMarker: String
@@ -58,15 +60,18 @@ public enum Enrollment {
         on runner: any ShellRunner,
         openDeviceSession: @Sendable () async throws -> any ShellRunner
     ) async throws -> Redemption {
-        // Resolved first, while nothing has been written. A host without herdr
-        // would produce a paired peer that can list nothing, and finding that
-        // out before touching authorized_keys means there is nothing to undo.
-        // `bleat pair` refuses such a host already, so this is a second line of
-        // defence rather than the first.
-        let located = try await runner.run(shell: HerdrLookup.command)
-        guard let herdrPath = HerdrLookup.path(inOutput: located) else {
-            throw PairingError.herdrNotFound
-        }
+        // Resolved first, while nothing has been written. A host without
+        // herdr-core would produce a paired peer that can show nothing, and
+        // finding that out before touching authorized_keys means there is
+        // nothing to undo. `bleat pair` refuses such a host already, so this is
+        // a second line of defence rather than the first.
+        //
+        // The gate's own lookup (`HerdrCoreCheck.find`): the login shell's
+        // PATH, then `~/.local/bin`, then `hc --version` must answer as
+        // herdr-core. Bleat 2 needs herdr itself nowhere, so it is not asked
+        // for.
+        let herdrCore = try await HerdrCoreCheck.find(over: runner)
+        guard herdrCore.isInstalled else { throw PairingError.herdrCoreNotFound }
 
         let marker = AuthorizedKeys.deviceMarker()
         let deviceLine = deviceKey.authorizedKeyLine(comment: marker.value)
@@ -125,7 +130,7 @@ public enum Enrollment {
             )
         }
 
-        return Redemption(herdrPath: herdrPath, deviceMarker: marker.value)
+        return Redemption(herdrCore: herdrCore, deviceMarker: marker.value)
     }
 
     /// Asks the host whether a line carrying this key is present.

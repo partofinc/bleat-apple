@@ -15,8 +15,9 @@ struct PairedResultView: View {
             Section {
                 LabeledContent("Host", value: peer.name)
                 LabeledContent("User", value: peer.username)
-                if let herdr = peer.herdrPath {
-                    LabeledContent("herdr", value: herdr)
+                if case .installed(let path, let version)? = peer.herdrCore {
+                    LabeledContent("herdr-core", value: "hc \(version)")
+                    LabeledContent("hc", value: path)
                         .font(.footnote.monospaced())
                 }
             } header: {

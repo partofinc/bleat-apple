@@ -15,6 +15,34 @@
   the stream, and the first frame of a new one is `full: true`, so the screen
   simply redraws.
 
+## Bleat 2: the same surface over herdr-core (12 Nov 2026)
+
+Everything below is 1.x, over herdr. In Bleat 2 a terminal opens through
+`HcTerminalScreen`, which drives the same `PaneSurface` (SwiftTerm, key bar,
+scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
+`PaneDriving`, which is what the shared views take.
+
+- **Take over on open**, as 1.x does, but with nothing to undo: hc gives the
+  size to the latest active viewer and back to the Mac when the phone leaves.
+  No `stty`, no restore. A rotation is a RESIZE frame, not a reopen.
+- **Scrolling** has no host command. `TerminalHost` registers a scroller that
+  tells three cases apart, as a real terminal does: wheel clicks through
+  SwiftTerm's `sendEvent` when the program asked for the mouse (Claude Code);
+  Up/Down arrows on the alternate screen when it did not (less, man, vim —
+  xterm's alternate-scroll), in the program's cursor-key mode; SwiftTerm's own
+  `scrollUp`/`scrollDown` on the main screen (a shell).
+- **Off screen is not gone.** The screen calls `setActive(false)` when it
+  disappears and `setActive(true)` when it comes back: a covering sheet or an
+  iPad column change returns with its state, and a model closed for good left
+  a frozen frame that still claimed to be live.
+- **One terminal's failure is reported, never `release()`d**: the list shares
+  the SSH connection, and one `hc connect` ending says nothing about it.
+  Keys and resizes share one ordered queue.
+- **No chat reading.** It came from herdr's transcript; the hc screen is
+  terminal only.
+
+Measured facts are in [`hc-facts.md`](hc-facts.md#attaching-live-hc-0120-12-nov-2026-on-a-scratch-shell).
+
 ## `--cols` crops. It does not reflow — so the app renders the whole pane
 
 An earlier version of this file claimed a wide pane "arrives already reflowed".

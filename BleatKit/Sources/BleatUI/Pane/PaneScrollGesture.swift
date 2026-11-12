@@ -18,7 +18,7 @@ import SwiftUI
 /// finger rather than against it.
 ///
 struct PaneScrollGesture: ViewModifier {
-    let model: PaneModel
+    let model: any PaneDriving
 
     /// Translation already spent on notches within this one drag. A
     /// `DragGesture` reports a cumulative translation, so without this every
@@ -149,7 +149,7 @@ struct PaneScrollGesture: ViewModifier {
 
 extension View {
     /// Scrolls the pane on a drag.
-    func paneScrollGesture(_ model: PaneModel) -> some View {
+    func paneScrollGesture(_ model: any PaneDriving) -> some View {
         modifier(PaneScrollGesture(model: model))
     }
 }

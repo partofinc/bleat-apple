@@ -5,7 +5,7 @@ import SwiftTerm
 
 /// SwiftTerm's terminal, as a SwiftUI view.
 struct TerminalHost: UIViewControllerRepresentable {
-    let model: PaneModel
+    let model: any PaneDriving
     /// Whether the terminal is the mode on screen. Passed from the view body
     /// rather than read off the model, so SwiftUI observes it.
     let isActive: Bool
@@ -24,6 +24,38 @@ struct TerminalHost: UIViewControllerRepresentable {
             // the bytes, so anything that touched them would corrupt the screen.
             model.attach { [weak terminal] data in
                 terminal?.feed(byteArray: ArraySlice(data))
+            }
+            // How a scroll reaches a program over hc, which has no scroll
+            // command — the three cases a real terminal tells apart:
+            //
+            // - The program asked for the mouse (Claude Code): wheel clicks,
+            //   encoded in the protocol it asked for, sent like any input.
+            // - A full-screen program that did not (less, man, vim): the
+            //   alternate screen keeps no history to scroll, so arrows, as
+            //   xterm's alternate-scroll mode sends — in the program's cursor
+            //   key mode, `ESC O A` once it has set DECCKM, as less does.
+            // - Anything else (a shell): the history this terminal holds.
+            model.attachScroller { [weak terminal, model] direction, notches in
+                guard let terminal, notches > 0 else { return }
+                let engine = terminal.getTerminal()
+                if engine.mouseMode != .off {
+                    let flags = engine.encodeButton(
+                        button: direction == .up ? 4 : 5,
+                        release: false, shift: false, meta: false, control: false
+                    )
+                    for _ in 0..<notches {
+                        engine.sendEvent(buttonFlags: flags, x: engine.cols / 2, y: engine.rows / 2)
+                    }
+                } else if engine.isCurrentBufferAlternate {
+                    let final: UInt8 = direction == .up ? 0x41 : 0x42      // A, B
+                    let arrow = Data([0x1B, engine.applicationCursor ? 0x4F : 0x5B, final])
+                    let bytes = Data(Array(repeating: arrow, count: notches).joined())
+                    Task { await model.send(bytes: bytes) }
+                } else if direction == .up {
+                    terminal.scrollUp(lines: notches)
+                } else {
+                    terminal.scrollDown(lines: notches)
+                }
             }
         }
         controller.isActive = isActive

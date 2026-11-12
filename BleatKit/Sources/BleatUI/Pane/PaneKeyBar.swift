@@ -31,7 +31,7 @@ import SwiftUI
 /// drawn symbol apart from Escape, which is a word on every keyboard that has
 /// one — an icon for it would be invented rather than recognised.
 struct PaneKeyBar: View {
-    let model: PaneModel
+    let model: any PaneDriving
     /// Whether the terminal is the mode on screen. This bar stays mounted
     /// under the chat, and a field left focused there keeps a keyboard up
     /// over a transcript it cannot type into.

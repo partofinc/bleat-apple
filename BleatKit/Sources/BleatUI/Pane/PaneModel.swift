@@ -22,15 +22,8 @@ import Observation
 /// renderer exactly as they arrived.
 @Observable
 final class PaneModel {
-    enum Phase: Equatable {
-        /// Connecting, or waiting to learn what size to ask for.
-        case opening
-        case live
-        /// The host closed the stream — the pane went away, or the session
-        /// stopped. Distinct from a failure: nothing went wrong.
-        case ended
-        case failed(String)
-    }
+    /// Shared with `HcPaneModel`; see `PanePhase`.
+    typealias Phase = PanePhase
 
     /// Whether the user has asked for the system keyboard.
     ///

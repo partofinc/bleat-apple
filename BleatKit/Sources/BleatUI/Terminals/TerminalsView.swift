@@ -3,8 +3,8 @@ import SwiftUI
 
 /// A host's screen in Bleat 2: its live herdr-core terminals.
 ///
-/// Reached through `HerdrCoreGateView` once the host has hc. Rows are not
-/// tappable yet; attaching to a terminal is the next change.
+/// Reached through `HerdrCoreGateView` once the host has hc. A row opens the
+/// terminal's live screen, `HcTerminalScreen`.
 struct TerminalsView: View {
     @State private var model: TerminalsModel
     /// Bumped to connect again: Try Again, or coming back to the foreground
@@ -17,7 +17,7 @@ struct TerminalsView: View {
     }
 
     var body: some View {
-        TerminalsList(terminals: model.terminals)
+        TerminalsList(hostKey: model.peer.hostKey, terminals: model.terminals)
             .overlay { overlay }
             .navigationTitle(model.peer.name)
             .task(id: attempt) { await model.run() }

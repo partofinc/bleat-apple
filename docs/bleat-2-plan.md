@@ -202,6 +202,26 @@ here. **Must be closed before:** the phase named.
    umbrella for the app and hc. Does the listing, or the "zero host setup
    beyond Herdr itself" promise, need new words when the host is a bare `hc`
    on a Pi? *Before D.*
+
+   **The field, 12 Nov 2026.** Herdr has its own phone app, Herdr Mobile
+   (`dev.herdr.mobile`, found on Google Play; not open source — herdrdev's
+   repos are herdr, herdr-nix, herdr-core, herdr-app and layout examples). It
+   takes a terminal over on open much as Bleat 2 does, which supports that
+   choice. It connects to a host by a typed hostname, IP or tailnet address,
+   username and port; with Ravil's hosts entered by tailnet name it works only
+   over Tailscale. Third-party iOS clients exist too: herdrup (Apache-2.0,
+   SSH), Heeler for herdr (open source, SSH jump hosts), Herdy (paid, SSH and
+   Mosh).
+   Where Bleat is ahead, already built: **simplicity** — pair once from a QR,
+   no address typing — and **durability** — each peer holds every address the
+   host reports (LAN, `.local`, tailnet name and IPs, anything added by hand),
+   races them, keeps the first that answers, skips what cannot work from where
+   the phone is, and refreshes them after each connection; the same peer works
+   at home without Tailscale and away with it.
+   Worth knowing when testing: two phone viewers on one terminal (Herdr Mobile
+   and Bleat) trade its size back and forth, since hc follows the latest
+   active viewer.
+
 3. **Which phase is current.** 1.x Phase 3 (Control) still lists unbuilt items
    (Ctrl and y/n keys, the takeover indicator). Are they dropped, or carried
    into Phase B? *Before A starts.*
@@ -210,7 +230,8 @@ here. **Must be closed before:** the phase named.
 
 4. ~~**The attach frame layout.**~~ Answered from `wire.rs`; see
    `hc-facts.md`. Verify live in Phase A.
-5. **Scrolling.** herdr carried one viewport and scrolled with
+5. **Scrolling.** *Built 12 Nov 2026 as wheel clicks or local history; see
+   `pane-view.md`. Left open: whether it feels right on Claude Code.* herdr carried one viewport and scrolled with
    `terminal.scroll`, handed to the program as a wheel event. hc offers
    `history` on attach and `terminal.read --lines`, and `viewers.rs` mentions
    "a read scrolls the app". Is there a live scroll, or is scrolling Bleat's

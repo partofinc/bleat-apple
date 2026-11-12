@@ -84,6 +84,28 @@ When the host disagrees with this file, the host wins.
   hc types notes about it into the parent (seen live, in this Claude session).
   Bleat sends `no_parent` and `no_notify` when it creates terminals.
 
+## Attaching (live, hc 0.1.20, 12 Nov 2026, on a scratch shell)
+
+- `terminal.attach {terminal, cols, rows, history}` on channel 0 answers
+  `{channel, automatic_input, resize_notifications, terminal: {…record}}`
+  (`Fixtures/hc-attach.json`; read by `HcAttachment`).
+  The record already shows the attach's size: **an active attach takes the
+  terminal over at once** (`cols: 40` straight after attaching at 40).
+- The first paint and live output are DATA on that channel, credited as they
+  are consumed. Typed bytes go back as DATA on the same channel and echo.
+- RESIZE (`u16 cols, u16 rows`) from the viewer reflows the program in place
+  and repaints; `hc get` read 30×10 after one. No reopen.
+- A CLOSE from the viewer is answered with a CLOSE, and the terminal's size
+  goes back to the next most recent active viewer — here, with nothing else
+  attached, the 200×120 headless default. With Herdr.app attached, the Mac.
+- `resumed: true` would attach without taking over until the viewer types,
+  resizes or focuses (`viewers.rs`: `active_at` unset). Not used: a phone
+  watching the Mac's ~130 columns can only crop or shrink them. Decided 12 Nov
+  2026, take over on open.
+- **No scroll command.** A program that enabled mouse reporting gets wheel
+  clicks as input; otherwise the viewer scrolls its own copy of the history,
+  which `history` paints first (main screen only).
+
 ## Plain mode cannot carry events and requests together (source: schema)
 
 `SubscribeResult` says that in plain line mode, after `events.subscribe`,

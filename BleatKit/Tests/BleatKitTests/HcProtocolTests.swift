@@ -185,3 +185,24 @@ struct HcProtocolTests {
         #expect(sorted.map(\.address) == ["t9", "t10"])
     }
 }
+
+@Suite("herdr-core: the attach reply")
+struct HcAttachmentTests {
+    /// Captured from a scratch `sh -i` (hc 0.1.20), attached at 40×12.
+    @Test("the captured reply gives the channel and the terminal at the attach's size")
+    func capturedReply() throws {
+        let reply = try JSONDecoder().decode(HcJSON.self, from: Fixture.data("hc-attach.json"))
+        let attachment = try HcAttachment(reply: try #require(reply["result"]))
+        #expect(attachment.channel == 1)
+        #expect(attachment.terminal?.cols == 40, "an active attach takes the terminal over at once")
+        #expect(attachment.terminal?.rows == 12)
+        #expect(attachment.terminal?.isLive == true)
+    }
+
+    /// Reported as "not framed" once, which pointed at the handshake.
+    @Test("a reply without a usable channel is contract drift")
+    func noChannel() {
+        #expect(throws: DecodingError.self) { try HcAttachment(reply: .object(["terminal": .null])) }
+        #expect(throws: DecodingError.self) { try HcAttachment(reply: .object(["channel": .number(-1)])) }
+    }
+}

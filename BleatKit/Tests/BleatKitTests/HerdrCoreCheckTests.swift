@@ -5,20 +5,6 @@ import Testing
 @Suite("The herdr-core migration check")
 struct HerdrCoreCheckTests {
 
-    /// Answers each command from a table, in the order asked, and records
-    /// what was asked.
-    private final class ScriptedShell: ShellRunner, @unchecked Sendable {
-        var replies: [Result<String, any Error>]
-        private(set) var asked: [String] = []
-
-        init(_ replies: [Result<String, any Error>]) { self.replies = replies }
-
-        func run(shell command: String) async throws -> String {
-            asked.append(command)
-            return try replies.removeFirst().get()
-        }
-    }
-
     private let endpoint = Endpoint(host: "mac.local")
 
     // MARK: - Reading the answers

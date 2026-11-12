@@ -27,23 +27,20 @@ public enum HerdrCoreCheck {
     /// outcome the host list shows.
     @concurrent
     public static func run(peer: PairedPeer, deviceKey: SSHKeyPair, link: LinkState) async -> Outcome {
-        let connection: PeerConnector.Connection
-        do {
-            connection = try await PeerConnection.open(to: peer, deviceKey: deviceKey, link: link)
-        } catch is CancellationError {
-            return .cancelled
-        } catch {
-            return .unreachable(String(describing: error))
+        let visit = await PeerVisit.run(to: peer, deviceKey: deviceKey, link: link) { connection in
+            await ask(connection.transport, endpoint: connection.endpoint)
         }
-        var outcome = await ask(connection.transport, endpoint: connection.endpoint)
-        // A command cut short by cancellation can come back as anything — an
-        // empty read looks like "no hc". Only an uncancelled answer counts.
-        if Task.isCancelled { outcome = .cancelled }
-        // On every path. A failed command does not close the channel and
-        // neither does cancellation, so returning without this leaves an SSH
-        // session open on the host.
-        await connection.transport.disconnect()
-        return outcome
+        switch visit {
+        case .reached(let outcome):
+            // A command cut short by cancellation can come back as anything —
+            // an empty read looks like "no hc". Only an uncancelled answer
+            // counts.
+            return Task.isCancelled ? .cancelled : outcome
+        case .unreachable(let message):
+            return .unreachable(message)
+        case .cancelled:
+            return .cancelled
+        }
     }
 
     /// The two questions, over a shell that is already connected.

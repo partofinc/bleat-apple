@@ -5,18 +5,6 @@ import Testing
 @Suite("Installing herdr-core from Bleat")
 struct HerdrCoreInstallTests {
 
-    private final class ScriptedShell: ShellRunner, @unchecked Sendable {
-        var replies: [Result<String, any Error>]
-        private(set) var asked: [String] = []
-
-        init(_ replies: [Result<String, any Error>]) { self.replies = replies }
-
-        func run(shell command: String) async throws -> String {
-            asked.append(command)
-            return try replies.removeFirst().get()
-        }
-    }
-
     private let endpoint = Endpoint(host: "pi.local")
 
     @Test("the user is shown herdr-core's own one-liner")
@@ -61,13 +49,35 @@ struct HerdrCoreInstallTests {
         #expect(message.contains("Add /x to your PATH"))
     }
 
-    @Test("the connection going during the install is unreachable, not failed")
+    /// Connected a moment before, so not "unreachable": the phone went to the
+    /// background or the network went, and the installer may be half done.
+    @Test("the connection going during the install is interrupted")
     func dropped() async {
         let shell = ScriptedShell([.failure(TransportError.channelClosed)])
-        guard case .unreachable = await HerdrCoreInstall.install(over: shell, endpoint: endpoint) else {
-            Issue.record("expected unreachable")
+        guard case .interrupted = await HerdrCoreInstall.install(over: shell, endpoint: endpoint) else {
+            Issue.record("expected interrupted")
             return
         }
+    }
+
+    @Test("the connection going during the look afterwards is interrupted too")
+    func droppedWhileLooking() async {
+        let shell = ScriptedShell([.success("hc 0.1.20 installed\n"), .failure(TransportError.channelClosed)])
+        guard case .interrupted = await HerdrCoreInstall.install(over: shell, endpoint: endpoint) else {
+            Issue.record("expected interrupted")
+            return
+        }
+    }
+
+    /// The host has herdr-core whatever happened to the task; dropping the
+    /// answer would offer the install again for a host that has it.
+    @Test("a cancellation after the install finished keeps it; anything else is voided")
+    func lateCancellation() {
+        let installed = HerdrCoreInstall.Outcome.installed(.installed(path: "/x/hc", version: "0.1.20"), endpoint: endpoint)
+        #expect(HerdrCoreInstall.kept(installed, wasCancelled: true) == installed)
+        #expect(HerdrCoreInstall.kept(.failed("hc: x"), wasCancelled: true) == .cancelled)
+        #expect(HerdrCoreInstall.kept(.interrupted("gone"), wasCancelled: true) == .cancelled)
+        #expect(HerdrCoreInstall.kept(.failed("hc: x"), wasCancelled: false) == .failed("hc: x"))
     }
 
     @Test("a cancelled install records nothing")

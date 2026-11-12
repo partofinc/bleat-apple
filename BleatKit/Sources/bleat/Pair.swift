@@ -54,8 +54,18 @@ enum Pair {
         } catch PairingError.herdrCoreNotFound {
             guard try HerdrCoreOffer.offer() else { throw ToolFailure("herdr-core is not installed here") }
             // Looked for again, not assumed: the installer exiting 0 is not
-            // the lookup finding it.
-            report = try await HostInspector().inspect(port: port, extraEndpoints: extra)
+            // the lookup finding it. And said as that, not as the generic
+            // "install it there", which right after an install sends the user
+            // round to the step they just did.
+            do {
+                report = try await HostInspector().inspect(port: port, extraEndpoints: extra)
+            } catch PairingError.herdrCoreNotFound {
+                throw ToolFailure(
+                    "the installer finished, but Bleat does not find herdr-core where it looks: "
+                        + "the login shell's PATH, ~/.local/bin/hc and ~/.local/bin/herdr-core. "
+                        + "The installer's output above says where it put it."
+                )
+            }
         }
 
         guard !report.endpoints.isEmpty else {

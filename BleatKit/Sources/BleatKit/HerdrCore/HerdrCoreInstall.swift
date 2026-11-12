@@ -36,6 +36,11 @@ public enum HerdrCoreInstall {
         /// The host was reached and the install did not work. The message is
         /// the installer's own words where it gave any.
         case failed(String)
+        /// The connection dropped while the installer ran: the phone went to
+        /// the background, or the network went. It may or may not have
+        /// finished on the host, and running it again either finishes it or
+        /// updates in place. The message is the transport's.
+        case interrupted(String)
         /// Nothing was reachable, or the host key did not match.
         case unreachable(String)
         /// Cancelled before an answer. Nothing may be recorded from it.
@@ -45,20 +50,30 @@ public enum HerdrCoreInstall {
     /// Connects, installs, looks again, disconnects. Never throws.
     @concurrent
     public static func run(peer: PairedPeer, deviceKey: SSHKeyPair, link: LinkState) async -> Outcome {
-        let connection: PeerConnector.Connection
-        do {
-            connection = try await PeerConnection.open(to: peer, deviceKey: deviceKey, link: link)
-        } catch is CancellationError {
-            return .cancelled
-        } catch {
-            return .unreachable(String(describing: error))
+        let visit = await PeerVisit.run(to: peer, deviceKey: deviceKey, link: link) { connection in
+            await install(over: connection.transport, endpoint: connection.endpoint)
         }
-        var outcome = await install(over: connection.transport, endpoint: connection.endpoint)
-        if Task.isCancelled { outcome = .cancelled }
-        // On every path, as `HerdrCoreCheck.run` does: a failed command does
-        // not close the session.
-        await connection.transport.disconnect()
-        return outcome
+        switch visit {
+        case .reached(let outcome):
+            return kept(outcome, wasCancelled: Task.isCancelled)
+        case .unreachable(let message):
+            return .unreachable(message)
+        case .cancelled:
+            return .cancelled
+        }
+    }
+
+    /// What a cancellation late in the run leaves of its outcome.
+    ///
+    /// **A finished install is kept.** The installer ran and the lookup found
+    /// herdr-core: that is true of the host whatever happened to the task, and
+    /// dropping it would leave "Install herdr-core" on screen for a host that
+    /// has it, and run the installer again on the next tap. Anything else is
+    /// voided, as for a check: a command cut short can read as anything.
+    static func kept(_ outcome: Outcome, wasCancelled: Bool) -> Outcome {
+        guard wasCancelled else { return outcome }
+        if case .installed = outcome { return outcome }
+        return .cancelled
     }
 
     /// The install and the look afterwards, over a shell already connected.
@@ -73,7 +88,9 @@ public enum HerdrCoreInstall {
             // "no build for armv7l", "cannot reach …".
             return .failed(error.stderr.isEmpty ? String(describing: error) : error.stderr)
         } catch {
-            return .unreachable(String(describing: error))
+            // Connected a moment ago, so not "unreachable": the installer was
+            // running when the connection went.
+            return .interrupted(String(describing: error))
         }
         let found: HerdrCore
         do {
@@ -81,7 +98,7 @@ public enum HerdrCoreInstall {
         } catch is CancellationError {
             return .cancelled
         } catch {
-            return .unreachable(String(describing: error))
+            return .interrupted(String(describing: error))
         }
         guard found.isInstalled else {
             // Exit 0 and still nothing: say what the installer printed, which

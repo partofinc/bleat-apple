@@ -280,28 +280,29 @@ link handed to `simctl openurl` stops at the system's "Open in Bleat?" alert.
 
 ```sh
 SIMCTL_CHILD_BLEAT_PAIR_CODE='bleat://pair?d=…' xcrun simctl launch <phone> team.partof.bleat
-SIMCTL_CHILD_BLEAT_OPEN='bleat-test/w1/host' xcrun simctl launch <watch> team.partof.bleat.watchkitapp
+SIMCTL_CHILD_BLEAT_OPEN='t58/Backend' xcrun simctl launch <phone> team.partof.bleat
+SIMCTL_CHILD_BLEAT_OPEN='' SIMCTL_CHILD_BLEAT_INSTALL=1 xcrun simctl launch <phone> team.partof.bleat
+SIMCTL_CHILD_BLEAT_OPEN='' xcrun simctl launch <watch> team.partof.bleat.watchkitapp
 ```
 
-`BLEAT_OPEN` opens the first host, then a session, a workspace id, that
-workspace's title, a pane target and that pane's title, as far as it is given;
-empty stops at the host's sessions. An empty component takes its default
-(`s/w1//w1:p1` titles the workspace `w1`), and the pane title is everything
-after the target, slashes included. `BLEAT_OPEN_MODE=terminal` opens the pane as
-a terminal row does rather than as an agent's chat; it is its own variable so it
-never depends on a title. A word naming no `PaneMode` is printed, not ignored,
-and the watch prints and opens chat whatever it says: it has no pane stream
-through the phone, so a terminal there is one only a simulator can show.
+`BLEAT_OPEN` opens the first host and then, when it names one, a terminal: its
+address, and after the first slash a title for the screen. Empty stops at the
+host's terminal list; the watch always stops at the host, since it cannot open
+a terminal. `BLEAT_INSTALL` starts what the gate's Install starts after its
+alert, straight away, as a tap would (1.x's session/workspace/pane form and
+`BLEAT_OPEN_MODE` went with the herdr backend).
 
-For a host to pair with, the scratch sshd in `CLAUDE.md` works, with three
-things that cost time here:
-
-- **`bleat pair --port <port>`**, or the QR carries the *system* sshd's host
-  key and every connection is refused as a mismatch.
-- **A short `HOME`.** herdr's socket path must fit `sun_path` (104 bytes); a
-  scratch directory deep under `/private/tmp/…` does not. A symlink from
-  `/tmp/<short>` does.
-- **Clear `HERDR_*` when starting the scratch session from inside herdr**, and
-  give `script` a size (`stty rows 40 cols 120`), or it refuses as nested or as
-  a zero-sized terminal. Every socket command from such a shell otherwise goes
-  to the session the shell is in.
+For a host to pair with, a throwaway Linux container is the quickest
+(12 Nov 2026, Apple's `container`): `debian:bookworm-slim` with
+`openssh-server`, a user, `sshd -D`, and the Linux `bleat` mounted in. Run
+`bleat pair --endpoint <container IP>` as that user with stdin from
+`/dev/null`, so it prints the link, and hand the link to `BLEAT_PAIR_CODE` in
+a **fresh simulator**, since `BLEAT_OPEN` takes the first host. To get a host
+to "Install herdr-core", remove `~/.local/bin/hc` and `herdr-core` in the
+container and drop `herdrCore` from the simulator's `peers.json` (the 1.x
+record's shape): a host stored as installed is never asked again. A camera
+permission alert left over from the pairing launch survives `simctl
+terminate`; shutting the simulator down clears it. The scratch sshd in
+[`testing.md`](testing.md) works too, with `bleat pair --port <port>`, or the
+QR carries the *system* sshd's host key and every connection is refused as a
+mismatch.

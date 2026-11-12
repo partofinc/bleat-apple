@@ -39,10 +39,10 @@ public final class HerdrCoreReadiness {
         case unknown
     }
 
-    /// Checks in flight, and this run's answers that are not worth storing,
-    /// by host key.
-    private var checking: Set<String> = []
-    /// Installs in flight, by host key. Held apart from `checking` so a
+    /// Checks in flight, by host key, held as tasks so an install can wait
+    /// for one to finish rather than refuse.
+    private var checks: [String: Task<Void, Never>] = [:]
+    /// Installs in flight, by host key. Held apart from `checks` so a
     /// foreground's `checkAll` cannot start a check that would race the
     /// install and store "missing" half way through it.
     private var installing: Set<String> = []
@@ -63,7 +63,7 @@ public final class HerdrCoreReadiness {
     public func state(of peer: PairedPeer) -> State {
         if case .installed = peer.herdrCore { return .ready }
         if installing.contains(peer.hostKey) { return .installing }
-        if checking.contains(peer.hostKey) {
+        if checks[peer.hostKey] != nil {
             // An earlier "missing" stays on screen while it is asked again, so
             // a row does not flicker at every foreground.
             return peer.herdrCore == .missing ? .needsHerdrCore : .checking
@@ -92,7 +92,14 @@ public final class HerdrCoreReadiness {
 
     /// Asks one peer. Does nothing while that peer is already being asked.
     public func check(_ peer: PairedPeer) async {
-        guard canCheck, !checking.contains(peer.hostKey), !installing.contains(peer.hostKey) else { return }
+        guard canCheck, checks[peer.hostKey] == nil, !installing.contains(peer.hostKey) else { return }
+        let task = Task { await self.ask(peer) }
+        checks[peer.hostKey] = task
+        await task.value
+        checks[peer.hostKey] = nil
+    }
+
+    private func ask(_ peer: PairedPeer) async {
         let deviceKey: SSHKeyPair
         do {
             deviceKey = try peers.deviceKey()
@@ -102,9 +109,6 @@ public final class HerdrCoreReadiness {
             problems[peer.hostKey] = .failed("this device's key could not be read: \(error)")
             return
         }
-        checking.insert(peer.hostKey)
-        defer { checking.remove(peer.hostKey) }
-
         let outcome = await HerdrCoreCheck.run(peer: peer, deviceKey: deviceKey, link: reachability.link)
         switch outcome {
         case .answered(let herdrCore, let endpoint):
@@ -124,7 +128,15 @@ public final class HerdrCoreReadiness {
 
     /// Runs herdr-core's official installer on a host that answered
     /// "missing", then looks again. Does nothing while that host is being
-    /// checked or installed already, or on the watch.
+    /// installed already, or on the watch.
+    ///
+    /// **A check in flight is waited for, not a reason to refuse.** The gate
+    /// keeps showing "missing" while the host is asked again — at launch and
+    /// at every return to the foreground — so Install is on screen during
+    /// the check, and refusing made a tap in those seconds do nothing at
+    /// all. Found driving the install end to end, 12 Nov 2026. The screen
+    /// reads "Installing" from the tap; the check's answer decides whether
+    /// the installer still runs.
     ///
     /// The caller is expected to have shown `HerdrCoreInstall.displayCommand`
     /// and had it confirmed: this runs a script from the network on someone's
@@ -135,18 +147,23 @@ public final class HerdrCoreReadiness {
     /// the host; the answer is recorded whenever it comes, and every screen
     /// showing the host reads it from here.
     public func install(_ peer: PairedPeer) async {
-        guard canCheck, peer.herdrCore == .missing,
-              !checking.contains(peer.hostKey), !installing.contains(peer.hostKey)
-        else { return }
+        let key = peer.hostKey
+        guard canCheck, !installing.contains(key) else { return }
+        installing.insert(key)
+        defer { installing.remove(key) }
+        await checks[key]?.value
+
+        // The stored record, not the one the screen held: the check may have
+        // just found herdr-core (installed by hand), and then there is
+        // nothing to run.
+        guard let peer = peers.peers.first(where: { $0.hostKey == key }), peer.herdrCore == .missing else { return }
         let deviceKey: SSHKeyPair
         do {
             deviceKey = try peers.deviceKey()
         } catch {
-            problems[peer.hostKey] = .failed("this device's key could not be read: \(error)")
+            problems[key] = .failed("this device's key could not be read: \(error)")
             return
         }
-        installing.insert(peer.hostKey)
-        defer { installing.remove(peer.hostKey) }
 
         switch await HerdrCoreInstall.run(peer: peer, deviceKey: deviceKey, link: reachability.link) {
         case .installed(let herdrCore, let endpoint):

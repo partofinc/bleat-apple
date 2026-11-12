@@ -313,7 +313,19 @@ describe were removed with the herdr backend, 12 Nov 2026. How the check works, 
   own `hc: …` reason as "Install failed", with both buttons again. The
   install runs in a task of its own, not the view's, so leaving the screen
   does not cut an installer off on the host; a check never runs alongside it.
-  Not on the watch, which cannot dial.
+  **A check in flight is waited for.** "missing" stays on screen while the
+  host is asked again at launch and every foreground, so Install is tappable
+  then; refusing during a check made that tap do nothing, found driving the
+  install end to end. Now the screen reads "Installing" from the tap, and the
+  installer runs only if the check still says missing. Not on the watch,
+  which cannot dial.
+- **Driven end to end, 12 Nov 2026,** in the simulator against a fresh Debian
+  container over SSH (`DebugLaunch`'s `BLEAT_INSTALL`; recipe in
+  [`watch.md`](watch.md#driving-a-simulator-nobody-can-tap)): the gate,
+  "Installing herdr-core on …", then the terminal list with a core running
+  on the host. With `releases.herdr.dev` pointed nowhere, "Install failed"
+  showed curl's own `(7) Failed to connect` line. The alert itself was not
+  pressed: `simctl` cannot.
 - **Previews and tests never check.** `AppContext(checksHerdrCore: false)`;
   otherwise a preview would dial the sample hosts.
 - **The watch checks nothing.** It shows the answer the phone stored, and

@@ -96,6 +96,9 @@ public struct HcTerminal: Sendable, Equatable, Identifiable, Decodable {
 
 extension Sequence<HcTerminal> {
     /// Most urgent first; ties in address order, `t9` before `t10`.
+    ///
+    /// Here in `BleatKit` rather than in a view, so the app's list and `bleat
+    /// terminals` cannot disagree about it.
     public func sortedByAttention() -> [HcTerminal] {
         sorted { lhs, rhs in
             guard lhs.attention == rhs.attention else { return lhs.attention < rhs.attention }

@@ -14,7 +14,6 @@ public enum HostArgumentError: Error, Sendable, Equatable {
     /// This must be an error rather than a silent fallback to `.local`: a typo
     /// would otherwise run against the wrong machine and look like it worked.
     case unknownHost(String, known: [String])
-    case missingTarget
     case unexpectedArguments([String])
 }
 
@@ -26,35 +25,14 @@ public enum HostArgumentError: Error, Sendable, Equatable {
 public enum HostArguments {
 
     /// - Parameters:
-    ///   - positional: Arguments after the subcommand.
-    ///   - expectsTarget: True for `attach`, which takes `[host] <target>`.
+    ///   - positional: Arguments after the subcommand: `[host]`, nothing more.
     ///   - hosts: Saved hosts.
     public static func resolve(
         positional: [String],
-        expectsTarget: Bool,
         hosts: [HostEntry]
     ) throws -> (host: HostSelection, rest: [String]) {
         let names = hosts.map(\.name).sorted()
         func saved(_ name: String) -> HostEntry? { hosts.first { $0.name == name } }
-
-        if expectsTarget {
-            switch positional.count {
-            case 0:
-                throw HostArgumentError.missingTarget
-            case 1:
-                // A lone argument is the target — unless it names a host, in
-                // which case the target is what is actually missing.
-                if saved(positional[0]) != nil { throw HostArgumentError.missingTarget }
-                return (.local, positional)
-            case 2:
-                guard let entry = saved(positional[0]) else {
-                    throw HostArgumentError.unknownHost(positional[0], known: names)
-                }
-                return (.saved(entry), Array(positional.dropFirst()))
-            default:
-                throw HostArgumentError.unexpectedArguments(Array(positional.dropFirst(2)))
-            }
-        }
 
         switch positional.count {
         case 0:

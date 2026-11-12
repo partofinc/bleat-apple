@@ -10,14 +10,11 @@ struct HostArgumentsTests {
         HostEntry(name: "box", spec: "robin@box:2222", keyPath: "~/k"),
     ]
 
-    private func resolve(
-        _ positional: [String],
-        expectsTarget: Bool = false
-    ) throws -> (host: HostSelection, rest: [String]) {
-        try HostArguments.resolve(positional: positional, expectsTarget: expectsTarget, hosts: hosts)
+    private func resolve(_ positional: [String]) throws -> (host: HostSelection, rest: [String]) {
+        try HostArguments.resolve(positional: positional, hosts: hosts)
     }
 
-    @Test("no argument means the local herdr")
+    @Test("no argument means this machine")
     func localByDefault() throws {
         #expect(try resolve([]).host == .local)
     }
@@ -38,50 +35,10 @@ struct HostArgumentsTests {
         }
     }
 
-    @Test("attach with one argument treats it as the target")
-    func attachLocalTarget() throws {
-        let resolved = try resolve(["w1:p1"], expectsTarget: true)
-        #expect(resolved.host == .local)
-        #expect(resolved.rest == ["w1:p1"])
-    }
-
-    @Test("attach with host and target")
-    func attachRemote() throws {
-        let resolved = try resolve(["dev", "w1:p1"], expectsTarget: true)
-        #expect(resolved.host == .saved(hosts[0]))
-        #expect(resolved.rest == ["w1:p1"])
-    }
-
-    @Test("attach with an unknown host does not silently retarget locally")
-    func attachUnknownHost() {
-        // Previously `bleat attach devv w1:p1` attached to a local pane named
-        // "devv" and dropped the real target on the floor.
-        #expect(throws: HostArgumentError.unknownHost("devv", known: ["box", "dev"])) {
-            try resolve(["devv", "w1:p1"], expectsTarget: true)
-        }
-    }
-
-    @Test("attach with a host but no target says the target is missing")
-    func attachHostOnly() {
-        #expect(throws: HostArgumentError.missingTarget) {
-            try resolve(["dev"], expectsTarget: true)
-        }
-    }
-
-    @Test("attach with nothing at all")
-    func attachNothing() {
-        #expect(throws: HostArgumentError.missingTarget) {
-            try resolve([], expectsTarget: true)
-        }
-    }
-
     @Test("surplus arguments are reported, not ignored")
     func surplus() {
         #expect(throws: HostArgumentError.unexpectedArguments(["extra"])) {
             try resolve(["dev", "extra"])
-        }
-        #expect(throws: HostArgumentError.unexpectedArguments(["extra"])) {
-            try resolve(["dev", "w1:p1", "extra"], expectsTarget: true)
         }
     }
 }

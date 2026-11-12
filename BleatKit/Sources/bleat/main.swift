@@ -115,8 +115,6 @@ func describe(_ error: HostArgumentError) -> String {
     case .unknownHost(let name, let known):
         let list = known.isEmpty ? "none saved yet" : known.joined(separator: ", ")
         return "unknown host '\(name)'. Saved hosts: \(list).\nAdd one with: bleat hosts add \(name) user@host --key PATH"
-    case .missingTarget:
-        return "this command needs a target"
     case .unexpectedArguments(let extra):
         return "unexpected argument(s): \(extra.joined(separator: " "))"
     }
@@ -190,7 +188,7 @@ do {
 
     if command == "terminals" {
         let (selection, _) = try HostArguments.resolve(
-            positional: options.positional, expectsTarget: false, hosts: try registry.all()
+            positional: options.positional, hosts: try registry.all()
         )
         switch selection {
         case .local:

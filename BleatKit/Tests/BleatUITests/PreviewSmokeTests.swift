@@ -403,9 +403,9 @@ struct PreviewSmokeTests {
         #expect(router.takePendingUnpair() == nil, "a close left an unpair armed")
     }
 
-    /// A parked model must stay parked: `PaneModel.start()` and
-    /// `TranscriptModel.follow` are both reachable from a render, and either
-    /// one running would open an exec channel from a canvas.
+    /// A parked model must stay parked: `show` and `retry` are both reachable
+    /// from a render, and either one attaching would open an exec channel from
+    /// a canvas.
     @Test("a parked terminal model opens nothing")
     func parkedModels() async {
         let pane = HcPaneModel(previewing: .live)

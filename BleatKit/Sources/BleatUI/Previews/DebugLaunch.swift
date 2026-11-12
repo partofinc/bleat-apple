@@ -12,13 +12,15 @@ import Foundation
 ///
 ///     SIMCTL_CHILD_BLEAT_PAIR_CODE='bleat://pair?d=…' xcrun simctl launch <phone> team.partof.bleat
 ///     SIMCTL_CHILD_BLEAT_OPEN='t58/Backend' xcrun simctl launch <phone> team.partof.bleat
+///     SIMCTL_CHILD_BLEAT_OPEN='' xcrun simctl launch <watch> team.partof.bleat.watchkitapp
 ///
 /// Debug builds only, and inert without the variables.
 public enum DebugLaunch {
     /// `BLEAT_PAIR_CODE` redeems a pairing link. `BLEAT_OPEN` opens the first
     /// host and then, when it names one, a terminal: its address, and after a
     /// slash a title for the screen (everything after the first slash, since
-    /// titles may hold one). Empty stops at the host's terminal list.
+    /// titles may hold one). Empty stops at the host's terminal list. On the
+    /// watch it always stops at the host.
     public static func apply(to context: AppContext) async {
         let environment = ProcessInfo.processInfo.environment
         if let code = environment["BLEAT_PAIR_CODE"] {
@@ -33,6 +35,11 @@ public enum DebugLaunch {
         guard let peer = context.peers.peers.first else { return }
         context.navigation.selectedPeer = peer.hostKey
 
+        #if os(watchOS)
+        // The watch cannot open a terminal: the relay carries shell commands,
+        // not hc's stream. It stops at the host, which is the screen there is.
+        return
+        #else
         let parts = open.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let address = parts.first, !address.isEmpty else { return }
         let title = parts.count > 1 && !parts[1].isEmpty ? parts[1] : address
@@ -41,6 +48,7 @@ public enum DebugLaunch {
         // same turn is dropped.
         await step()
         context.navigation.push(.terminal(peer: peer.hostKey, address: address, title: title))
+        #endif
     }
 
     private static func step() async {

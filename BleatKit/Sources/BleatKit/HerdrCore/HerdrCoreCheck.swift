@@ -6,8 +6,6 @@ import Foundation
 /// **Over the same SSH path 1.x connects on**, `PeerConnection.open`: the same
 /// endpoint race, host key pin and device key. Nothing about the peer record
 /// changes, so a host paired for herdr is migrated rather than re-paired.
-/// `open` rather than `connect` because the check needs only a shell, not a
-/// `HerdrClient`.
 ///
 /// One short connection per check, closed before returning. It is not the
 /// browsing connection `ConnectionStore` holds, and must not be left open on

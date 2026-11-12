@@ -75,7 +75,15 @@ final class HcPaneModel: PaneDriving {
     }
 
     /// One drainer at a time, so keys and resizes arrive in the order they
-    /// happened — see `PaneModel.outgoing` for the race this avoids.
+    /// happened.
+    ///
+    /// **Order is the whole point.** A task per keystroke is a race: each runs
+    /// on the main actor only until its send suspends, after which any number
+    /// are writing at once with nothing sequencing them. Fast typing could
+    /// transpose two characters into a live agent — and SwiftTerm's paste is
+    /// worse, calling `send` three times in one runloop turn (bracketed-paste
+    /// start, the text, the end), so the markers could land around or after the
+    /// payload they wrap. Learned on 1.x's `PaneModel`; the queue is why.
     private var outgoing: [Outgoing] = []
     private var isDraining = false
 

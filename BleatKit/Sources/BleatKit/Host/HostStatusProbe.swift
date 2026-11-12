@@ -313,9 +313,4 @@ public enum HostStatusProbe {
         }
         return values
     }
-
-    /// Single quotes for POSIX shells, the same rule as `SSHTransport.quote`.
-    private static func quote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }

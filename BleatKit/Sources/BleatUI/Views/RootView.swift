@@ -92,9 +92,9 @@ public struct RootView: View {
         .peerSettingsSheet()
     }
 
-    /// The detail column's root: the selected host's sessions.
+    /// The detail column's root: the selected host, through the herdr-core gate.
     ///
-    /// Through `RouteView` rather than building `PeerDetailView` here, so that
+    /// Through `RouteView` rather than building the gate here, so that
     /// resolving a host key to a screen — including the answer for one that has
     /// been unpaired — stays in one place.
     ///
@@ -102,17 +102,17 @@ public struct RootView: View {
     /// off shipped a bug.** Every screen below here is *pushed*, so it gets a
     /// fresh view and fresh `@State` by construction; this one is the stack's
     /// root and is **reused** when the selection changes. Same view type, same
-    /// position, so SwiftUI keeps `PeerDetailView`'s `@State` — the
-    /// `RemoteList` holding the previous host's sessions — and its plain
-    /// `.task` never re-runs, because the view does not re-appear. What
-    /// reached the iPad was one host's name over another host's sessions.
+    /// position, so SwiftUI keeps its `@State` — in 1.x the list holding the
+    /// previous host's sessions, in Bleat 2 `TerminalsView`'s model holding the
+    /// previous host's terminals — and its plain `.task` never re-runs, because
+    /// the view does not re-appear. What reached the iPad was one host's name
+    /// over another host's list.
     /// Giving the view the host key as its identity makes a different host a
     /// different view, which is what a push used to do for free.
     ///
-    /// **It is not the same as reloading the list.** A `.task(id:)` in
-    /// `PeerDetailView` would fix the sessions and leave the rest — the
-    /// half-typed session name, the confirmation a swipe had armed, the
-    /// start in flight — attached to the host that has been left.
+    /// **It is not the same as reloading the list.** A `.task(id:)` would fix
+    /// the list and leave the rest — a connection, a check in flight —
+    /// attached to the host that has been left.
     @ViewBuilder
     private var detail: some View {
         if let hostKey = context.navigation.selectedPeer {

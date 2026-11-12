@@ -14,7 +14,7 @@ extension EnvironmentValues {
     /// to whoever wants to be the source.
     ///
     /// **Optional because a source is optional.** Nothing publishes one in a
-    /// preview of `PeerDetailView` on its own, and the swipe on the peer list
+    /// preview of `TerminalsView` on its own, and the swipe on the peer list
     /// has no bar to grow out of. A zoom whose source is not on screen falls
     /// back to the ordinary sheet presentation, so the absent case needs no
     /// handling beyond not claiming to be a source.

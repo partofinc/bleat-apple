@@ -75,8 +75,8 @@ prompts, guesses, or trusts anything on first sight.
   and the overlay address that would have worked never gets a turn, because the
   cache answers first. `ConnectionPolicy` holds this and the "is this error
   fatal to the connection?" rule, in `BleatKit` where both are tested.
-- **A `HerdrError` does not discard the connection.** The host was reached and
-  said no. Reconnecting on it would cost a handshake per retry and hide the
+- **An `HcError` or a `ShellError` does not discard the connection** (1.x:
+  `HerdrError`). The host was reached and said no. Reconnecting on it would cost a handshake per retry and hide the
   real problem behind a reconnection that always succeeds. `TransportError`
   does discard it, which is what lets a retry re-race after a network change.
 - **Every list load carries a generation.** Pull-to-refresh and the initial
@@ -113,19 +113,23 @@ prompts, guesses, or trusts anything on first sight.
   cellular was not dialled and failed; it was ruled out, and the remedy is a
   different network or an overlay endpoint rather than a host that needs
   starting. The two get different messages.
-- **`herdrPath` can still be discovered**, for a record made before pairing
-  stored it, and the transport learns it in place rather than being rebuilt —
-  a second handshake to carry one string would be absurd.
+- *(1.x, removed 12 Nov 2026)* `herdrPath` was discovered on connect for a
+  record made before pairing stored it. Bleat 2 resolves nothing about herdr;
+  hc's path is the gate's (`PairedPeer.herdrCore`).
 - **Write-backs after a successful connection are targeted mutations, never a
   `save` of an edited copy.** `save` merges, and a merge takes the newer
   record's `lastGoodEndpoint`; a copy loaded a moment earlier carries the
-  *previous* winner, so saving it undoes the one just recorded. Both
-  `recordSuccess` and `recordHerdrPath` edit the stored record in place.
+  *previous* winner, so saving it undoes the one just recorded.
+  `recordSuccess` and `recordHerdrCore` edit the stored record in place.
 
 The watch uses this same store with a relay in place of the dial — see
 [`watch.md`](watch.md).
 
-## The list screens (Phase 2)
+## The list screens (1.x — removed 12 Nov 2026)
+
+> The session, workspace and agent lists, `RemoteList` and `Loadable` were
+> removed with the herdr backend. Kept as the record; Bleat 2's list is
+> `TerminalsView`, fed by events rather than loads.
 
 Sessions, workspaces and agents are the same screen three times, so the loading
 is written once: `RemoteList` holds the generation token, the cancelled-screen
@@ -306,7 +310,10 @@ describe were removed with the herdr backend, 12 Nov 2026. How the check works, 
 - **The watch checks nothing.** It shows the answer the phone stored, and
   "Not checked yet" until the phone has sent one.
 
-## A host's screen is its sessions; everything else is a sheet (Phase 2)
+## A host's screen is its sessions; everything else is a sheet (1.x — removed 12 Nov 2026)
+
+> In Bleat 2 a host's screen is its terminal list, with the load bar under it
+> and its settings behind the bar or the swipe on the host's row.
 
 (Since 1 Oct 2026 the sheet also says what the host runs, and the screen
 carries a bar with how busy it is — see the next section.)
@@ -516,8 +523,9 @@ The probe:
   no `\\`. Run under zsh, bash, dash and macOS's `sh`; **not run under fish**,
   which is not installed on either host.
 - **`PATH` is set to the four system directories**, not inherited, so `df` is
-  the system's `df`. herdr is therefore not searched for: the probe is handed
-  `peer.herdrPath`, and leaves the version out when the peer has none yet.
+  the system's `df`. (1.x also reported herdr's version, handed the peer's
+  `herdrPath`; removed with herdr — hc's version is on the peer, from the
+  gate.)
 - **What each host can and cannot say** (measured, both on herdr 0.9.3):
 
   | | macOS 27.0.1 (M1) | Debian 13 (Pi CM5) |
@@ -570,9 +578,12 @@ the first screen on a fresh install.
   shared path means the one being edited has its file rebuilt underneath it the
   moment another renders.
 - **No preview reaches the network**, and that needs a seam rather than a
-  promise: `ConnectionStore` is real, and every list screen loads in `.task`.
-  `RemoteList.init(previewing:)` hands the rows in and makes `load` a no-op, and
-  the screens that own one take a `#if DEBUG` initialiser that uses it. The
+  promise: `ConnectionStore` is real. In Bleat 2 `TerminalsList` is handed its
+  terminals, `HcPaneModel(previewing:)` is parked in a phase and never
+  attaches, and the ready gate — which would open `TerminalsView` and dial —
+  is not previewed. *(1.x, below:)* `RemoteList.init(previewing:)` handed the
+  rows in and made `load` a no-op, and the screens that owned one took a
+  `#if DEBUG` initialiser that used it. The
   guard is the **first** thing `load` does — after `state = .loading` it would
   show a spinner where a seeded `.failed` was meant to be. `PaneModel`,
   `TranscriptModel`, `PairingModel` and `UnpairModel` take the same treatment,

@@ -11,6 +11,7 @@ struct TerminalsView: View {
     /// after the connection was dropped.
     @State private var attempt = 0
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppContext.self) private var context
 
     init(peer: PairedPeer, connections: ConnectionStore) {
         _model = State(initialValue: TerminalsModel(peer: peer, connections: connections))
@@ -24,6 +25,17 @@ struct TerminalsView: View {
             // own screen, and not on a terminal: there a bar that comes and
             // goes would resize the terminal on someone's Mac.
             .hostLoadBar(for: model.peer)
+            // The bar's reading is asked for again whenever the list is back
+            // on screen — coming back from a terminal twenty minutes later
+            // must not show twenty-minute-old numbers as current — and forced
+            // by a pull. Reads under ten seconds old are turned away by the
+            // store, so this costs nothing on a quick return.
+            .onAppear { Task { await context.hostLoad.refresh(for: model.peer) } }
+            .onChange(of: model.phase) { _, phase in
+                guard phase == .live else { return }
+                Task { await context.hostLoad.refresh(for: model.peer) }
+            }
+            .refreshable { await context.hostLoad.refresh(for: model.peer, force: true) }
             .task(id: attempt) { await model.run() }
             // iOS takes the socket in the background, and `RootView` releases
             // the connection there too. Coming back, a list that failed for

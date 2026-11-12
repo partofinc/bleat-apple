@@ -305,6 +305,44 @@ ready host shows `TerminalsView`, with the load bar under it; a row opens
 describe were removed with the herdr backend, 12 Nov 2026. How the check works, and when it runs, is in
 [`bleat-2-plan.md`](bleat-2-plan.md#the-migration-gate-built-12-nov-2026).
 
+- **Install herdr-core** (12 Nov 2026): a host that answered "missing" shows
+  Install herdr-core and Check Again. Install asks first, in an alert that
+  shows the exact one-liner and the user it runs as; then the screen reads
+  "Installing herdr-core on …" and the row "Installing herdr-core…" until the
+  installer and the look afterwards finish. A failure shows the installer's
+  own `hc: …` reason as "Install failed", with both buttons again. The
+  install runs in a task of its own, not the view's, so leaving the screen
+  does not cut an installer off on the host; a check never runs alongside it.
+  **A check in flight is waited for.** "missing" stays on screen while the
+  host is asked again at launch and every foreground, so Install is tappable
+  then; refusing during a check made that tap do nothing, found driving the
+  install end to end. Now the screen reads "Installing" from the tap, and the
+  installer runs only if the check still says missing. Not on the watch,
+  which cannot dial.
+- **Backgrounding during an install** (from review, 12 Nov 2026). A
+  suspended app's socket drops and takes the installer's channel with it, so
+  the install asks iOS for background time, enough for a download of a few
+  megabytes. A connection lost while the installer runs reads "Install
+  failed: the connection dropped … installing again finishes it", not "Not
+  reachable": the host was reached, and running the installer again finishes
+  or updates in place. There is no timeout; an install's length is unknown.
+- **A failed install's reason stays** until herdr-core is found. The next
+  foreground's check answers "missing", and clearing on that put plain
+  "Install herdr-core" back, inviting a retry of an install that cannot
+  work. A finished install is recorded even if its task is cancelled at the
+  last moment; any other late-cancelled outcome is dropped, as a check's is.
+- **Cancelling a check's caller cancels the check**, although it runs in a
+  task of its own so an install can wait on it. Without that, a list that
+  went away left an SSH session open and could store "Not reachable".
+- The check and the install share one short-connection lifecycle,
+  `PeerVisit.run`: open, run, disconnect on every path.
+- **Driven end to end, 12 Nov 2026,** in the simulator against a fresh Debian
+  container over SSH (`DebugLaunch`'s `BLEAT_INSTALL`; recipe in
+  [`watch.md`](watch.md#driving-a-simulator-nobody-can-tap)): the gate,
+  "Installing herdr-core on …", then the terminal list with a core running
+  on the host. With `releases.herdr.dev` pointed nowhere, "Install failed"
+  showed curl's own `(7) Failed to connect` line. The alert itself was not
+  pressed: `simctl` cannot.
 - **Previews and tests never check.** `AppContext(checksHerdrCore: false)`;
   otherwise a preview would dial the sample hosts.
 - **The watch checks nothing.** It shows the answer the phone stored, and

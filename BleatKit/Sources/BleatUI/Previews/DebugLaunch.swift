@@ -13,6 +13,7 @@ import Foundation
 ///     SIMCTL_CHILD_BLEAT_PAIR_CODE='bleat://pair?d=…' xcrun simctl launch <phone> team.partof.bleat
 ///     SIMCTL_CHILD_BLEAT_OPEN='t58/Backend' xcrun simctl launch <phone> team.partof.bleat
 ///     SIMCTL_CHILD_BLEAT_OPEN='' xcrun simctl launch <watch> team.partof.bleat.watchkitapp
+///     SIMCTL_CHILD_BLEAT_OPEN='' SIMCTL_CHILD_BLEAT_INSTALL=1 xcrun simctl launch <phone> team.partof.bleat
 ///
 /// Debug builds only, and inert without the variables.
 public enum DebugLaunch {
@@ -20,7 +21,9 @@ public enum DebugLaunch {
     /// host and then, when it names one, a terminal: its address, and after a
     /// slash a title for the screen (everything after the first slash, since
     /// titles may hold one). Empty stops at the host's terminal list. On the
-    /// watch it always stops at the host.
+    /// watch it always stops at the host. `BLEAT_INSTALL`, with `BLEAT_OPEN`,
+    /// starts what the gate's Install starts after its alert, which `simctl`
+    /// cannot press.
     public static func apply(to context: AppContext) async {
         let environment = ProcessInfo.processInfo.environment
         if let code = environment["BLEAT_PAIR_CODE"] {
@@ -34,6 +37,12 @@ public enum DebugLaunch {
         }
         guard let peer = context.peers.peers.first else { return }
         context.navigation.selectedPeer = peer.hostKey
+
+        if environment["BLEAT_INSTALL"] != nil {
+            // Straight away, as a tap would be: the launch check may well be
+            // in flight, which is the case worth driving.
+            Task { await context.herdrCore.install(peer) }
+        }
 
         #if os(watchOS)
         // The watch cannot open a terminal: the relay carries shell commands,

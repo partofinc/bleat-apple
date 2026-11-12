@@ -27,23 +27,20 @@ public enum HerdrCoreCheck {
     /// outcome the host list shows.
     @concurrent
     public static func run(peer: PairedPeer, deviceKey: SSHKeyPair, link: LinkState) async -> Outcome {
-        let connection: PeerConnector.Connection
-        do {
-            connection = try await PeerConnection.open(to: peer, deviceKey: deviceKey, link: link)
-        } catch is CancellationError {
-            return .cancelled
-        } catch {
-            return .unreachable(String(describing: error))
+        let visit = await PeerVisit.run(to: peer, deviceKey: deviceKey, link: link) { connection in
+            await ask(connection.transport, endpoint: connection.endpoint)
         }
-        var outcome = await ask(connection.transport, endpoint: connection.endpoint)
-        // A command cut short by cancellation can come back as anything — an
-        // empty read looks like "no hc". Only an uncancelled answer counts.
-        if Task.isCancelled { outcome = .cancelled }
-        // On every path. A failed command does not close the channel and
-        // neither does cancellation, so returning without this leaves an SSH
-        // session open on the host.
-        await connection.transport.disconnect()
-        return outcome
+        switch visit {
+        case .reached(let outcome):
+            // A command cut short by cancellation can come back as anything —
+            // an empty read looks like "no hc". Only an uncancelled answer
+            // counts.
+            return Task.isCancelled ? .cancelled : outcome
+        case .unreachable(let message):
+            return .unreachable(message)
+        case .cancelled:
+            return .cancelled
+        }
     }
 
     /// The two questions, over a shell that is already connected.
@@ -69,13 +66,28 @@ public enum HerdrCoreCheck {
     /// - Throws: `TransportError` when the connection goes part way, and
     ///   `CancellationError`. Neither is an answer about hc.
     public static func find(over shell: any ShellRunner) async throws -> HerdrCore {
-        var path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
-        if path == nil {
-            // `PATH` first, so an hc the user put somewhere else wins;
-            // Herdr.app's own location only when `PATH` has none.
-            path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.installedByHerdrApp))
+        // `PATH` first, so an hc the user put somewhere else wins.
+        let onPath = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
+        if let onPath, let version = try await version(of: onPath, over: shell) {
+            return .installed(path: onPath, version: version)
         }
-        guard let path else { return .missing }
+        // The standard locations when `PATH` has no hc, **or has one that is
+        // not herdr-core**: the installer leaves another `hc` alone and puts
+        // herdr-core beside it under its own name.
+        let candidates = HerdrCoreLookup.paths(inOutput: try await shell.run(shell: HerdrCoreLookup.standardLocations))
+        for path in candidates where path != onPath {
+            if let version = try await version(of: path, over: shell) {
+                return .installed(path: path, version: version)
+            }
+        }
+        return .missing
+    }
+
+    /// What `path --version` says, if it answers as herdr-core.
+    ///
+    /// - Throws: `TransportError` and `CancellationError` only. Any other
+    ///   failure is the binary not running as herdr-core, which is an answer.
+    private static func version(of path: String, over shell: any ShellRunner) async throws -> String? {
         let printed: String
         do {
             printed = try await shell.run(shell: HerdrCoreLookup.version(at: path))
@@ -86,9 +98,8 @@ public enum HerdrCoreCheck {
             // would have been stored and shown as "Install herdr-core".
             throw CancellationError()
         } catch {
-            return .missing
+            return nil
         }
-        guard let version = HerdrCoreLookup.version(inOutput: printed) else { return .missing }
-        return .installed(path: path, version: version)
+        return HerdrCoreLookup.version(inOutput: printed)
     }
 }

@@ -5,20 +5,6 @@ import Testing
 @Suite("The herdr-core migration check")
 struct HerdrCoreCheckTests {
 
-    /// Answers each command from a table, in the order asked, and records
-    /// what was asked.
-    private final class ScriptedShell: ShellRunner, @unchecked Sendable {
-        var replies: [Result<String, any Error>]
-        private(set) var asked: [String] = []
-
-        init(_ replies: [Result<String, any Error>]) { self.replies = replies }
-
-        func run(shell command: String) async throws -> String {
-            asked.append(command)
-            return try replies.removeFirst().get()
-        }
-    }
-
     private let endpoint = Endpoint(host: "mac.local")
 
     // MARK: - Reading the answers
@@ -76,7 +62,7 @@ struct HerdrCoreCheckTests {
     func missing() async {
         let shell = ScriptedShell([.success(""), .success("")])
         #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .answered(.missing, endpoint: endpoint))
-        #expect(shell.asked == [HerdrCoreLookup.locate, HerdrCoreLookup.installedByHerdrApp])
+        #expect(shell.asked == [HerdrCoreLookup.locate, HerdrCoreLookup.standardLocations])
     }
 
     /// The Mac this was built on: hc 0.1.20 in `~/.local/bin`, which only
@@ -96,7 +82,7 @@ struct HerdrCoreCheckTests {
     func pathWins() async {
         let shell = ScriptedShell([.success("/opt/homebrew/bin/hc\n"), .success("hc 0.1.20\n")])
         _ = await HerdrCoreCheck.ask(shell, endpoint: endpoint)
-        #expect(!shell.asked.contains(HerdrCoreLookup.installedByHerdrApp))
+        #expect(!shell.asked.contains(HerdrCoreLookup.standardLocations))
     }
 
     /// An `hc` that exits non-zero is on the host but is not herdr-core that
@@ -104,8 +90,48 @@ struct HerdrCoreCheckTests {
     @Test("an hc whose --version fails counts as missing")
     func brokenHc() async {
         let failed = ShellError(command: "hc --version", exitCode: 127, stderr: "not found")
-        let shell = ScriptedShell([.success("/usr/local/bin/hc\n"), .failure(failed)])
+        let shell = ScriptedShell([.success("/usr/local/bin/hc\n"), .failure(failed), .success("")])
         #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .answered(.missing, endpoint: endpoint))
+    }
+
+    /// The installer's own case: another `hc` was already on the host (a
+    /// window manager's), so it wrote only `~/.local/bin/herdr-core`.
+    @Test("an hc on PATH that is not herdr-core does not hide herdr-core under its own name")
+    func herdrCoreBesideAnotherHc() async {
+        let shell = ScriptedShell([
+            .success("/usr/bin/hc\n"),
+            .success("usage: hc [-h] FILE\n"),
+            .success("/home/pi/.local/bin/herdr-core\n"),
+            .success("hc 0.1.20\n"),
+        ])
+        #expect(
+            await HerdrCoreCheck.ask(shell, endpoint: endpoint)
+                == .answered(.installed(path: "/home/pi/.local/bin/herdr-core", version: "0.1.20"), endpoint: endpoint)
+        )
+        #expect(shell.asked == [
+            HerdrCoreLookup.locate, "'/usr/bin/hc' --version",
+            HerdrCoreLookup.standardLocations, "'/home/pi/.local/bin/herdr-core' --version",
+        ])
+    }
+
+    @Test("the standard locations are tried in order, and the first herdr-core wins")
+    func standardLocationsInOrder() async {
+        let shell = ScriptedShell([
+            .success(""),
+            .success("/home/pi/.local/bin/hc\n/home/pi/.local/bin/herdr-core\n"),
+            .failure(ShellError(command: "hc --version", exitCode: 126, stderr: "")),
+            .success("hc 0.1.20\n"),
+        ])
+        #expect(
+            await HerdrCoreCheck.ask(shell, endpoint: endpoint)
+                == .answered(.installed(path: "/home/pi/.local/bin/herdr-core", version: "0.1.20"), endpoint: endpoint)
+        )
+    }
+
+    @Test("the standard locations' output reads as paths, banners skipped")
+    func standardLocationsOutput() {
+        #expect(HerdrCoreLookup.paths(inOutput: "Welcome\n/a/hc\n/a/herdr-core\n") == ["/a/hc", "/a/herdr-core"])
+        #expect(HerdrCoreLookup.paths(inOutput: "") == [])
     }
 
     /// Caught as "missing" once: a host list cancelled mid-check stored

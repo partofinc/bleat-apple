@@ -159,10 +159,42 @@ framed straight after `hello`.
   Bleat sends SwiftTerm's identity and the phone's grid.
 - `hc run --bg --json` returns `address` (like `t4p`), not `id` (live).
 
+## Installing (source: `install.sh`, read 12 Nov 2026; live in a fresh Debian container)
+
+- `curl -fsSL https://releases.herdr.dev/core/install.sh | sh`. Needs `curl`
+  and `tar`; asks nothing, needs no tty or sudo. Linux and macOS, x86_64 and
+  aarch64; anything else exits 1 with `hc: no build for …` on stderr. Every
+  failure is one `hc: …` line on stderr and exit 1.
+- Writes `~/.local/bin/herdr-core` (on a Mac, as a non-root user, the signed
+  `Herdr Core.app` it links into). Adds `~/.local/bin/hc -> herdr-core` **only
+  if no `hc` exists** on the installer's `PATH` or in `~/.local/bin` — "some
+  window managers ship one". So `herdr-core` is the one name that is always
+  there.
+- **A fresh install does not start a core.** The first `hc connect` does:
+  measured as a non-root user in `debian:bookworm-slim`, `hello` and
+  `terminal.list` answered straight after install (hc 0.1.20).
+- Run again over an existing install, it updates in place (`hc update
+  --from`) and running terminals keep running. Exit 0 both times.
+- **Piped, a failed download is an empty script that exits 0.** Bleat runs
+  the same script fetched to a temporary file first, so curl's failure is the
+  command's failure.
+- **The core and logout (Linux).** A core started from a login with no
+  systemd user manager says `hc: no systemd user manager here: the core ends
+  with whatever started it` (the container, live). With one, hc runs the core
+  as `systemd-run` user units (`hc-serve-…`, live on adam) and tries
+  `loginctl enable-linger --no-ask-password` itself; when that is refused it
+  says `the core stops when your last login ends; sudo loginctl
+  enable-linger …` (strings in the binary — not yet seen live). adam and the
+  other Pis already linger. Whether a fresh Pi's SSH login may turn linger on
+  without a password is not yet measured.
+
 ## Not yet known
 
 - Whether `<session>/<session>.sock` is the general socket path pattern: only
   `~/.local/state/herdr-core/default/default.sock` has been observed.
+- Whether a fresh Raspberry Pi OS user, logged in over SSH only, gets linger
+  from hc without a password (polkit's `set-self-linger`), or the core dies
+  when the phone disconnects. Blocks Phase B's gate on a fresh Pi.
 - Whether a scratch `--session` gets its own core. `hc server` takes no
   session option; sessions are chosen only by `--session`/`HC_SESSION` on the
   client. Check `paths.rs` and `server.rs`.

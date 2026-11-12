@@ -9,10 +9,23 @@ import SwiftUI
 struct HerdrCoreGateView: View {
     @Environment(AppContext.self) private var context
     let peer: PairedPeer
+    /// The confirmation before the installer runs, which shows what it is.
+    @State private var confirmingInstall = false
 
     var body: some View {
         content
             .navigationTitle(peer.name)
+            .alert("Install herdr-core on \(peer.name)?", isPresented: $confirmingInstall) {
+                Button("Install") {
+                    // A task of its own, not the view's: leaving the screen
+                    // must not cancel an installer half way through on the
+                    // host. The answer lands in `herdrCore` either way.
+                    Task { await context.herdrCore.install(peer) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Bleat will run herdr-core's official installer over SSH, as \(peer.username):\n\n\(HerdrCoreInstall.displayCommand)\n\nIt installs into ~/.local/bin and needs no password.")
+            }
     }
 
 
@@ -46,9 +59,19 @@ struct HerdrCoreGateView: View {
             ContentUnavailableView {
                 Label("Install herdr-core", systemImage: "shippingbox")
             } description: {
-                Text("Bleat now talks to herdr-core (`hc`), not the herdr TUI. Install it on \(peer.name), then check again.")
+                Text("Bleat now talks to herdr-core (`hc`), not the herdr TUI. Bleat can install it on \(peer.name) for you, or install it yourself and check again.")
             } actions: {
-                checkAgain
+                installActions
+            }
+        case .installing:
+            ProgressView("Installing herdr-core on \(peer.name)…")
+        case .installFailed(let message):
+            ContentUnavailableView {
+                Label("Install failed", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("herdr-core could not be installed on \(peer.name): \(message)")
+            } actions: {
+                installActions
             }
         case .unreachable(let message):
             ContentUnavailableView {
@@ -80,6 +103,20 @@ struct HerdrCoreGateView: View {
             } actions: {
                 checkAgain
             }
+        }
+    }
+
+    /// Install, and Check Again for someone who installed it themselves. Only
+    /// where this device can dial: the watch cannot.
+    @ViewBuilder
+    private var installActions: some View {
+        if context.herdrCore.canRetry {
+            Button("Install herdr-core") { confirmingInstall = true }
+                .buttonStyle(.borderedProminent)
+            Button("Check Again") {
+                Task { await context.herdrCore.check(peer) }
+            }
+            .buttonStyle(.bordered)
         }
     }
 

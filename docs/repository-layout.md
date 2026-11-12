@@ -103,15 +103,17 @@ not because anything needs macOS.
 **Build it on the Mac as one static binary; install nothing on the host.**
 
 ```sh
-swiftly use 6.4.0      # the swift.org toolchain — Xcode's cannot use a Swift SDK
-swift sdk install https://download.swift.org/swift-6.4.0-release/static-sdk/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
-    --checksum 47d2fd89eebfdf9eb4d536b6710414297f755c17926cdebc4742c08982b40a9e
+swiftly use 6.4.1      # the swift.org toolchain — Xcode's cannot use a Swift SDK
+swift sdk install https://download.swift.org/swift-6.4.1-release/static-sdk/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
+    --checksum cef5592d7430ed3c5ae1ddda479849c6f5252bd94a5723db1559f984caf38a7c
 Scripts/build-linux.sh <scratch>            # aarch64; prints the binary's path
 Scripts/build-linux.sh <scratch> x86_64     # the same for x86_64
 ```
 
-The SDK version must match the compiler exactly, and its URL spells the version
-`6.4.0` — the `6.4` form 404s, though the compiler calls itself `6.4`. The
+The SDK version must match the compiler exactly, and its URL spells the full
+version (`6.4.0` once; the `6.4` form 404s, though 6.4.0's compiler called
+itself `6.4`). Moved from 6.4.0 to 6.4.1 on 12 Nov 2026, the toolchain swiftly
+had on this Mac; its aarch64 build ran `--help` and `inspect` on mika, the CM4. The
 result is statically linked, stripped, 62 MB (mostly Foundation's ICU data),
 and runs on any aarch64 Linux from ARMv8.0 up. **x86_64 uses the installed SDK
 unpatched** (added 15 Oct 2026): mimalloc 2.2.4's CMakeLists adds an

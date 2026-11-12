@@ -49,8 +49,14 @@ bleat pair [--endpoint HOST[:PORT]]...   # add endpoints detection cannot find
 ```
 
 Checks that herdr-core (`hc`) is installed — the login shell's `PATH`, then
-`~/.local/bin`, and `hc --version` must answer as herdr-core; since Bleat 2
-(12 Nov 2026) herdr itself is not asked for — enumerates endpoints, mints the
+`~/.local/bin/hc` and `~/.local/bin/herdr-core`, and `--version` must answer
+as herdr-core; since Bleat 2 (12 Nov 2026) herdr itself is not asked for.
+**Without it, `bleat pair` offers to install it**: it prints herdr-core's
+one-liner and asks `Install herdr-core? [y/N]`, only when stdin is a
+terminal — piped, it prints the command and stops. A yes runs the same
+command the app runs (`HerdrCoreInstall.command`) with the installer's
+output on this terminal, then looks for hc again rather than trusting the
+exit status. Then it enumerates endpoints, mints the
 single-use enrollment key, renders the QR in the terminal, and waits for the
 phone to swap in its own key. See [`pairing.md`](pairing.md) for the rules
 that govern it — they are settled, not per-PR decisions.

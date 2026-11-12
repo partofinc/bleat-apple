@@ -18,7 +18,7 @@
 # Needs: swiftly with the toolchain below, that SDK installed, cmake and ninja.
 set -euo pipefail
 
-swift_version=6.4.0
+swift_version=6.4.1
 bundle=swift-${swift_version}-RELEASE_static-linux-0.1.0.artifactbundle
 # The version the SDK's own build script pins (swiftlang/swift-docker,
 # swift-ci/sdks/static-linux/scripts/fetch-source.sh); keep them in step.
@@ -41,7 +41,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 bin=$HOME/.swiftly/bin
 installed=$HOME/Library/org.swift.swiftpm/swift-sdks/$bundle
 
-# The compiler calls itself `swift-6.4-RELEASE`; the SDK's URL needs `6.4.0`.
+# A .0 compiler may call itself `swift-6.4-RELEASE`; the SDK URL always has all three parts.
 if ! "$bin/swift" --version 2>&1 | grep -qE "\(swift-(${swift_version}|${swift_version%.0})-RELEASE\)"; then
     echo "error: needs the swift.org $swift_version toolchain: swiftly use $swift_version" >&2
     exit 1

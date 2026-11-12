@@ -59,7 +59,7 @@ extension PairingError: CustomStringConvertible {
         case .hostKeyMismatch(let expected, let actual):
             "the host key does not match the pairing code (expected \(expected), got \(actual))"
         case .herdrCoreNotFound:
-            "herdr-core (hc) is not installed on that host — install Herdr there, then pair again"
+            "herdr-core (hc) is not installed on that host — install it there, then pair again"
         case .noSupportedHostKey:
             "that host has no ed25519 or ECDSA host key, so Bleat cannot verify it"
         case .enrollmentIncomplete(let reason):

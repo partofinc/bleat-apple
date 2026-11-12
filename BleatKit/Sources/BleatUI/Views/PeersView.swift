@@ -132,6 +132,12 @@ public struct PeersView: View {
             context.peers.reload()
             await context.herdrCore.checkAll()
         }
+        // A host paired while the app is open is checked straight away, not
+        // at the next foreground. Peers already answered or in flight are
+        // skipped, so this costs nothing when the list merely reloads.
+        .onChange(of: context.peers.peers.map(\.hostKey)) { _, _ in
+            Task { await context.herdrCore.checkAll() }
+        }
     }
 
     #if os(iOS)

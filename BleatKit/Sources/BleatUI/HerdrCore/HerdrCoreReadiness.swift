@@ -24,16 +24,20 @@ public final class HerdrCoreReadiness {
         case needsHerdrCore
         /// This run's check could not reach it. The message is why.
         case unreachable(String)
+        /// This run's check failed on this device, not on the network: the
+        /// device key could not be read, or the answer could not be saved.
+        case failed(String)
         /// A check is in flight and nothing earlier is known.
         case checking
-        /// Never checked, and no check is coming from this device — the watch,
-        /// before the phone has sent an answer.
+        /// No answer is known and no check is running: a host paired since the
+        /// last check, or the watch before the phone has sent an answer.
         case unknown
     }
 
-    /// Checks in flight, and this run's unreachable answers, by host key.
+    /// Checks in flight, and this run's answers that are not worth storing,
+    /// by host key.
     private var checking: Set<String> = []
-    private var unreachable: [String: String] = [:]
+    private var problems: [String: State] = [:]
 
     private let peers: PeerStore
     private let reachability: Reachability
@@ -54,10 +58,16 @@ public final class HerdrCoreReadiness {
             // a row does not flicker at every foreground.
             return peer.herdrCore == .missing ? .needsHerdrCore : .checking
         }
-        if let message = unreachable[peer.hostKey] { return .unreachable(message) }
+        if let problem = problems[peer.hostKey] { return problem }
         if peer.herdrCore == .missing { return .needsHerdrCore }
-        return canCheck ? .checking : .unknown
+        // Only `.checking` while a check really runs. Saying it for every
+        // unanswered peer showed a spinner that never ended, with no way to
+        // retry, for a host paired after the launch check.
+        return .unknown
     }
+
+    /// Whether this device can check at all. The watch cannot.
+    public var canRetry: Bool { canCheck }
 
     /// Asks every peer that is not ready yet, all at once. A host that does not
     /// answer costs its own timeout and holds up nobody else.
@@ -77,7 +87,9 @@ public final class HerdrCoreReadiness {
         do {
             deviceKey = try peers.deviceKey()
         } catch {
-            unreachable[peer.hostKey] = String(describing: error)
+            // The phone's own keychain, not the host: "Not reachable" would
+            // send the user to look at the network.
+            problems[peer.hostKey] = .failed("this device's key could not be read: \(error)")
             return
         }
         checking.insert(peer.hostKey)
@@ -86,11 +98,17 @@ public final class HerdrCoreReadiness {
         let outcome = await HerdrCoreCheck.run(peer: peer, deviceKey: deviceKey, link: reachability.link)
         switch outcome {
         case .answered(let herdrCore, let endpoint):
-            unreachable[peer.hostKey] = nil
-            peers.recordSuccess(endpoint: endpoint, for: peer)
-            peers.recordHerdrCore(herdrCore, for: peer)
+            do {
+                try peers.recordHerdrCore(herdrCore, reachedAt: endpoint, for: peer)
+                problems[peer.hostKey] = nil
+            } catch {
+                problems[peer.hostKey] = .failed("the answer could not be saved: \(error)")
+            }
         case .unreachable(let message):
-            unreachable[peer.hostKey] = message
+            problems[peer.hostKey] = .unreachable(message)
+        case .cancelled:
+            // Nothing was learned; whatever was shown before stands.
+            break
         }
     }
 }

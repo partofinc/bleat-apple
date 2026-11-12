@@ -157,8 +157,15 @@ check before any hc screen uses it.
   the gate screen's Check Again. Only peers not yet installed are asked, all at
   once. A ready peer is never asked again.
 - **What the user sees:** a ready host's row is unchanged. Otherwise the
-  detail line reads "Install herdr-core", "Not reachable" or "Checking for
-  herdr-core…". Opening a host shows `HerdrCoreGateView`: the reason and Check
+  detail line reads "Install herdr-core", "Not reachable", "Check failed" (a
+  problem on the phone: its key, or saving the answer) or, only while a check
+  is really running, "Checking for herdr-core…". A host paired while the app
+  is open is checked straight away.
+- **Cancelled is not an answer.** A check cancelled part way (the list's task
+  ending as a phone's split view collapses) records nothing. It was once read
+  as "missing" and stored, telling the user to install hc they had.
+- **The version line may say more.** `hc <digit…>` is enough; words after it
+  are ignored, so a later hc's longer `--version` does not read as missing. Opening a host shows `HerdrCoreGateView`: the reason and Check
   Again, or, for a ready host, a placeholder until the hc terminal screens
   land. The 1.x session screens stay in the code, unreachable, until those
   screens replace them.

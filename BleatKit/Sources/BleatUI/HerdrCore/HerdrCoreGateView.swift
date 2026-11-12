@@ -40,18 +40,28 @@ struct HerdrCoreGateView: View {
             } actions: {
                 checkAgain
             }
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Check failed", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("Bleat could not finish checking \(peer.name) for herdr-core: \(message)")
+            } actions: {
+                checkAgain
+            }
         case .checking:
             ProgressView("Checking for herdr-core…")
         case .unknown:
-            ContentUnavailableView(
-                "Not checked yet",
-                systemImage: "questionmark.circle",
-                description: Text(
-                    context.isRelayed
-                        ? "Open Bleat on your iPhone to check \(peer.name) for herdr-core."
-                        : "\(peer.name) has not been checked for herdr-core yet."
+            ContentUnavailableView {
+                Label("Not checked yet", systemImage: "questionmark.circle")
+            } description: {
+                Text(
+                    context.herdrCore.canRetry
+                        ? "\(peer.name) has not been checked for herdr-core yet."
+                        : "Open Bleat on your iPhone to check \(peer.name) for herdr-core."
                 )
-            )
+            } actions: {
+                checkAgain
+            }
         }
     }
 
@@ -59,7 +69,7 @@ struct HerdrCoreGateView: View {
     /// whenever it comes to the foreground.
     @ViewBuilder
     private var checkAgain: some View {
-        if !context.isRelayed {
+        if context.herdrCore.canRetry {
             Button("Check Again") {
                 Task { await context.herdrCore.check(peer) }
             }

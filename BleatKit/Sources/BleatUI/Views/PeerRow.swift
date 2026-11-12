@@ -38,6 +38,7 @@ struct PeerRow: View {
         case .ready, .unknown: nil
         case .needsHerdrCore: "Install herdr-core"
         case .unreachable: "Not reachable"
+        case .failed: "Check failed"
         case .checking: "Checking for herdr-core…"
         }
     }

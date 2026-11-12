@@ -119,18 +119,27 @@ public struct PeerRegistry: Sendable {
         try write(peers)
     }
 
-    /// Notes what the host said about herdr-core.
+    /// Notes what the host said about herdr-core, and the address it said it
+    /// on.
     ///
-    /// A targeted mutation for the reason `recordHerdrPath` is one. Writes only
-    /// when the answer changed, since every launch asks again.
+    /// A targeted mutation for the reason `recordHerdrPath` is one. One write
+    /// for both, and only when either changed: every launch asks again, and
+    /// each write reloads every host list and re-mirrors the watch.
     ///
     /// - Returns: whether the record changed.
     @discardableResult
-    public func recordHerdrCore(_ herdrCore: HerdrCore, forHostKey hostKey: String) throws -> Bool {
+    public func recordHerdrCore(
+        _ herdrCore: HerdrCore,
+        reachedAt endpoint: Endpoint? = nil,
+        forHostKey hostKey: String
+    ) throws -> Bool {
         var peers = try all()
         guard let index = peers.firstIndex(where: { $0.hostKey == hostKey }) else { return false }
-        guard peers[index].herdrCore != herdrCore else { return false }
-        peers[index].herdrCore = herdrCore
+        var peer = peers[index]
+        peer.herdrCore = herdrCore
+        if let endpoint { peer.lastGoodEndpoint = endpoint }
+        guard peer != peers[index] else { return false }
+        peers[index] = peer
         try write(peers)
         return true
     }

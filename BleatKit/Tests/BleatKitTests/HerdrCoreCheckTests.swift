@@ -47,6 +47,14 @@ struct HerdrCoreCheckTests {
         #expect(HerdrCoreLookup.version(inOutput: "Welcome back!\nhc 0.1.18\n") == "0.1.18")
     }
 
+    /// Read as missing, a later hc that says more would be stored and every
+    /// user told to install what they already have.
+    @Test("words after the version are ignored")
+    func wordsAfterVersion() {
+        #expect(HerdrCoreLookup.version(inOutput: "hc 0.2.0 (abc123)\n") == "0.2.0")
+        #expect(HerdrCoreLookup.version(inOutput: "hc 0.2.0-dev+sha built today\n") == "0.2.0-dev+sha")
+    }
+
     @Test("an hc that is not herdr-core has no version")
     func someOtherHc() {
         #expect(HerdrCoreLookup.version(inOutput: "usage: hc [-h] FILE\n") == nil)
@@ -78,6 +86,20 @@ struct HerdrCoreCheckTests {
         let failed = ShellError(command: "hc --version", exitCode: 127, stderr: "not found")
         let shell = ScriptedShell([.success("/usr/local/bin/hc\n"), .failure(failed)])
         #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .answered(.missing, endpoint: endpoint))
+    }
+
+    /// Caught as "missing" once: a host list cancelled mid-check stored
+    /// "Install herdr-core" for a host that had it.
+    @Test("a cancelled version command records nothing")
+    func cancelledVersion() async {
+        let shell = ScriptedShell([.success("/usr/local/bin/hc\n"), .failure(CancellationError())])
+        #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .cancelled)
+    }
+
+    @Test("a cancelled lookup records nothing")
+    func cancelledLookup() async {
+        let shell = ScriptedShell([.failure(CancellationError())])
+        #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .cancelled)
     }
 
     @Test("the connection going part way is unreachable, not missing")
@@ -138,5 +160,25 @@ struct HerdrCoreCheckTests {
         #expect(try registry.recordHerdrCore(.installed(path: "/x/hc", version: "0.1.20"), forHostKey: key))
         #expect(try registry.all().first?.herdrCore == .installed(path: "/x/hc", version: "0.1.20"))
         #expect(try !registry.recordHerdrCore(.missing, forHostKey: "ssh-ed25519 NOBODY"))
+    }
+
+    /// One write for both: each write reloads every host list and re-mirrors
+    /// the watch.
+    @Test("the answer and the address that gave it are recorded together")
+    func recordsEndpointWithAnswer() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bleat-peers-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registry = PeerRegistry(url: directory.appendingPathComponent("peers.json"))
+        let key = "ssh-ed25519 AAAAKEY"
+        let tailnet = Endpoint(host: "mac.tailf00d42.ts.net")
+        _ = try registry.save(PairedPeer(hostKey: key, name: "Mac", username: "robin", endpoints: [Endpoint(host: "mac.local"), tailnet]))
+
+        #expect(try registry.recordHerdrCore(.missing, reachedAt: tailnet, forHostKey: key))
+        let stored = try #require(try registry.all().first)
+        #expect(stored.herdrCore == .missing)
+        #expect(stored.lastGoodEndpoint == tailnet)
+        // The same answer from the same address is no change at all.
+        #expect(try !registry.recordHerdrCore(.missing, reachedAt: tailnet, forHostKey: key))
     }
 }

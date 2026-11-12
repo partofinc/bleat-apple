@@ -15,7 +15,7 @@ public enum HerdrCoreLookup {
 
     /// `<path> --version`, with the path quoted for a POSIX shell.
     public static func version(at path: String) -> String {
-        quote(path) + " --version"
+        SSHTransport.quote(path) + " --version"
     }
 
     /// The absolute path in `locate`'s output, ignoring a profile's banner.
@@ -23,26 +23,25 @@ public enum HerdrCoreLookup {
         HerdrLookup.path(inOutput: output)
     }
 
-    /// The version in `hc --version` output, which reads `hc 0.1.19` (live,
-    /// hc 0.1.19 on macOS).
+    /// The version in `hc --version` output, which reads `hc 0.1.20` (live,
+    /// macOS) and `hc 0.1.18` (live, Debian).
     ///
-    /// The last line of that shape, since a shell's startup files may print
-    /// before it. Nil when there is none: then the `hc` that was found is not
+    /// The last line that starts `hc <digit>`, since a shell's startup files
+    /// may print before it. Words after the version are allowed and ignored:
+    /// a later hc printing `hc 0.2.0 (abc123)` must not read as missing, which
+    /// would be stored and tell every user to install what they have.
+    ///
+    /// Nil when there is none: then the `hc` that was found is not
     /// herdr-core, or does not run, and either way the host needs herdr-core.
     public static func version(inOutput output: String) -> String? {
         var version: String?
         for line in output.split(whereSeparator: \.isNewline) {
             let words = line.split(whereSeparator: \.isWhitespace)
-            guard words.count == 2, words[0] == "hc", let first = words[1].first, first.isNumber else {
+            guard words.count >= 2, words[0] == "hc", let first = words[1].first, first.isNumber else {
                 continue
             }
             version = String(words[1])
         }
         return version
-    }
-
-    /// Single quotes for POSIX shells, the same rule as `SSHTransport.quote`.
-    private static func quote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

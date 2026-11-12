@@ -20,6 +20,9 @@ public enum HerdrCoreCheck {
         /// No answer: nothing was reachable, or the host key did not match.
         /// The message is the error's own description.
         case unreachable(String)
+        /// The check was cancelled before the host answered. Says nothing
+        /// about the host, so nothing may be recorded from it.
+        case cancelled
     }
 
     /// Connects, asks, disconnects. Never throws: every way it can end is an
@@ -29,10 +32,15 @@ public enum HerdrCoreCheck {
         let connection: PeerConnector.Connection
         do {
             connection = try await PeerConnection.open(to: peer, deviceKey: deviceKey, link: link)
+        } catch is CancellationError {
+            return .cancelled
         } catch {
             return .unreachable(String(describing: error))
         }
-        let outcome = await ask(connection.transport, endpoint: connection.endpoint)
+        var outcome = await ask(connection.transport, endpoint: connection.endpoint)
+        // A command cut short by cancellation can come back as anything — an
+        // empty read looks like "no hc". Only an uncancelled answer counts.
+        if Task.isCancelled { outcome = .cancelled }
         // On every path. A failed command does not close the channel and
         // neither does cancellation, so returning without this leaves an SSH
         // session open on the host.
@@ -57,6 +65,10 @@ public enum HerdrCoreCheck {
                 printed = try await shell.run(shell: HerdrCoreLookup.version(at: path))
             } catch let error as TransportError {
                 throw error
+            } catch is CancellationError {
+                // Not an answer about hc. Caught as "missing" once, which
+                // would have been stored and shown as "Install herdr-core".
+                return .cancelled
             } catch {
                 return .answered(.missing, endpoint: endpoint)
             }
@@ -64,6 +76,8 @@ public enum HerdrCoreCheck {
                 return .answered(.missing, endpoint: endpoint)
             }
             return .answered(.installed(path: path, version: version), endpoint: endpoint)
+        } catch is CancellationError {
+            return .cancelled
         } catch {
             return .unreachable(String(describing: error))
         }

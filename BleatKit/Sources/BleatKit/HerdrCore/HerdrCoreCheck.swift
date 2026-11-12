@@ -56,8 +56,13 @@ public enum HerdrCoreCheck {
     /// an answer: it is missing.
     static func ask(_ shell: any ShellRunner, endpoint: Endpoint) async -> Outcome {
         do {
-            let located = try await shell.run(shell: HerdrCoreLookup.locate)
-            guard let path = HerdrCoreLookup.path(inOutput: located) else {
+            var path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.locate))
+            if path == nil {
+                // `PATH` first, so an hc the user put somewhere else wins;
+                // Herdr.app's own location only when `PATH` has none.
+                path = HerdrCoreLookup.path(inOutput: try await shell.run(shell: HerdrCoreLookup.installedByHerdrApp))
+            }
+            guard let path else {
                 return .answered(.missing, endpoint: endpoint)
             }
             let printed: String

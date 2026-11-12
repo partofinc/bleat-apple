@@ -72,11 +72,31 @@ struct HerdrCoreCheckTests {
         #expect(shell.asked == [HerdrCoreLookup.locate, "'/home/pi/.local/bin/hc' --version"])
     }
 
-    @Test("a host without hc answers missing, and is asked nothing more")
+    @Test("a host without hc anywhere answers missing, and is asked nothing more")
     func missing() async {
-        let shell = ScriptedShell([.success("")])
+        let shell = ScriptedShell([.success(""), .success("")])
         #expect(await HerdrCoreCheck.ask(shell, endpoint: endpoint) == .answered(.missing, endpoint: endpoint))
-        #expect(shell.asked.count == 1)
+        #expect(shell.asked == [HerdrCoreLookup.locate, HerdrCoreLookup.installedByHerdrApp])
+    }
+
+    /// The Mac this was built on: hc 0.1.20 in `~/.local/bin`, which only
+    /// `.zshrc` puts on `PATH`, so a login shell does not find it.
+    @Test("hc outside the login shell's PATH is found where Herdr.app puts it")
+    func foundInLocalBin() async {
+        let shell = ScriptedShell([
+            .success(""), .success("/Users/robin/.local/bin/hc\n"), .success(try! Fixture.text("hc-version.txt")),
+        ])
+        #expect(
+            await HerdrCoreCheck.ask(shell, endpoint: endpoint)
+                == .answered(.installed(path: "/Users/robin/.local/bin/hc", version: "0.1.20"), endpoint: endpoint)
+        )
+    }
+
+    @Test("an hc on PATH is used without looking anywhere else")
+    func pathWins() async {
+        let shell = ScriptedShell([.success("/opt/homebrew/bin/hc\n"), .success("hc 0.1.20\n")])
+        _ = await HerdrCoreCheck.ask(shell, endpoint: endpoint)
+        #expect(!shell.asked.contains(HerdrCoreLookup.installedByHerdrApp))
     }
 
     /// An `hc` that exits non-zero is on the host but is not herdr-core that

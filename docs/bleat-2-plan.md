@@ -148,6 +148,13 @@ check before any hc screen uses it.
   `${SHELL:-/bin/sh} -lc 'command -v hc' || true` (the `HerdrLookup` pattern),
   and `'<path>' --version`, which must print `hc <version>`. The connection
   is closed before the check returns.
+- **The login shell misses `~/.local/bin` on a Mac.** Found on the first
+  phone run, 12 Nov 2026: this Mac read "Install herdr-core" with hc 0.1.20
+  installed, because `~/.local/bin` is added to `PATH` in `.zshrc`, which
+  `zsh -lc` does not read (`herdr` was still found, in `/opt/homebrew/bin`
+  from `.zprofile`). The Pis were fine: Debian's `.profile` adds it. So when
+  `PATH` has no `hc`, the check also tries `$HOME/.local/bin/hc`, where
+  Herdr.app installs it, and `--version` still decides.
 - **The answer is stored on the peer** as `PairedPeer.herdrCore`:
   `.installed(path, version)` or `.missing`. Nil on every 1.x record until
   checked; old records decode. It reaches the watch with the mirrored list.

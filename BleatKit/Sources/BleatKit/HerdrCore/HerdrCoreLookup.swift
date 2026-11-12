@@ -13,6 +13,24 @@ public enum HerdrCoreLookup {
     /// `HerdrLookup.command(locating:)` for why that is not a failed command.
     public static let locate = HerdrLookup.command(locating: "hc")
 
+    /// Where Herdr.app installs `hc`, asked only when the login shell's `PATH`
+    /// has no `hc`.
+    ///
+    /// **The login shell is not enough on a Mac.** `~/.local/bin` is commonly
+    /// put on `PATH` in `.zshrc` (it is on this project's Mac; who wrote the
+    /// line is unverified), which only an *interactive* shell reads. `zsh -lc` reads `.zprofile`
+    /// and stops there, so on such a Mac `command -v hc` answers empty over
+    /// SSH while `hc` works in every terminal. Measured 12 Nov 2026 on this
+    /// project's Mac, which read "Install herdr-core" with hc 0.1.20 installed.
+    /// Debian's `.profile` adds `~/.local/bin` for login shells, which is why
+    /// the Pis were found.
+    ///
+    /// Run by `/bin/sh` inside single quotes, so the login shell (zsh, bash,
+    /// fish) only has to pass a quoted string. Empty output when absent; the
+    /// trailing `|| true` keeps absence from being a failed command.
+    public static let installedByHerdrApp =
+        #"/bin/sh -c '[ -x "$HOME/.local/bin/hc" ] && echo "$HOME/.local/bin/hc" || true'"#
+
     /// `<path> --version`, with the path quoted for a POSIX shell.
     public static func version(at path: String) -> String {
         SSHTransport.quote(path) + " --version"

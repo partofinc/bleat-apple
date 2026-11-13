@@ -10,6 +10,8 @@ struct TerminalsView: View {
     /// Bumped to connect again: Try Again, or coming back to the foreground
     /// after the connection was dropped.
     @State private var attempt = 0
+    /// The new-terminal sheet, while it is up.
+    @State private var creating: NewTerminalModel?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppContext.self) private var context
 
@@ -37,6 +39,28 @@ struct TerminalsView: View {
             }
             .refreshable { await context.hostLoad.refresh(for: model.peer, force: true) }
             .task(id: attempt) { await model.run() }
+            #if os(iOS)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("New Terminal", systemImage: "plus") {
+                        creating = NewTerminalModel(
+                            hostName: model.peer.name, terminals: model.terminals, host: model
+                        )
+                    }
+                    // It asks on the list's own connection, which only a
+                    // live list has.
+                    .disabled(model.phase != .live)
+                }
+            }
+            .sheet(item: $creating) { form in
+                NewTerminalSheet(model: form) { address, title in
+                    creating = nil
+                    // Opened as a row would open it: it takes the terminal
+                    // over at the phone's size, which it already started at.
+                    context.navigation.push(.terminal(peer: model.peer.hostKey, address: address, title: title))
+                }
+            }
+            #endif
             // iOS takes the socket in the background, and `RootView` releases
             // the connection there too. Coming back, a list that failed for
             // that reason reconnects by itself.

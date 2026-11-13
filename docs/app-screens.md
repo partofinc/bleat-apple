@@ -295,6 +295,37 @@ and neither is fixed. Written down rather than discovered twice.
   one the keyboard path already uses: freeze the grid while the pane is held
   and thaw when it is released.
 
+## Starting a terminal from the phone (13 Nov 2026)
+
+The terminal list's **+** opens `NewTerminalSheet`. Decided by Ravil: the
+host's **shell**, a **command** line, or one of the host's **templates** with
+a first message (Template appears only where the host has one); a
+**directory**; an optional **name**. No `herdr.*` labels: where it shows in
+Herdr.app is left to Herdr.app until the spaces convention is settled (plan,
+question 15).
+
+- **Detached from the phone, always**: `HcRunRequest` sends `no_parent` and
+  `no_notify`, so the terminal keeps running when the phone goes and types
+  nothing into its SSH session. Then it is opened like any row, which takes
+  it over at the phone's size.
+- **It starts at the phone's grid** when a terminal has been opened this run
+  (`HcPaneModel.lastViewport`); otherwise at the core's headless default until
+  the attach on open resizes it.
+- **On the list's own connection.** `TerminalsModel` keeps its framed
+  `HcClient` while live and asks `templates.list` and `terminal.run` on it;
+  the + is disabled until the list is live. The new terminal reaches the list
+  through its `created` event, like one started on the Mac.
+- **Two shell questions first** (`HostDirectory`): `$HOME`, since the core
+  expands no `~` and defaults to its own `/`; and whether the directory
+  exists, since a missing one fails as "cannot start /bin/sh". A typed path is
+  resolved against home: empty is home, `~/x` and `x` are under it.
+- **Suggestions** come from the terminals already running
+  (`HcRunSuggestions`): their directories, and their programs minus shells
+  (`claude`, `npm`), most used first.
+- **Not on the watch**, nor in the macOS build: the sheet is iOS-only.
+- Measured facts behind all of this are in
+  [`hc-facts.md`](hc-facts.md#creating-terminals-source-schema).
+
 ## Bleat 2: a host opens to the herdr-core gate (12 Nov 2026)
 
 `RouteView`'s `.peer` route resolves to `HerdrCoreGateView` (1.x's

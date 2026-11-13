@@ -1,0 +1,9 @@
+{
+ "templates": [
+  {
+   "command": "claude",
+   "description": "Claude on a Pi (adam or mika) that runs Docker Compose services (Postgres, Valkey, \u2026) for a task and reports back. Start with --on adam|mika --cwd /home/pi/developer/nuviopro.",
+   "name": "pi-env"
+  }
+ ]
+}

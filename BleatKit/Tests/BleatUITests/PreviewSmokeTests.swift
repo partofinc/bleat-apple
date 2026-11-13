@@ -333,6 +333,17 @@ struct PreviewSmokeTests {
         #expect(context.connections.endpoint == nil)
     }
 
+    @Test("the new-terminal sheet renders, and its preview host dials nothing")
+    func newTerminalSheet() async {
+        let context = sampleContext()
+        render(context, NewTerminalSheet(
+            model: NewTerminalModel(hostName: "adam", terminals: HcTerminal.samples, host: PreviewTerminalHost()),
+            onStarted: { _, _ in }
+        ))
+        await settle(context)
+        #expect(context.connections.endpoint == nil)
+    }
+
     @Test("the terminal screens render in every phase")
     func terminalScreens() async {
         let context = sampleContext()

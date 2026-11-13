@@ -158,6 +158,28 @@ framed straight after `hello`.
   `COLORTERM`). `size` sets the initial grid before the program starts.
   Bleat sends SwiftTerm's identity and the phone's grid.
 - `hc run --bg --json` returns `address` (like `t4p`), not `id` (live).
+- **Measured through the API, 13 Nov 2026 (hc 0.1.20, scratch terminals;
+  replies in `Fixtures/hc-run.json`, `hc-run-spawn-failed.json`,
+  `hc-templates.json`):**
+  - `argv: []` starts the login shell (`/bin/zsh -l` on the Mac); `line` runs
+    under `sh -c`. `size` is honoured; `no_parent`/`no_notify` come back as
+    `parent: null`, `notify: false`.
+  - **Without `cwd` the terminal starts in the core's own directory, `/` on
+    the Mac**, and **`~` is not expanded**: `cwd: "~"` fails. So Bleat asks
+    the host's `$HOME` and sends an absolute path.
+  - **A `cwd` that does not exist fails as `cannot start "/bin/sh": No such
+    file or directory`**, kind `spawn_failed`, hint "check the program name
+    and cwd": the shell is blamed for the directory. Bleat checks the
+    directory first.
+  - **Every terminal says Ghostty**: `TERM=xterm-256color`,
+    `COLORTERM=truecolor`, `TERM_PROGRAM=ghostty`, `identity: "ghostty"`,
+    fixed at start; `env` with `TERM`/`COLORTERM` alone leaves
+    `TERM_PROGRAM=ghostty`. Bleat sends no identity (see `HcRunRequest`).
+  - A name already live is `name_taken`: "a live terminal is already named
+    …". `terminal.rm` of a live terminal is `live`, "kill it first".
+  - `templates.list` gives `name`, `description`, `command` (and `error` for a
+    file that cannot be used); templates are the user's own files under
+    `~/.config/herdr-core/templates`.
 
 ## Installing (source: `install.sh`, read 12 Nov 2026; live in a fresh Debian container)
 

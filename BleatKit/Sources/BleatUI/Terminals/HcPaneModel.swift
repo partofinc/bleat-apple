@@ -138,6 +138,7 @@ final class HcPaneModel: PaneDriving {
     func show(_ grid: TerminalGrid) {
         guard grid.isUsable else { return }
         viewport = grid
+        Self.lastViewport = grid
         guard attached != nil, phase == .live else {
             // Not attached yet: the attach in flight catches up with the
             // latest size once it lands.
@@ -146,6 +147,13 @@ final class HcPaneModel: PaneDriving {
         }
         Task { await enqueue([.resize(grid)]) }
     }
+
+    /// The grid a terminal screen last measured on this device, this run: the
+    /// size a terminal started from the phone is given before it starts, so a
+    /// program draws at the size it is about to be shown at. Nil until a
+    /// terminal has been opened; then the core's default holds until the
+    /// attach on open takes it over.
+    private(set) static var lastViewport: TerminalGrid?
 
     func setRowHeight(_ height: CGFloat) {
         guard height > 0, height != rowHeight else { return }

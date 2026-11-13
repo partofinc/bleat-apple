@@ -1,0 +1,32 @@
+{
+ "address": "t64",
+ "argv": [
+  "/bin/zsh",
+  "-l"
+ ],
+ "cols": 53,
+ "created_ms": 1763000000000,
+ "cwd": "/Users/robin",
+ "die_with_parent": false,
+ "exit_code": null,
+ "finished_ms": null,
+ "identity": "ghostty",
+ "keep": false,
+ "labels": {},
+ "name": "bleat-scratch",
+ "notify": false,
+ "parent": null,
+ "pid": 60114,
+ "reason": null,
+ "reported": false,
+ "rm": false,
+ "rows": 30,
+ "screen": "exact",
+ "signal": null,
+ "state": "live",
+ "status": null,
+ "status_ms": null,
+ "template": null,
+ "title": "",
+ "turn": 0
+}

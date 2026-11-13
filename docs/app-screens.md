@@ -300,9 +300,26 @@ and neither is fixed. Written down rather than discovered twice.
 The terminal list's **+** opens `NewTerminalSheet`. Decided by Ravil: the
 host's **shell**, a **command** line, or one of the host's **templates** with
 a first message (Template appears only where the host has one); a
-**directory**; an optional **name**. No `herdr.*` labels: where it shows in
-Herdr.app is left to Herdr.app until the spaces convention is settled (plan,
-question 15).
+**directory**; an optional **name**; and the **Herdr.app space** it shows in.
+
+- **The space** (`HerdrSpace`, from the host core's `herdr-app` document): by
+  default the space whose folder holds the directory most closely ("By
+  folder"), or one picked by hand, or None. The terminal gets `herdr.space`
+  and `herdr.seen=0`, and Herdr.app gives it a new tab there; never
+  `herdr.tab`, so it does not split beside someone's agent. Where the host
+  has no spaces (a Pi without Herdr.app on it, the demo host) the row is not
+  shown and the terminal starts hidden from Herdr.app, as before. Bleat
+  never writes the document. From review:
+  - A document that cannot be read (`needs_update`, the list reconnecting)
+    is said so in the section's footer, not taken for "no spaces"; it is
+    read again on Start.
+  - The spaces are read again on Start, and a picked space Herdr.app no
+    longer has fails the start: its id would make Herdr.app create a new,
+    unnamed space.
+  - "By folder" says nothing about the space until home is known, since
+    Start places it then. Added 13 Nov 2026, after the first terminals
+  started from the phone ran on the Mac but did not show in Herdr.app.
+  ([hc facts](hc-facts.md), "How Herdr.app takes in a terminal it did not start")
 
 - **Detached from the phone, always**: `HcRunRequest` sends `no_parent` and
   `no_notify`, so the terminal keeps running when the phone goes and types
@@ -323,8 +340,12 @@ question 15).
   the + is disabled until the list is live. The new terminal reaches the list
   through its `created` event, like one started on the Mac.
 - **Two shell questions first** (`HostDirectory`): `$HOME`, since the core
-  expands no `~` and defaults to its own `/`; and whether the directory
-  exists, since a missing one fails as "cannot start /bin/sh". A typed path is
+  expands no `~` and defaults to its own `/`; and the directory's physical
+  path, or `no`, since a missing one fails as "cannot start /bin/sh". The
+  physical path is what is sent and matched against space folders: **a
+  Mac's disk ignores case**, so a typed `~/developer` exists but matches no
+  `Developer` space. It comes from `/bin/pwd -P`; the shell's builtin `pwd
+  -P` echoes the typed case back (live, 13 Nov 2026). Symlinks resolve too. A typed path is
   resolved against home: empty is home, `~/x` and `x` are under it. Both
   answers are read off the **last line**, as the hc lookup is: a shell that
   prints on startup otherwise refused every directory.

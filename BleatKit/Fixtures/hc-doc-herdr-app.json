@@ -1,0 +1,185 @@
+{
+ "value": {
+  "spaces": [
+   {
+    "folder": "/Users/robin/Developer/acme/acme-health",
+    "id": "sp0c76818d68b5426ba2b46194c2d3a72a",
+    "name": "acme-health",
+    "tabs": [
+     {
+      "id": "tb7f147cd1035c15a8c7b7cc0b0f635e00",
+      "name": "Agent",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5s"
+         },
+         "id": "pec358ce504062075de87492693f38baa",
+         "type": "block"
+        }
+       ],
+       "id": "tb7f147cd1035c15a8c7b7cc0b0f635e00",
+       "type": "row"
+      }
+     }
+    ]
+   },
+   {
+    "folder": "/Users/robin/Developer/acme/acme-connect-apple",
+    "id": "spac710de58066057a6bb0651393909f6e",
+    "name": "",
+    "tabs": [
+     {
+      "id": "tbbb85a17a10e785e8aab6d19e2372d7df",
+      "name": "Agent",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5t"
+         },
+         "id": "p7adb71f0ce5eaf660a020522d8b05dd9",
+         "type": "block"
+        }
+       ],
+       "id": "tbbb85a17a10e785e8aab6d19e2372d7df",
+       "type": "row"
+      }
+     }
+    ]
+   },
+   {
+    "folder": "/Users/robin/Developer/acme/acme-connect-android",
+    "id": "spf2fa1be6dd4d5c632d0f8f26b79a8ffd",
+    "name": "",
+    "tabs": [
+     {
+      "id": "tb6a87818e7cca6009615cc99b8ccf34b3",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5v"
+         },
+         "id": "pb34daf73cb1dbe58bce7b3c8b4414233",
+         "type": "block"
+        }
+       ],
+       "id": "tb6a87818e7cca6009615cc99b8ccf34b3",
+       "type": "row"
+      }
+     }
+    ]
+   },
+   {
+    "folder": "/Users/robin/Developer/acme",
+    "id": "spa4f8eb28ba26951748e8fb13893ac0ef",
+    "name": "",
+    "tabs": [
+     {
+      "id": "tb40bd19ea677296f68ee26b4e01edcd17",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5w"
+         },
+         "id": "p4b321caf766c615e7f7f1278fca7a097",
+         "type": "block"
+        }
+       ],
+       "id": "tb40bd19ea677296f68ee26b4e01edcd17",
+       "type": "row"
+      }
+     },
+     {
+      "id": "tb7b6dbb58b8d59f2f5abc2b3c3e94d90e",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t68"
+         },
+         "id": "p671eadbf750eaca1ab4b724e94b5eee1",
+         "type": "block"
+        }
+       ],
+       "id": "tb7b6dbb58b8d59f2f5abc2b3c3e94d90e",
+       "type": "row"
+      }
+     }
+    ]
+   },
+   {
+    "folder": "/Users/robin/Developer/acme/acme-links",
+    "id": "spab3f03cc6119aca908ae653147fe16bf",
+    "name": "",
+    "tabs": [
+     {
+      "id": "tb1436e485354ae00c09909bbf8ab53a4b",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5x"
+         },
+         "id": "p18ebc5d938d6656adeec232375016940",
+         "type": "block"
+        }
+       ],
+       "id": "tb1436e485354ae00c09909bbf8ab53a4b",
+       "type": "row"
+      }
+     }
+    ]
+   },
+   {
+    "folder": "/Users/robin/Developer/acme/bleat",
+    "id": "sped864bd8e2ce0f20ba372cd308c90497",
+    "name": "",
+    "tabs": [
+     {
+      "id": "tbcb9e13511a177daeb54a26bc78d17211",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t5y"
+         },
+         "id": "pbc6288ca71f8833072842067375b219b",
+         "type": "block"
+        }
+       ],
+       "id": "tbcb9e13511a177daeb54a26bc78d17211",
+       "type": "row"
+      }
+     },
+     {
+      "id": "tb2aa06e6d4a1295256d81eaf286eb7477",
+      "name": "",
+      "root": {
+       "children": [
+        {
+         "content": {
+          "terminal": "t69"
+         },
+         "id": "pe7ad4f703a9ffb9ede11b73299a6a8e0",
+         "type": "block"
+        }
+       ],
+       "id": "tb2aa06e6d4a1295256d81eaf286eb7477",
+       "type": "row"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "version": 347
+}

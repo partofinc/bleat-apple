@@ -14,8 +14,11 @@ import Foundation
 /// outlives the phone and is viewed on the Mac too, so it gets the core's
 /// identity, the same as every terminal the phone already shows.
 ///
-/// No `herdr.*` labels either: where it shows in Herdr.app is Herdr.app's
-/// business until its spaces convention is settled (plan, question 15).
+/// **In Herdr.app only when a space is given.** Herdr.app shows only
+/// terminals labeled `herdr.space`; with one, it takes the terminal into that
+/// space in a new tab (`HerdrSpace`). Then it also gets `herdr.seen=0`, as
+/// herdr-app's `docs/labels.md` says a terminal a client starts does. Never
+/// `herdr.tab`: a new tab, not a split beside someone's running agent.
 public struct HcRunRequest: Sendable, Equatable {
     public enum Program: Sendable, Equatable {
         /// The host's login shell: `argv: []` starts `$SHELL -l` (live:
@@ -40,12 +43,15 @@ public struct HcRunRequest: Sendable, Equatable {
     /// it will be shown at. Without one the core's headless default (200×120)
     /// holds until the phone attaches and takes it over.
     public var size: TerminalGrid?
+    /// The Herdr.app space to show it in (`HerdrSpace.id`); none: hidden there.
+    public var space: String?
 
-    public init(program: Program, name: String? = nil, cwd: String? = nil, size: TerminalGrid? = nil) {
+    public init(program: Program, name: String? = nil, cwd: String? = nil, size: TerminalGrid? = nil, space: String? = nil) {
         self.program = program
         self.name = name
         self.cwd = cwd
         self.size = size
+        self.space = space
     }
 
     /// `terminal.run`'s params.
@@ -67,6 +73,9 @@ public struct HcRunRequest: Sendable, Equatable {
         if let cwd, !cwd.isEmpty { params["cwd"] = .string(cwd) }
         if let size, size.isUsable {
             params["size"] = .object(["cols": .number(Double(size.cols)), "rows": .number(Double(size.rows))])
+        }
+        if let space, !space.isEmpty {
+            params["labels"] = .object(["herdr.space": .string(space), "herdr.seen": .string("0")])
         }
         return params
     }
@@ -92,7 +101,7 @@ public struct HcRunRequest: Sendable, Equatable {
     /// to home. Empty is home.
     public static func resolve(directory typed: String, home: String) -> String {
         let typed = typed.trimmingCharacters(in: .whitespaces)
-        let home = home.hasSuffix("/") && home.count > 1 ? String(home.dropLast()) : home
+        let home = home.droppingTrailingSlash
         if typed.isEmpty || typed == "~" { return home }
         if typed.hasPrefix("~/") { return home + typed.dropFirst(1) }
         if typed.hasPrefix("/") { return typed }

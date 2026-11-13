@@ -84,6 +84,34 @@ When the host disagrees with this file, the host wins.
   hc types notes about it into the parent (seen live, in this Claude session).
   Bleat sends `no_parent` and `no_notify` when it creates terminals.
 
+## How Herdr.app takes in a terminal it did not start (source: herdr-app, read 13 Nov 2026; live)
+
+Read in herdr-app's `src/window.rs` (`reconcile`, `adopt`, `write_where`),
+`src/mirror_sync.rs` and `docs/labels.md`, then checked on the Mac.
+
+- **Herdr.app shows only terminals labeled `herdr.space=<id>`.** On every
+  listing it takes in a live, labeled terminal it is not showing: into that
+  space, **in a new tab** unless `herdr.tab=<id>` names an existing one (then
+  as a split there). It also sets `keep: true` on it and writes `where`.
+  Unlabeled terminals stay hidden, by design ("unlabeled workers").
+- **An unknown space id makes a new space** under that id, unnamed, with the
+  terminal's directory as its folder.
+- **Names live in a core document named `herdr-app`**: `doc.get` returns
+  `{value: {spaces: [{id, name, folder, tabs: [{id, name, root}]}]}, version}`
+  (`Fixtures/hc-doc-herdr-app.json`, captured from the Mac and anonymized).
+  An empty name is called Herdr's way: a space after its folder, a tab by its
+  position. **Each machine's core holds its own** (the app reads it with
+  `on`); adam's was empty on 13 Nov 2026. Only Herdr.app writes it.
+- `where` is written by Herdr.app alone, from those names, and follows
+  renames; the ids are what it groups by.
+- `docs/labels.md`: "a terminal a client starts gets `herdr.seen=0`". It also
+  names `herdr.pinned=1` (pinned on every client).
+- **Live, 13 Nov 2026:** labeling the phone's `t68` and `t69` with
+  `herdr.space` alone put each in a new tab of that space within seconds; a
+  scratch terminal started through the API with `labels: {herdr.space,
+  herdr.seen: "0"}` did the same. Removing one Herdr.app has kept: `hc keep
+  <t> --off`, then `kill` and `rm`.
+
 ## Attaching (live, hc 0.1.20, 12 Nov 2026, on a scratch shell)
 
 - `terminal.attach {terminal, cols, rows, history}` on channel 0 answers

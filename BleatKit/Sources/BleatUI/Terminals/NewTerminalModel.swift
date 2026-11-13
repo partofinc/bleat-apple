@@ -10,7 +10,7 @@ import Observation
 ///
 /// **Two questions go to the host before `terminal.run`.** Its home, because
 /// the core expands no `~` and without a directory starts the terminal in its
-/// own, `/` on a Mac; and whether the directory exists, because a missing one
+/// own, `/` on a Mac; and where the directory really is, because a missing one
 /// fails as `cannot start "/bin/sh"`, blaming the shell (both live, hc 0.1.20).
 ///
 /// **A template's start can take a while**: `terminal.run` returns once the
@@ -20,7 +20,9 @@ import Observation
 ///
 /// **Where it shows in Herdr.app** (`HerdrSpace`): by default the space whose
 /// folder holds its directory, in a new tab; or a space picked by hand; or
-/// none, and Herdr.app does not show it.
+/// none, and Herdr.app does not show it. The spaces are read when the sheet
+/// opens and again on Start, so a space closed on the Mac meanwhile is not
+/// sent: an unknown id would make Herdr.app create a new, unnamed space.
 @Observable
 final class NewTerminalModel: Identifiable {
     enum Kind: String, CaseIterable, Identifiable {
@@ -63,6 +65,9 @@ final class NewTerminalModel: Identifiable {
     private(set) var templates: [HcTemplate] = []
     /// Herdr.app's spaces on the host; none where Herdr.app never ran.
     private(set) var spaces: [HerdrSpace] = []
+    /// Why the spaces could not be read, so "none" is not mistaken for
+    /// "Herdr.app never ran here".
+    private(set) var spacesProblem: String?
     private(set) var home: String?
 
     let hostName: String
@@ -85,27 +90,26 @@ final class NewTerminalModel: Identifiable {
         return HcRunSuggestions.directories(from: terminals, excluding: home)
     }
 
-    /// The space it will be shown in, as the form stands. For `.matching`,
-    /// none until home is known, since the directory is resolved against it.
-    var space: HerdrSpace? {
-        guard let home else {
-            if case .space(let id) = placement { return spaces.first { $0.id == id } }
-            return nil
-        }
-        return space(for: HcRunRequest.resolve(directory: directory, home: home))
+    /// The typed directory as an absolute path; nil until home is known.
+    /// On Start it is replaced by the host's own spelling of it.
+    private var typedDirectory: String? {
+        home.map { HcRunRequest.resolve(directory: directory, home: $0) }
     }
 
-    /// The space whose folder holds the directory, whatever is picked: what
-    /// "By folder" would choose. None until home is known.
-    var spaceByFolder: HerdrSpace? {
-        guard let home else { return nil }
-        return HerdrSpace.matching(HcRunRequest.resolve(directory: directory, home: home), in: spaces)
-    }
+    /// The space it will be shown in, as the form stands.
+    var space: HerdrSpace? { space(placement, for: typedDirectory) }
 
-    /// The space whose folder holds `cwd`, or the one picked.
-    private func space(for cwd: String) -> HerdrSpace? {
+    /// What "By folder" would choose, whatever is picked.
+    var spaceByFolder: HerdrSpace? { space(.matching, for: typedDirectory) }
+
+    /// Whether "By folder" cannot be told yet: home is not known, so neither
+    /// is the directory. Start asks for home and places it then.
+    var spaceAwaitsHome: Bool { placement == .matching && home == nil }
+
+    /// The one rule: the space a placement puts a terminal in `cwd` in.
+    private func space(_ placement: Placement, for cwd: String?) -> HerdrSpace? {
         switch placement {
-        case .matching: HerdrSpace.matching(cwd, in: spaces)
+        case .matching: cwd.flatMap { HerdrSpace.matching($0, in: spaces) }
         case .hidden: nil
         case .space(let id): spaces.first { $0.id == id }
         }
@@ -144,13 +148,13 @@ final class NewTerminalModel: Identifiable {
 
     /// Home, templates and spaces, side by side. None failing stops the form:
     /// home is asked again on start, no templates means no Template choice,
-    /// and no spaces means it starts hidden from Herdr.app.
+    /// and spaces that cannot be read are said so and asked again on Start.
     func load() async {
         async let templates = host.templates()
-        async let spaces = host.spaces()
+        async let spaces = readSpaces()
         async let home = askHome()
         self.templates = await templates
-        self.spaces = await spaces
+        await spaces
         if templateName == nil { templateName = self.templates.first?.name }
         self.home = try? await home
     }
@@ -161,15 +165,21 @@ final class NewTerminalModel: Identifiable {
         phase = .starting
         do {
             let home = try await resolvedHome()
-            let cwd = HcRunRequest.resolve(directory: directory, home: home)
+            let typed = HcRunRequest.resolve(directory: directory, home: home)
             let shell = try await host.shell()
-            if !HostDirectory.exists(inOutput: try await shell.run(shell: HostDirectory.exists(cwd))) {
-                phase = .failed("\(HcRunSuggestions.abbreviate(cwd, home: home)) is not a directory on \(hostName).")
+            guard let cwd = HostDirectory.physical(inOutput: try await shell.run(shell: HostDirectory.physical(typed))) else {
+                phase = .failed("\(HcRunSuggestions.abbreviate(typed, home: home)) is not a directory on \(hostName).")
+                return nil
+            }
+            // Again, as they are now: the sheet may have been open a while.
+            await readSpaces()
+            if case .space(let id) = placement, !spaces.contains(where: { $0.id == id }) {
+                phase = .failed("That space is no longer in Herdr on \(hostName). Pick another.")
                 return nil
             }
             let name = name.trimmingCharacters(in: .whitespaces)
             let request = HcRunRequest(
-                program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space(for: cwd)?.id
+                program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space(placement, for: cwd)?.id
             )
             let address = try await host.start(request)
             // Cancelled while it started (the sheet's Cancel): the terminal
@@ -192,6 +202,18 @@ final class NewTerminalModel: Identifiable {
         case .shell: .shell
         case .command: .line(command.trimmingCharacters(in: .whitespacesAndNewlines))
         case .template: .template(name: templateName ?? "", task: task)
+        }
+    }
+
+    /// Reads the spaces, keeping what was read before if this read fails.
+    private func readSpaces() async {
+        do {
+            spaces = try await host.spaces()
+            spacesProblem = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            spacesProblem = Self.message(for: error)
         }
     }
 

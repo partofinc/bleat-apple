@@ -14,6 +14,9 @@ struct NewTerminalModelTests {
         var directories: Set<String> = ["/home/pi", "/home/pi/api"]
         var templateList: [HcTemplate] = []
         var spaceList: [HerdrSpace] = []
+        var spacesError: (any Error)?
+        /// Typed paths the host spells differently on disk, as a Mac does.
+        var spelling: [String: String] = [:]
         var startResult: Result<String, any Error> = .success("t7")
         /// Printed before every answer, as a chatty shell startup would.
         var banner = ""
@@ -22,7 +25,10 @@ struct NewTerminalModelTests {
 
         func templates() async -> [HcTemplate] { templateList }
 
-        func spaces() async -> [HerdrSpace] { spaceList }
+        func spaces() async throws -> [HerdrSpace] {
+            if let spacesError { throw spacesError }
+            return spaceList
+        }
 
         func shell() async throws -> any ShellRunner { Shell(host: self) }
 
@@ -34,8 +40,10 @@ struct NewTerminalModelTests {
         func answer(_ command: String) -> String {
             commands.append(command)
             if command == HostDirectory.home { return banner + home }
-            let checked = directories.contains { command == HostDirectory.exists($0) }
-            return banner + (checked ? "yes\n" : "no\n")
+            if let typed = (directories.union(spelling.keys)).first(where: { command == HostDirectory.physical($0) }) {
+                return banner + (spelling[typed] ?? typed) + "\n"
+            }
+            return banner + "no\n"
         }
 
         struct Shell: ShellRunner {
@@ -218,6 +226,64 @@ struct NewTerminalModelTests {
         model.placement = .hidden
         _ = await model.start(size: nil)
         #expect(host.started.map(\.space) == ["sp2", nil])
+    }
+
+    /// The review's case: before home is known the sheet could only say "not
+    /// shown", and Start then placed it after all.
+    @Test("by folder is undecided until home is known, and Start places it then")
+    func spaceBeforeHome() async throws {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api")]
+        let model = form(host)
+        model.directory = "api"
+        #expect(model.spaceAwaitsHome)
+        #expect(model.space == nil)
+        _ = await model.start(size: nil)
+        #expect(try #require(host.started.first).space == "sp1")
+        #expect(!model.spaceAwaitsHome)
+    }
+
+    @Test("spaces that cannot be read are said so, not taken for none")
+    func spacesUnreadable() async throws {
+        let host = ScriptedHost()
+        host.spacesError = HcError(code: -32000, message: "herdr-core needs an update", kind: "needs_update")
+        let model = form(host)
+        await model.load()
+        #expect(model.spacesProblem == "herdr-core needs an update")
+
+        // Read again on Start: once it reads, the terminal is placed.
+        host.spacesError = nil
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi")]
+        _ = await model.start(size: nil)
+        #expect(model.spacesProblem == nil)
+        #expect(try #require(host.started.first).space == "sp1")
+    }
+
+    @Test("a space closed on the Mac while the sheet was open is not sent")
+    func spaceGone() async {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/srv")]
+        let model = form(host)
+        await model.load()
+        model.placement = .space("sp1")
+        host.spaceList = []
+        #expect(await model.start(size: nil) == nil)
+        #expect(host.started.isEmpty)
+        #expect(model.phase == .failed("That space is no longer in Herdr on adam. Pick another."))
+    }
+
+    @Test("the directory is sent and matched as the host spells it")
+    func hostSpelling() async throws {
+        let host = ScriptedHost()
+        host.home = "/Users/robin"
+        host.spelling = ["/Users/robin/developer/acme": "/Users/robin/Developer/acme"]
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/Users/robin/Developer/acme")]
+        let model = form(host)
+        model.directory = "~/developer/acme"
+        _ = await model.start(size: nil)
+        let request = try #require(host.started.first)
+        #expect(request.cwd == "/Users/robin/Developer/acme")
+        #expect(request.space == "sp1")
     }
 
     @Test("a home that does not read as a path is contract drift, not a failed command")

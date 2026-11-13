@@ -39,7 +39,7 @@ struct NewTerminalSheet: View {
                 program
                 directory
                 name
-                if !model.spaces.isEmpty {
+                if !model.spaces.isEmpty || model.spacesProblem != nil {
                     herdrSpace
                 }
                 if case .failed(let message) = model.phase {
@@ -180,7 +180,12 @@ struct NewTerminalSheet: View {
         } header: {
             Text("Herdr")
         } footer: {
-            if let space = model.space {
+            if let problem = model.spacesProblem {
+                Text("Herdr's spaces could not be read: \(problem)")
+                    .foregroundStyle(.red)
+            } else if model.spaceAwaitsHome {
+                Text("Shown in Herdr on \(model.hostName) in the space whose folder holds the directory, if one does.")
+            } else if let space = model.space {
                 Text("Shown in Herdr on \(model.hostName), in a new tab of \(space.displayName(home: model.home)).")
             } else {
                 Text("Not shown in Herdr. It runs on \(model.hostName) and shows here.")
@@ -189,6 +194,7 @@ struct NewTerminalSheet: View {
     }
 
     private var matchingTitle: String {
+        if model.home == nil { return "By folder" }
         guard let space = model.spaceByFolder else { return "By folder (none)" }
         return "By folder (\(space.displayName(home: model.home)))"
     }

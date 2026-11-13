@@ -119,12 +119,12 @@ final class TerminalsModel {
         return HcTemplate.list(inReply: reply)
     }
 
-    /// Herdr.app's spaces on this host, or none: a core Herdr.app never wrote
-    /// to, or one whose document cannot be read, starts terminals hidden.
-    func spaces() async -> [HerdrSpace] {
-        guard let client else { return [] }
-        guard let reply = try? await client.call("doc.get", ["name": .string(HerdrSpace.documentName)]) else { return [] }
-        return HerdrSpace.list(inReply: reply)
+    /// Herdr.app's spaces on this host; none on a core Herdr.app never wrote
+    /// to. A core that cannot answer (`needs_update`, `unavailable`, the list
+    /// reconnecting) throws, so the form can say so.
+    func spaces() async throws -> [HerdrSpace] {
+        guard let client, phase == .live else { throw HcProtocolError.closed }
+        return HerdrSpace.list(inReply: try await client.call("doc.get", ["name": .string(HerdrSpace.documentName)]))
     }
 
     /// Starts a terminal and returns its address. The list shows it from the

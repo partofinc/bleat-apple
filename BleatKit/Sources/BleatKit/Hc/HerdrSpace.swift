@@ -31,8 +31,8 @@ public struct HerdrSpace: Sendable, Equatable, Identifiable {
     /// component (`~` for home).
     public func displayName(home: String?) -> String {
         if !name.isEmpty { return name }
-        let folder = folder.count > 1 && folder.hasSuffix("/") ? String(folder.dropLast()) : folder
-        if let home, folder == home || folder + "/" == home { return "~" }
+        let folder = folder.droppingTrailingSlash
+        if let home, folder == home.droppingTrailingSlash { return "~" }
         return folder.split(separator: "/").last.map(String.init) ?? folder
     }
 
@@ -49,6 +49,10 @@ public struct HerdrSpace: Sendable, Equatable, Identifiable {
 
     /// The space a terminal in `directory` belongs in: the one whose folder
     /// holds it most closely. None when no space's folder holds it.
+    ///
+    /// Compared as written, so `directory` should be the host's own spelling
+    /// (`HostDirectory.physical`): on a Mac a typed `~/developer` exists but
+    /// would match no `Developer` folder.
     public static func matching(_ directory: String, in spaces: [HerdrSpace]) -> HerdrSpace? {
         spaces
             .filter { !$0.folder.isEmpty && Self.folder($0.folder, holds: directory) }
@@ -56,7 +60,7 @@ public struct HerdrSpace: Sendable, Equatable, Identifiable {
     }
 
     private static func folder(_ folder: String, holds directory: String) -> Bool {
-        let folder = folder.count > 1 && folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        let folder = folder.droppingTrailingSlash
         return directory == folder || directory.hasPrefix(folder == "/" ? "/" : folder + "/")
     }
 }

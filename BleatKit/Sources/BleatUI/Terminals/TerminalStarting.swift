@@ -7,7 +7,9 @@ import BleatKit
 @MainActor
 protocol TerminalStarting: AnyObject, Sendable {
     func templates() async -> [HcTemplate]
-    func spaces() async -> [HerdrSpace]
+    /// Throws where the document cannot be read; none where Herdr.app never
+    /// wrote one.
+    func spaces() async throws -> [HerdrSpace]
     func shell() async throws -> any ShellRunner
     func start(_ request: HcRunRequest) async throws -> String
 }

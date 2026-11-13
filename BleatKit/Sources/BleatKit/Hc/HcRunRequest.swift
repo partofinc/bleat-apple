@@ -101,7 +101,7 @@ public struct HcRunRequest: Sendable, Equatable {
     /// to home. Empty is home.
     public static func resolve(directory typed: String, home: String) -> String {
         let typed = typed.trimmingCharacters(in: .whitespaces)
-        let home = home.hasSuffix("/") && home.count > 1 ? String(home.dropLast()) : home
+        let home = home.droppingTrailingSlash
         if typed.isEmpty || typed == "~" { return home }
         if typed.hasPrefix("~/") { return home + typed.dropFirst(1) }
         if typed.hasPrefix("/") { return typed }

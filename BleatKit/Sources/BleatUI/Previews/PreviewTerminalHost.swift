@@ -7,7 +7,7 @@ final class PreviewTerminalHost: TerminalStarting {
     func templates() async -> [HcTemplate] {
         [HcTemplate(name: "pi-env", description: "Claude on a Pi with Docker Compose services.", command: "claude")]
     }
-    func spaces() async -> [HerdrSpace] {
+    func spaces() async throws -> [HerdrSpace] {
         [
             HerdrSpace(id: "sp1", name: "", folder: "/home/pi/developer/api"),
             HerdrSpace(id: "sp2", name: "web", folder: "/home/pi/developer/web"),
@@ -21,7 +21,7 @@ final class PreviewTerminalHost: TerminalStarting {
 
     private struct PreviewShell: ShellRunner {
         func run(shell command: String) async throws -> String {
-            command == HostDirectory.home ? "/home/pi" : "yes\n"
+            command == HostDirectory.home ? "/home/pi" : "/home/pi\n"
         }
     }
 }

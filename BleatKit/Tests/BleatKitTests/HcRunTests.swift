@@ -144,6 +144,15 @@ struct HcRunTests {
         #expect(HerdrSpace.matching("/u", in: spaces) == nil)
     }
 
+    @Test("a trailing slash is the same folder, for matching and naming")
+    func trailingSlashes() {
+        let space = HerdrSpace(id: "a", name: "", folder: "/u/dev/")
+        #expect(HerdrSpace.matching("/u/dev/x", in: [space])?.id == "a")
+        #expect(space.displayName(home: "/u/dev/") == "~")
+        #expect(HcRunRequest.resolve(directory: "x", home: "/u/dev/") == "/u/dev/x")
+        #expect(HerdrSpace.matching("/anything", in: [HerdrSpace(id: "root", name: "", folder: "/")])?.id == "root")
+    }
+
     // MARK: - Templates
 
     @Test("templates, as captured, read by name")
@@ -212,8 +221,8 @@ struct HcRunTests {
     @Test("a banner before the answer is skipped")
     func banners() {
         #expect(HostDirectory.home(inOutput: "Welcome to adam\n/home/pi") == "/home/pi")
-        #expect(HostDirectory.exists(inOutput: "Welcome to adam\nyes\n"))
-        #expect(!HostDirectory.exists(inOutput: "yes, welcome\nno\n"))
-        #expect(!HostDirectory.exists(inOutput: ""))
+        #expect(HostDirectory.physical(inOutput: "Welcome to adam\n/home/pi/api\n") == "/home/pi/api")
+        #expect(HostDirectory.physical(inOutput: "/home/pi, welcome\nno\n") == nil)
+        #expect(HostDirectory.physical(inOutput: "") == nil)
     }
 }

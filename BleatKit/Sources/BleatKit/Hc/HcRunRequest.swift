@@ -75,7 +75,7 @@ public struct HcRunRequest: Sendable, Equatable {
             params["size"] = .object(["cols": .number(Double(size.cols)), "rows": .number(Double(size.rows))])
         }
         if let space, !space.isEmpty {
-            params["labels"] = .object(["herdr.space": .string(space), "herdr.seen": .string("0")])
+            params["labels"] = .object(["herdr.space": .string(space), HcSeen.label: .string("0")])
         }
         return params
     }

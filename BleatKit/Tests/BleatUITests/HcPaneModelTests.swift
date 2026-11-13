@@ -22,10 +22,13 @@ struct HcPaneModelTests {
         private(set) var sent: [HcFrame] = []
         private(set) var closed = false
         let paint = Data("first paint\r\n$ ".utf8)
-        /// The terminal's record in the subscription's snapshot.
-        var record = #"{"address":"t5n","state":"live","turn":3,"labels":{}}"#
+        /// The subscription's snapshot: `Fixtures/hc-turn-events.ndjson`'s,
+        /// a scratch Claude Code at turn 0 with no labels (captured live).
+        var snapshot: HcJSON = HcPaneModelTests.turnFixture.snapshot
         /// `herdr.seen` values the client asked `terminal.label` to set.
         private(set) var seenWrites: [String] = []
+        /// How many `terminal.label` calls to refuse before answering.
+        var labelFailures = 0
 
         init() { (output, feed) = AsyncThrowingStream<Data, any Error>.makeStream() }
 
@@ -48,12 +51,22 @@ struct HcPaneModelTests {
                     else { continue }
                     switch request["method"]?.string {
                     case "events.subscribe":
-                        let reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{"channel":2,"seq":1,"terminals":[\#(record)]}}"#
-                        replies.append(HcFrame(channel: 0, kind: .data, payload: Data(reply.utf8)).encoded())
+                        // The captured reply, on a channel of its own as a
+                        // framed core gives one.
+                        var result = snapshot
+                        if case .object(var fields) = result { fields["channel"] = .number(2); result = .object(fields) }
+                        let reply = HcJSON.object(["jsonrpc": .string("2.0"), "id": .number(Double(id)), "result": result])
+                        replies.append(HcFrame(channel: 0, kind: .data, payload: (try? JSONEncoder().encode(reply)) ?? Data()).encoded())
                         continue
                     case "terminal.label":
-                        if let value = request["params"]?["labels"]?["herdr.seen"]?.string { seenWrites.append(value) }
-                        let reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{}}"#
+                        let reply: String
+                        if labelFailures > 0 {
+                            labelFailures -= 1
+                            reply = #"{"jsonrpc":"2.0","id":\#(id),"error":{"code":-32000,"message":"unavailable","data":{"kind":"unavailable"}}}"#
+                        } else {
+                            if let value = request["params"]?["labels"]?["herdr.seen"]?.string { seenWrites.append(value) }
+                            reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{}}"#
+                        }
                         replies.append(HcFrame(channel: 0, kind: .data, payload: Data(reply.utf8)).encoded())
                         continue
                     case "terminal.attach":
@@ -74,10 +87,18 @@ struct HcPaneModelTests {
             feed.finish()
         }
 
-        /// An event on the subscription's channel, as hc sends one.
-        func event(_ type: String, seq: Int, data: String) {
-            let line = #"{"jsonrpc":"2.0","method":"event","params":{"type":"\#(type)","terminal":"t5n","seq":\#(seq),"data":\#(data)}}"#
-            feed.yield(HcFrame(channel: 2, kind: .data, payload: Data((line + "\n").utf8)).encoded())
+        /// Events on the subscription's channel, as hc sent them.
+        func send(events: [String]) {
+            for line in events {
+                feed.yield(HcFrame(channel: 2, kind: .data, payload: Data((line + "\n").utf8)).encoded())
+            }
+        }
+
+        /// Another client writes `herdr.seen`, in the shape of a captured
+        /// `labels` event (the whole map; `Fixtures/hc-events.ndjson`).
+        func markedSeen(_ turn: Int, seq: Int) {
+            let address = HcPaneModelTests.turnFixture.address
+            send(events: [#"{"jsonrpc":"2.0","method":"event","params":{"data":{"labels":{"herdr.seen":"\#(turn)"}},"seq":\#(seq),"terminal":"\#(address)","type":"labels"}}"#])
         }
 
         var seen: [String] { lock.withLock { seenWrites } }
@@ -100,15 +121,38 @@ struct HcPaneModelTests {
         var isClosed: Bool { lock.withLock { closed } }
     }
 
-    private func model(_ cores: [FakeCore]) -> (HcPaneModel, () -> Int) {
+    /// `Fixtures/hc-turn-events.ndjson`: a scratch Claude Code's subscription
+    /// reply, then the events of one prompt — status working, title, status
+    /// done, `turn` 1, status with its message (captured 13 Nov 2026).
+    struct TurnFixture: Sendable {
+        let snapshot: HcJSON
+        let events: [String]
+        let address: String
+        let lastSeq: Int
+    }
+
+    nonisolated static let turnFixture: TurnFixture = {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Fixtures/hc-turn-events.ndjson")
+        let lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        let snapshot = lines.first.flatMap { try? JSONDecoder().decode(HcJSON.self, from: Data($0.utf8))["result"] } ?? .null
+        let events = Array(lines.dropFirst())
+        let last = events.last.flatMap { try? JSONDecoder().decode(HcJSON.self, from: Data($0.utf8))["params"]?["seq"]?.int } ?? 0
+        let address: String = if case .array(let terminals)? = snapshot["terminals"] { terminals.first?["address"]?.string ?? "" } else { "" }
+        return TurnFixture(snapshot: snapshot, events: events, address: address, lastSeq: last)
+    }()
+
+    private func model(_ cores: [FakeCore], address: String = "t5n") -> (HcPaneModel, () -> Int) {
         var opened = 0
         let model = HcPaneModel(
-            address: "t5n",
+            address: address,
             open: {
                 defer { opened += 1 }
                 return cores[min(opened, cores.count - 1)]
             },
-            report: { _ in }
+            report: { _ in },
+            seenRetryDelay: .milliseconds(50)
         )
         return (model, { opened })
     }
@@ -163,52 +207,118 @@ struct HcPaneModelTests {
 
     // MARK: - Seen
 
-    @Test("looking at a terminal marks its turn seen, once per turn")
+    /// The screen on show, live, and following the fixture's terminal; any
+    /// seen write from the snapshot has finished.
+    private func looking(_ core: FakeCore) async -> HcPaneModel {
+        let (model, _) = model([core], address: Self.turnFixture.address)
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.record != nil }
+        await model.seenWrite?.value
+        return model
+    }
+
+    /// Waits until the model has read `seen` back off the record, then for
+    /// any write that set off.
+    private func settle(_ model: HcPaneModel, seen: Int? = nil, turn: Int? = nil) async {
+        await eventually {
+            (seen == nil || model.record?.seenTurn == seen) && (turn == nil || model.record?.turn == turn)
+        }
+        await model.seenWrite?.value
+    }
+
+    @Test("looking marks each turn seen once, from the captured events, and a later mark-unread stands")
     func marksSeen() async {
         let core = FakeCore()
-        let (model, _) = model([core])
-        model.show(TerminalGrid(cols: 53, rows: 30))
-        await eventually { core.seen == ["3"] }
-        #expect(core.seen == ["3"])
+        let model = await looking(core)
+        // Turn 0 with no label: written, so a terminal started elsewhere joins.
+        #expect(core.seen == ["0"])
 
-        // A turn ends while it is on show.
-        core.event("turn", seq: 2, data: #"{"turn":4}"#)
-        await eventually { core.seen == ["3", "4"] }
-        #expect(core.seen == ["3", "4"])
+        // A prompt runs and ends, as captured: status, title, status, turn 1.
+        core.send(events: Self.turnFixture.events)
+        await settle(model, turn: 1)
+        #expect(core.seen == ["0", "1"])
 
-        // Another client marks it unread: a screen nobody may be reading
-        // does not overrule that.
-        core.event("labels", seq: 3, data: #"{"labels":{"herdr.seen":"3"}}"#)
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(core.seen == ["3", "4"])
+        // Another client marks it unread: a screen left on does not overrule it.
+        core.markedSeen(0, seq: Self.turnFixture.lastSeq + 1)
+        await settle(model, seen: 0)
+        #expect(core.seen == ["0", "1"])
         await model.close()
     }
 
     @Test("a turn already seen is not written again")
     func alreadySeen() async {
         let core = FakeCore()
-        core.record = #"{"address":"t5n","state":"live","turn":3,"labels":{"herdr.seen":"3"}}"#
-        let (model, _) = model([core])
-        model.show(TerminalGrid(cols: 53, rows: 30))
-        await eventually { model.record != nil }
-        try? await Task.sleep(for: .milliseconds(200))
+        if case .object(var result) = core.snapshot, case .array(var terminals)? = result["terminals"],
+           case .object(var record)? = terminals.first {
+            record["labels"] = .object(["herdr.seen": .string("0")])
+            terminals[0] = .object(record)
+            result["terminals"] = .array(terminals)
+            core.snapshot = .object(result)
+        }
+        let model = await looking(core)
+        #expect(model.record?.seenTurn == 0)
         #expect(core.seen.isEmpty)
         await model.close()
     }
 
-    /// Behind the app switcher or the lock screen nobody is reading.
-    @Test("nothing is marked while the app is not in front, and coming back marks it")
-    func notInFront() async {
+    /// From review: Control Center or a Face ID prompt made every return a
+    /// new look, and the next update overruled the Mac's "mark unread".
+    @Test("covered for a moment is the same look; back from the background is a new one")
+    func presence() async {
         let core = FakeCore()
-        let (model, _) = model([core])
-        model.setInFront(false)
+        let model = await looking(core)
+        core.send(events: Self.turnFixture.events)
+        await settle(model, turn: 1)
+        core.markedSeen(0, seq: Self.turnFixture.lastSeq + 1)
+        await settle(model, seen: 0)
+
+        model.setPresence(.covered)
+        model.setPresence(.inFront)
+        await model.seenWrite?.value
+        #expect(core.seen == ["0", "1"], "the mark-unread stands")
+
+        model.setPresence(.background)
+        model.setPresence(.inFront)
+        await model.seenWrite?.value
+        #expect(core.seen == ["0", "1", "1"], "a new look reads it again")
+        await model.close()
+    }
+
+    @Test("nothing is marked while covered, and it is once in front")
+    func covered() async {
+        let core = FakeCore()
+        let (model, _) = model([core], address: Self.turnFixture.address)
+        model.setPresence(.covered)
         model.show(TerminalGrid(cols: 53, rows: 30))
         await eventually { model.record != nil }
-        try? await Task.sleep(for: .milliseconds(200))
+        await model.seenWrite?.value
         #expect(core.seen.isEmpty)
-        model.setInFront(true)
-        await eventually { core.seen == ["3"] }
-        #expect(core.seen == ["3"])
+        model.setPresence(.inFront)
+        await model.seenWrite?.value
+        #expect(core.seen == ["0"])
+        await model.close()
+    }
+
+    /// From review: a failed write waited for the next event, and an idle
+    /// `done` agent sends none.
+    @Test("a failed write is tried again without waiting for an event")
+    func retried() async {
+        let core = FakeCore()
+        core.labelFailures = 1
+        let model = await looking(core)
+        await eventually { core.seen == ["0"] }
+        #expect(core.seen == ["0"])
+        await model.close()
+    }
+
+    @Test("when the program ends, nothing is followed and no record is left")
+    func endedForgetsRecord() async {
+        let core = FakeCore()
+        let model = await looking(core)
+        #expect(model.record != nil)
+        core.endProgram()
+        await eventually { model.phase == .ended }
+        #expect(model.record == nil)
         await model.close()
     }
 

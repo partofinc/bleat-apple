@@ -300,11 +300,14 @@ for arch in aarch64 x86_64; do
     # documents it, and is checked to be the right kind of file.
     Scripts/build-linux.sh "$work/linux" "$arch"
     case $arch in
-        aarch64) binary=$work/linux/build/release/bleat; kind="ARM aarch64" ;;
-        x86_64)  binary=$work/linux/build-x86_64/release/bleat; kind="x86-64" ;;
+        aarch64) binary=$work/linux/build/release/bleat; elf="ARM aarch64" ;;
+        x86_64)  binary=$work/linux/build-x86_64/release/bleat; elf="x86-64" ;;
     esac
-    if ! file "$binary" | grep -q "ELF 64-bit LSB executable, $kind"; then
-        echo "error: $binary is not a $kind Linux executable" >&2
+    # Not `kind`, which is what this run publishes: reusing it here left the
+    # release step with no case to match on the first cli-2.0.0 run. And the
+    # output read whole, as for gh's help, not piped into `grep -q`.
+    if [[ $(file "$binary") != *"ELF 64-bit LSB executable, $elf"* ]]; then
+        echo "error: $binary is not a $elf Linux executable" >&2
         exit 1
     fi
     pack "$binary" "bleat-linux-$arch"
@@ -322,6 +325,7 @@ else
         draft) flags=(--draft --target "$head"); body=$notes ;;
         prerelease) flags=(--prerelease --latest=false); body=$prerelease_notes ;;
         full) flags=(--latest); body=$notes ;;
+        *) echo "error: nothing to publish as '$kind'" >&2; exit 1 ;;
     esac
     if [[ $kind != draft ]]; then
         if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then

@@ -67,15 +67,24 @@ final class HcPaneModel: PaneDriving {
     private var isActive = true
     /// Set first in `close()`: nothing may attach once the screen is gone.
     private var isClosing = false
-    /// Whether the app is in front (`scenePhase == .active`), set by the
-    /// screen. Behind the app switcher or the lock screen nobody is reading.
-    private var isInFront = true
+    /// Where the app is, as the screen reports it (`Presence`).
+    private var presence = Presence.inFront
     /// This terminal's record, followed on the attach's connection; nil until
-    /// the subscription's snapshot.
+    /// the subscription's snapshot, and again once the attach has ended.
     private(set) var record: HcTerminal?
-    /// This look's seen writes. A new attach is a new look.
+    /// This look's seen writes. A new attach is a new look, and so is coming
+    /// back from the background.
     private var seen = HcSeen()
+    /// Which look `seen` belongs to, so a write that fails after the look it
+    /// was sent for has given way cannot unmark the next one's.
+    private var look = 0
     private var turns: Task<Void, Never>?
+    /// The last seen write sent, kept so a test can wait for it.
+    private(set) var seenWrite: Task<Void, Never>?
+    /// A failed seen write tried again. Not left to the next event: an idle
+    /// `done` agent sends none.
+    private var seenRetry: Task<Void, Never>?
+    private let seenRetryDelay: Duration
 
     /// Read by `PaneGeometryTests` to check that the chrome around the terminal
     /// does not change its size between phases — the shape of bug that put an
@@ -128,11 +137,13 @@ final class HcPaneModel: PaneDriving {
     init(
         address: String,
         open: @escaping () async throws -> any DuplexStream,
-        report: @escaping (any Error) async -> Void
+        report: @escaping (any Error) async -> Void,
+        seenRetryDelay: Duration = .seconds(5)
     ) {
         self.address = address
         self.open = open
         self.report = report
+        self.seenRetryDelay = seenRetryDelay
     }
 
     // MARK: - The renderer
@@ -216,15 +227,32 @@ final class HcPaneModel: PaneDriving {
         }
     }
 
-    /// The app came to the front or left it. Back in front is a new look, so
-    /// a turn that ended meanwhile is marked seen now.
-    func setInFront(_ inFront: Bool) {
-        guard inFront != isInFront else { return }
-        isInFront = inFront
-        if inFront {
-            seen = HcSeen()
-            markSeen()
-        }
+    /// Where the app is, for whether someone is reading the screen.
+    enum Presence {
+        /// In front (`scenePhase == .active`).
+        case inFront
+        /// Covered for a moment (`.inactive`): Control Center, Notification
+        /// Center, a Face ID prompt, a call banner. Writes pause; the look
+        /// goes on, so a "mark unread" from the Mac meanwhile is kept.
+        case covered
+        /// In the background: the look is over, and coming back is a new one.
+        case background
+    }
+
+    func setPresence(_ presence: Presence) {
+        guard presence != self.presence else { return }
+        let wasAway = self.presence == .background
+        self.presence = presence
+        guard presence == .inFront else { return }
+        if wasAway { newLook() }
+        markSeen()
+    }
+
+    private func newLook() {
+        look += 1
+        seen = HcSeen()
+        seenRetry?.cancel()
+        seenRetry = nil
     }
 
     func setWantsKeyboard(_ wanted: Bool) {
@@ -309,9 +337,7 @@ final class HcPaneModel: PaneDriving {
     private func detach() {
         reader?.cancel()
         reader = nil
-        turns?.cancel()
-        turns = nil
-        record = nil
+        stopFollowing()
         pending.removeAll()
         outgoing.removeAll()
         if let attached {
@@ -343,7 +369,7 @@ final class HcPaneModel: PaneDriving {
                 attached = (connected, attachment.channel)
                 grid = size
                 phase = .live
-                seen = HcSeen()
+                newLook()
                 turns = Task { [weak self] in await self?.followTurns(on: connected) }
                 // Measured again while the attach was opening — a rotation.
                 if let latest = viewport, latest != size { await enqueue([.resize(latest)]) }
@@ -363,6 +389,7 @@ final class HcPaneModel: PaneDriving {
                 // `hc connect` behind it is closed rather than left open.
                 attached = nil
                 outgoing.removeAll()
+                stopFollowing()
                 await connected.close()
                 phase = .ended
                 wantsKeyboard = false
@@ -376,6 +403,7 @@ final class HcPaneModel: PaneDriving {
             }
             await client?.close()
             attached = nil
+            stopFollowing()
             phase = .failed(ErrorMessage.of(error))
             wantsKeyboard = false
             await report(error)
@@ -387,44 +415,52 @@ final class HcPaneModel: PaneDriving {
     /// This terminal's events, on the attach's own connection: its turn, and
     /// the seen label other clients write. Ends with the attach. A core that
     /// refuses the subscription costs only the marking, never the screen.
+    ///
+    /// **Its own subscription, not the list's**, filtered to this terminal.
+    /// The list is not always alive behind the screen — an iPad shows a
+    /// terminal beside the sidebar, and a route can be pushed from elsewhere
+    /// — and the screen is where "looking" is decided.
     private func followTurns(on client: HcClient) async {
         guard let subscription = try? await client.subscribe(["terminal": .string(address)]) else { return }
-        var set = HcTerminalSet()
-        set.reset(to: subscription.snapshot)
-        update(from: set)
         do {
-            for try await notification in subscription.notifications {
+            for try await update in subscription.updates {
                 guard !Task.isCancelled else { return }
-                switch notification {
-                case .event(let params):
-                    if set.apply(event: params) { update(from: set) }
-                case .missed(let snapshot):
-                    set.reset(to: snapshot)
-                    update(from: set)
-                case .heartbeat, .other:
-                    continue
-                }
+                record = update.terminals.terminals.first { $0.address == address }
+                markSeen()
             }
         } catch {}
     }
 
-    private func update(from set: HcTerminalSet) {
-        guard !Task.isCancelled else { return }
-        record = set.terminals.first { $0.address == address }
-        markSeen()
+    /// The attach ended: nothing more is followed, and the last record is not
+    /// left to read as live.
+    private func stopFollowing() {
+        turns?.cancel()
+        turns = nil
+        record = nil
+        seenRetry?.cancel()
+        seenRetry = nil
     }
 
     /// Writes the turn as seen if someone is looking: on show, attached, the
-    /// app in front.
+    /// app in front. A failed write is tried again after a pause, for the
+    /// same look only.
     private func markSeen() {
-        guard isActive, isInFront, phase == .live, let attached, let record,
+        guard isActive, presence == .inFront, phase == .live, let attached, let record,
               let turn = seen.turnToWrite(for: record) else { return }
         let address = address
-        Task { [weak self] in
+        let look = look
+        seenWrite = Task { [weak self] in
             do {
                 _ = try await attached.client.call("terminal.label", HcSeen.params(address: address, turn: turn))
             } catch {
-                self?.seen.failed(turn)
+                guard let self, self.look == look else { return }
+                self.seen.failed(turn)
+                self.seenRetry?.cancel()
+                self.seenRetry = Task { [weak self] in
+                    try? await Task.sleep(for: self?.seenRetryDelay ?? .seconds(5))
+                    guard !Task.isCancelled, let self, self.look == look else { return }
+                    self.markSeen()
+                }
             }
         }
     }

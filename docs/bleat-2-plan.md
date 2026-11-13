@@ -113,7 +113,7 @@ Re-verify before relying on any of it; the host wins over this file.
   | tab | tab (label `herdr.tab`, via the adapter) |
   | agent / pane (`w2:p1`) | terminal (`t4m`, `adam/t4m`) |
   | agent state | `status` (adds `error`, blocked reason, progress) |
-  | `done` cleared by `agent focus` | client-side "seen", probably `herdr.seen` vs `turn` (question 7) |
+  | `done` cleared by `agent focus` | `herdr.seen` vs `turn`, written while looked at (`HcSeen`, question 7) |
   | `agent list` polling | `events.subscribe` |
   | `agent prompt` | `terminal.send` |
   | key bar input | DATA on the attach channel, or `terminal.keys` |

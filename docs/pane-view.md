@@ -53,9 +53,16 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
   `terminal.label` when the screen is on show, attached and the app in
   front (`scenePhase == .active`): **only to raise it**, also when missing,
   and **once per turn per look**, so another client's "mark unread" is not
-  overruled by a screen left on. Coming back to the front, or attaching
-  again, is a new look. A core that refuses the subscription costs only the
-  marking. The list only reads the label (`HcTerminal.isUnseenDone`).
+  overruled by a screen left on. Attaching again, or coming back from the
+  **background**, is a new look; `.inactive` (Control Center, Notification
+  Center, a Face ID prompt) only pauses it — from review, where every such
+  return overruled the Mac's mark-unread. A failed write is tried again on a
+  timer for the same look, since an idle `done` agent sends no event to
+  retry on; a late failure from an earlier look cannot unmark the current
+  one. The screen keeps its own subscription, filtered to its terminal,
+  because the list is not always alive behind it (an iPad). The list only
+  reads the label (`HcTerminal.isUnseenDone`). Every subscriber reads
+  events through one loop, `HcSubscription.updates`.
 
 Measured facts are in [`hc-facts.md`](hc-facts.md#attaching-live-hc-0120-12-nov-2026-on-a-scratch-shell).
 

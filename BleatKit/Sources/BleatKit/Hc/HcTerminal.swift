@@ -59,7 +59,7 @@ public struct HcTerminal: Sendable, Equatable, Identifiable, Decodable {
     /// The last turn someone looked at, as Herdr.app records it in
     /// `herdr.seen` (live: `herdr.seen: "16"` beside `turn: 16` on a `done`
     /// terminal that had been read).
-    public var seenTurn: Int? { labels?["herdr.seen"].flatMap { Int($0) } }
+    public var seenTurn: Int? { labels?[HcSeen.label].flatMap { Int($0) } }
 
     /// `done`, and nobody has looked since the turn ended. hc never clears
     /// `done` itself; this is the reading Herdr.app gives it.

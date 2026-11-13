@@ -39,6 +39,29 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
   disappears and `setActive(true)` when it comes back: a covering sheet or an
   iPad column change returns with its state, and a model closed for good left
   a frozen frame that still claimed to be live.
+- **Several lines go as one paste** (`SubmittedLine`, `PaneComposer`; 13
+  Nov 2026). hc passes the bracketed-paste mode that herdr hid: its first
+  paint resets every mode and then sets the current ones, `?2004h`
+  included, for zsh at a prompt and for Claude Code (live, scratch
+  terminals, hc 0.1.20). Sent as `ESC[200~…ESC[201~` then CR, zsh ran both
+  lines and Claude Code showed one two-line prompt. So a multi-line text is
+  sent as a paste when SwiftTerm says the mode is on
+  (`attachPasteMode`), and joined with spaces when it is off, as before.
+  One line is sent as it always was. From review: **typed text loses its
+  control characters but tab, ESC included**, so no paste marker can sit in
+  a paste or be rebuilt from pieces (stripping the end marker once could be
+  beaten by nesting one); **every line break counts** (VT, FF, NEL, U+2028
+  and U+2029 too — zsh reads FF as Ctrl-L); a multi-line send **waits up to
+  2 s for the first paint after an attach**, which restores the modes; line
+  breaks inside the paste stay LF, as measured and as SwiftTerm's own paste
+  sends them. Multi-line text is written in **Compose**
+  (`square.and.pencil` beside the field), a sheet with a UIKit text view
+  (no smart punctuation, as `PaneLineField`); the bar keeps its fixed
+  height, and the sheet's keyboard freezes the grid like any other. Its
+  footer says how the text will arrive before it is sent, read again every
+  second because zsh switches the mode around each command. Send clears and
+  closes at once and puts the text back if no stream took it; a line in the
+  field moves into Compose only when Compose is empty.
 - **One terminal's failure is reported, never `release()`d**: the list shares
   the SSH connection, and one `hc connect` ending says nothing about it.
   Keys and resizes share one ordered queue.
@@ -903,7 +926,8 @@ real `terminal session control --takeover`:
 - zsh ran `echo …` and Claude Code submitted a prompt, both with text and
   carriage return in **one** record and with them in **two**. Two is what
   ships (`SubmittedLine`), queued as one batch so nothing lands between them.
-- **One line only.** A newline is Enter to whatever reads it. Bracketed paste
+- **One line only** *(1.x, over herdr; Bleat 2 sends several lines as a
+  paste where the program takes one — see the Bleat 2 section above).* A newline is Enter to whatever reads it. Bracketed paste
   carries several lines as one — Claude Code took `ESC[200~a\nb ESC[201~` then
   CR as a single two-line prompt — but only a program that asked for it
   understands the markers, and **herdr does not pass `?2004h` through in its

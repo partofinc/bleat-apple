@@ -334,6 +334,42 @@ struct HcPaneModelTests {
         await model.close()
     }
 
+    @Test("several lines go as one paste where the program takes one, and as one line where not")
+    func submitLines() async throws {
+        let core = FakeCore()
+        let (model, _) = model([core])
+        var paste = true
+        model.attachPasteMode { paste }
+        model.attach { _ in }
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.phase == .live }
+        let prompt = try #require(SubmittedLine("look at this\nthen fix it"))
+        await model.submit(prompt)
+        await eventually { core.input.count == 2 }
+        #expect(core.input.map(\.payload) == [
+            Data("\u{1B}[200~look at this\nthen fix it\u{1B}[201~".utf8), TerminalKey.enter.bytes,
+        ])
+
+        paste = false
+        await model.submit(prompt)
+        await eventually { core.input.count == 4 }
+        #expect(core.input.suffix(2).map(\.payload) == [Data("look at this then fix it".utf8), TerminalKey.enter.bytes])
+        await model.close()
+    }
+
+    /// From review: the composer cleared a long prompt that then had no
+    /// stream to go to.
+    @Test("a submit with no stream to take it says so")
+    func submitWithoutStream() async throws {
+        let core = FakeCore()
+        let (model, _) = model([core])
+        #expect(await model.submit(try #require(SubmittedLine("ls"))) == false)
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.phase == .live }
+        #expect(await model.submit(try #require(SubmittedLine("ls"))))
+        await model.close()
+    }
+
     /// The `hc connect` stayed open, and keys went into a dead channel.
     @Test("when the program ends, the screen ends and its connection closes")
     func programEnds() async {

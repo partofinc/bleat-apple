@@ -46,12 +46,16 @@ struct PaneKeyBar: View {
     /// Whether the field has the keyboard. Plain state rather than
     /// `@FocusState`: the field is UIKit's — see `PaneLineField`.
     @State private var isComposing = false
+    /// A prompt of several lines being written in `PaneComposer`, kept while
+    /// it is closed.
+    @State private var composition = ""
+    @State private var isWriting = false
 
     var body: some View {
         VStack(spacing: 6) {
             Group {
                 switch shown {
-                case .input: PaneInputField(model: model, draft: $draft, isFocused: $isComposing)
+                case .input: PaneInputField(model: model, draft: $draft, isFocused: $isComposing, onCompose: compose)
                 case .shortcuts: PaneShortcutStrip(model: model)
                 }
             }
@@ -114,6 +118,23 @@ struct PaneKeyBar: View {
         .onChange(of: isActive) { _, active in
             if !active { isComposing = false }
         }
+        .sheet(isPresented: $isWriting) {
+            PaneComposer(model: model, text: $composition)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Opens the composer. A line begun in the field carries on there as the
+    /// start of the prompt — **only into an empty composer**: added under a
+    /// half-written prompt from earlier it would go out with it, perhaps
+    /// unseen above the fold (from review). Otherwise it stays in the field.
+    private func compose() {
+        isComposing = false
+        if composition.isEmpty, !draft.isEmpty {
+            composition = draft
+            draft = ""
+        }
+        isWriting = true
     }
 
     /// Both rows are this tall. See the note on the type.

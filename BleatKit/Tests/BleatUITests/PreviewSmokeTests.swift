@@ -357,6 +357,16 @@ struct PreviewSmokeTests {
         #expect(context.connections.endpoint == nil)
     }
 
+    @Test("the composer renders, live and not")
+    func composer() async {
+        let context = sampleContext()
+        for phase: PanePhase in [.live, .opening] {
+            render(context, PaneComposer(model: HcPaneModel(previewing: phase), text: .constant("one\ntwo")))
+        }
+        await settle(context)
+        #expect(context.connections.endpoint == nil)
+    }
+
     @Test("the terminal screens render in every phase")
     func terminalScreens() async {
         let context = sampleContext()

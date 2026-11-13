@@ -333,6 +333,19 @@ struct PreviewSmokeTests {
         #expect(context.connections.endpoint == nil)
     }
 
+    @Test("the watch's terminal screens render on the phone's runtime too")
+    func relayedTerminals() async {
+        let context = sampleContext()
+        render(context, NavigationStack {
+            RelayedTerminalsView(peer: .preview, model: RelayedTerminalsModel(call: { _, _ in .object(["terminals": .array([])]) }))
+        })
+        render(context, NavigationStack {
+            RelayedTerminalScreen(title: "Backend", model: RelayedTerminalModel(address: "t58", call: { _, _ in .object([:]) }))
+        })
+        await settle(context)
+        #expect(context.connections.endpoint == nil)
+    }
+
     @Test("the new-terminal sheet renders, and its preview host dials nothing")
     func newTerminalSheet() async {
         let context = sampleContext()

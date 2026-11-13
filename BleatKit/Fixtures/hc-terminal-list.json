@@ -1,0 +1,150 @@
+{
+ "id": 3,
+ "jsonrpc": "2.0",
+ "result": {
+  "hidden_finished": 15,
+  "machines": [
+   {
+    "host": "adam",
+    "id": "2ea794a922ddc23a9241bc10690427a7",
+    "keeps_running_after_logout": null,
+    "logout_linger_user": null,
+    "name": "adam",
+    "session": null,
+    "state": "connected",
+    "target": "adam",
+    "temporary": false,
+    "version": "0.1.18",
+    "via": false
+   },
+   {
+    "host": "mika",
+    "id": "7c7008c420734c0c59d061075c81a092",
+    "keeps_running_after_logout": null,
+    "logout_linger_user": null,
+    "name": "mika",
+    "session": null,
+    "state": "connected",
+    "target": "mika",
+    "temporary": false,
+    "version": "0.1.20",
+    "via": false
+   },
+   {
+    "host": "bruno",
+    "id": "4e8d2b526cc29b6f9ed1c5f3dcb8106e",
+    "keeps_running_after_logout": null,
+    "logout_linger_user": null,
+    "name": "bruno",
+    "session": null,
+    "since_ms": 1794544155477,
+    "state": "unreachable",
+    "target": "bruno",
+    "temporary": false,
+    "version": "0.1.18",
+    "via": false,
+    "why": "cannot reach bruno: ssh: Could not resolve hostname bruno.local: nodename nor servname provided, or not known"
+   }
+  ],
+  "terminals": [
+   {
+    "address": "t5s",
+    "argv": [
+     "/bin/zsh",
+     "-lic",
+     "\"$@\"; exec \"$0\" -li",
+     "/bin/zsh",
+     "claude",
+     "--resume",
+     "00000000-0000-4000-8000-000000000000"
+    ],
+    "cols": 130,
+    "created_ms": 1794544358832,
+    "cwd": "/Users/robin/Developer/acme/acme-health",
+    "die_with_parent": false,
+    "exit_code": null,
+    "finished_ms": null,
+    "foreground": {
+     "argv": [
+      "claude",
+      "--resume",
+      "00000000-0000-4000-8000-000000000000"
+     ],
+     "cwd": "/Users/robin/Developer/acme/acme-health",
+     "name": "2.1.323",
+     "pid": 28927
+    },
+    "identity": "ghostty",
+    "keep": true,
+    "labels": {
+     "claude.session": "00000000-0000-4000-8000-000000000000",
+     "herdr.seen": "41",
+     "herdr.space": "sp0c76818d68b5426ba2b46194c2d3a72a",
+     "herdr.tab": "tb7f147cd1035c15a8c7b7cc0b0f635e00",
+     "where": "acme-health / Agent"
+    },
+    "name": null,
+    "notify": true,
+    "parent": null,
+    "pid": 28226,
+    "reason": null,
+    "reported": true,
+    "rm": false,
+    "rows": 40,
+    "screen": "exact",
+    "signal": null,
+    "state": "live",
+    "status": {
+     "app": "claude-code",
+     "msg": "Building it still needs your \"start\".",
+     "state": "done"
+    },
+    "status_ms": 1794567117806,
+    "template": null,
+    "title": "Acme Backend",
+    "turn": 43
+   },
+   {
+    "address": "t6g",
+    "argv": [
+     "/bin/sh",
+     "-i"
+    ],
+    "cols": 200,
+    "created_ms": 1794567535668,
+    "cwd": "/tmp",
+    "die_with_parent": false,
+    "exit_code": null,
+    "finished_ms": null,
+    "foreground": {
+     "argv": [
+      "/bin/sh",
+      "-i"
+     ],
+     "cwd": "/private/tmp",
+     "name": "bash",
+     "pid": 13417
+    },
+    "identity": "ghostty",
+    "keep": false,
+    "labels": {},
+    "name": "bleat-scratch",
+    "notify": false,
+    "parent": null,
+    "pid": 13417,
+    "reason": null,
+    "reported": false,
+    "rm": false,
+    "rows": 120,
+    "screen": "exact",
+    "signal": null,
+    "state": "live",
+    "status": null,
+    "status_ms": null,
+    "template": null,
+    "title": "",
+    "turn": 0
+   }
+  ]
+ }
+}

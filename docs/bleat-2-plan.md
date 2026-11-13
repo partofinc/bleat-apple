@@ -330,7 +330,13 @@ here. **Must be closed before:** the phase named.
     adam and the phone has also paired adam directly, the same terminals
     appear twice. Is core identity (from `hello`) enough to merge them, and
     which route does the app prefer? *Before C.*
-18. **The watch relay's shape.** `RelayTransport` relays `run` and
+18. *Answered 13 Nov 2026: whole requests, and asked again rather than
+    followed.* `RelayRequest.hc` carries one call; the phone makes it on a
+    herdr-core client it keeps per host for the watch. The watch polls
+    `terminal.list` (5 s) and a terminal's `terminal.get` and `terminal.read`
+    (3 s) while a screen is up — no event slices yet ([watch](watch.md)).
+    The original question:
+    **The watch relay's shape.** `RelayTransport` relays `run` and
     `openStream` today. With one framed connection, does the phone relay whole
     requests and event slices (the watch never attaches), or frames? The
     first is simpler and probably enough for what the watch shows.

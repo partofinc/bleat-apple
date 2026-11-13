@@ -1,7 +1,7 @@
 import Foundation
 
 /// The connection to herdr-core stopped making sense, or stopped.
-public enum HcProtocolError: Error, Sendable, Equatable {
+public enum HcProtocolError: Error, Sendable, Equatable, Codable {
     /// The stream ended before `hello` was answered.
     case noHello
     /// `hello` answered, but not with framed mode on.

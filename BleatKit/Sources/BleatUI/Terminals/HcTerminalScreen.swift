@@ -36,7 +36,14 @@ struct HcTerminalScreen: View {
             .preferredColorScheme(.dark)
             // Back from the background, where iOS took the socket and
             // `RootView` released the connection: attach again by itself.
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                // Only in front is someone reading it (`HcSeen`); covered for
+                // a moment is the same look, the background ends it.
+                switch phase {
+                case .active: model.setPresence(.inFront)
+                case .background: model.setPresence(.background)
+                default: model.setPresence(.covered)
+                }
                 guard phase == .active, case .failed = model.phase else { return }
                 model.retry()
             }

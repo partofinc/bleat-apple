@@ -12,30 +12,23 @@ enum Terminals {
         let client = try await HcClient.connect(over: try await opener.openHcConnection(hcPath: hcPath))
         let hello = await client.hello
         let subscription = try await client.subscribe()
-        var terminals = HcTerminalSet()
-        terminals.reset(to: subscription.snapshot)
         print(header(hello))
-        print(render(terminals))
-        guard watch else {
-            await client.close()
-            return
-        }
         // Each update is printed as it happens, to a pipe or file too.
         setvbuf(stdout, nil, _IOLBF, 0)
-        for try await notification in subscription.notifications {
-            switch notification {
-            case .event(let params):
-                guard terminals.apply(event: params) else { continue }
-                let kind = params["type"]?.string ?? "?"
-                let address = params["terminal"]?.string ?? "?"
+        for try await update in subscription.updates {
+            switch update.cause {
+            case .snapshot:
+                print(render(update.terminals))
+                guard watch else {
+                    await client.close()
+                    return
+                }
+            case .event(let kind, let address):
                 print("\n— \(kind) \(address)")
-                print(render(terminals))
-            case .missed(let snapshot):
-                terminals.reset(to: snapshot)
+                print(render(update.terminals))
+            case .missed:
                 print("\n— missed: fresh snapshot")
-                print(render(terminals))
-            case .heartbeat, .other:
-                continue
+                print(render(update.terminals))
             }
         }
     }

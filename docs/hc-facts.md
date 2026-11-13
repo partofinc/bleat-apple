@@ -163,13 +163,19 @@ framed straight after `hello`.
   an optional reason (`permission`, `question`, `auth`). `working` and
   `blocked` carry an optional progress, 0–100. The core treats `blocked` and
   `error` together as "stuck".
-- `turn` goes up each time the root record leaves `working`.
-- **hc never clears `done`.** "Done, and nobody has looked" is the client's
-  own idea. Herdr.app appears to keep it in the `herdr.seen` label (once seen
-  as `herdr.seen=6` on a Claude Code terminal, compared with `turn`).
-  Unconfirmed; see the plan's question 7. Bleat must never write `herdr.seen`
-  unintentionally: it would clear the Mac's marker, the 1.x `agent focus`
-  trap again.
+- `turn` goes up each time the root record leaves `working`. **Live, 13 Nov
+  2026** (a scratch Claude Code given one prompt;
+  `Fixtures/hc-turn-events.ndjson`): `status` working, `title`, `status`
+  done, then `turn` with data `{"state":"done","turn":1}`, then `status`
+  again with its message — the status first, then the turn, as herdr-app's
+  `docs/labels.md` says.
+- **hc never clears `done`.** "Done, and nobody has looked" is the
+  client's own idea, and Herdr.app's convention is `herdr.seen=<turn>`
+  (herdr-app `docs/labels.md`, read 13 Nov 2026): done is `turn > seen`, a
+  missing label is not 0. **Bleat writes it on purpose** while a terminal is
+  looked at, as Herdr.app's clients do (decided 13 Nov 2026; `HcSeen`,
+  [pane view](pane-view.md)). Never write it by accident — outside that
+  rule it clears the Mac's marker, the 1.x `agent focus` trap again.
 
 ## Reconnect (source: schema)
 

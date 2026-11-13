@@ -1,0 +1,9 @@
+{
+ "id": 1,
+ "jsonrpc": "2.0",
+ "result": {
+  "complete": true,
+  "how": "screen",
+  "text": "sh-3.2$ echo hello from scratch\nhello from scratch\nsh-3.2$"
+ }
+}

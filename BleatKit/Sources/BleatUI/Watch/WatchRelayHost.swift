@@ -17,6 +17,12 @@ import WatchConnectivity
 /// says when it has stopped looking; a watch that walks out of range cannot,
 /// so the connection is also closed a few seconds after its last command.
 ///
+/// **herdr-core over one client per host, kept between the watch's calls.**
+/// The watch asks again every few seconds while a screen is up; a new `hc
+/// connect` and `hello` for each would be most of the cost. It rides this
+/// store's SSH connection and is closed whenever that is — on `.release`, on
+/// the idle clock, or when the watch moves to another host.
+///
 /// **Background time is held twice over, and not as one span.** The system
 /// would otherwise suspend the app the moment a reply was sent, with the SSH
 /// session still up on somebody's Mac. Each command holds a task of its own
@@ -28,6 +34,9 @@ public final class WatchRelayHost: NSObject {
     private let peers: PeerStore
     private let connections: ConnectionStore
     private var responder: RelayResponder?
+    /// The herdr-core client opened for the watch, and the host it is to;
+    /// a task while it opens, so calls that arrive together share it.
+    private var hcClient: (hostKey: String, client: Task<HcClient, any Error>)?
 
     /// Commands running now. The idle clock starts when the last one ends, so
     /// a slow command is not cut off by a timer that began when it did.
@@ -59,6 +68,10 @@ public final class WatchRelayHost: NSObject {
             peers: { [weak self] in await self?.currentPeers() ?? [] },
             release: { [weak self] hostKey in await self?.release(hostKey) },
             note: { [weak self] hostKey, note in await self?.peers.apply(note, forHostKey: hostKey) },
+            hc: { [weak self] hostKey, method, params in
+                guard let self else { throw RelayFailure.cancelled }
+                return try await self.hc(hostKey, method, params)
+            },
             failed: { [weak self] error in await self?.connections.handle(error) }
         )
         let session = WCSession.default
@@ -88,6 +101,52 @@ public final class WatchRelayHost: NSObject {
         return try await connections.link(for: peer)
     }
 
+    /// One herdr-core call. herdr-core's refusal is the answer; anything else
+    /// means the client is gone — its SSH connection closed under it — so it
+    /// is opened again, once, before the failure goes back.
+    private func hc(_ hostKey: String, _ method: String, _ params: [String: HcJSON]) async throws -> HcJSON {
+        do {
+            return try await hcClient(for: hostKey).call(method, params)
+        } catch let refusal as HcError {
+            throw refusal
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            dropHc()
+            return try await hcClient(for: hostKey).call(method, params)
+        }
+    }
+
+    private func hcClient(for hostKey: String) async throws -> HcClient {
+        if let open = hcClient, open.hostKey == hostKey { return try await open.client.value }
+        dropHc()
+        guard let peer = peer(hostKey) else { throw RelayFailure.unknownPeer }
+        guard let hcPath = peer.herdrCore?.path else {
+            throw RelayFailure.other("\(peer.name) has not been checked for herdr-core on the iPhone")
+        }
+        let opening = Task { [connections] in
+            let link = try await connections.link(for: peer)
+            guard let opener = link as? any HcStreamOpening else {
+                throw RelayFailure.other("herdr-core is not reachable this way")
+            }
+            return try await HcClient.connect(over: try await opener.openHcConnection(hcPath: hcPath))
+        }
+        hcClient = (hostKey, opening)
+        do {
+            return try await opening.value
+        } catch {
+            if hcClient?.hostKey == hostKey { hcClient = nil }
+            throw error
+        }
+    }
+
+    /// Closes the herdr-core client, if one is open.
+    private func dropHc() {
+        guard let open = hcClient else { return }
+        hcClient = nil
+        Task { (try? await open.client.value).map { client in Task { await client.close() } } }
+    }
+
     private func peer(_ hostKey: String) -> PairedPeer? {
         if let known = peers.peers.first(where: { $0.hostKey == hostKey }) { return known }
         // A launch in the background has shown no screen, and the host list
@@ -102,6 +161,7 @@ public final class WatchRelayHost: NSObject {
     }
 
     private func release(_ hostKey: String) async {
+        if hcClient?.hostKey == hostKey { dropHc() }
         guard let peer = peer(hostKey), connections.isConnected(to: peer) else { return }
         await connections.release()
     }
@@ -117,12 +177,14 @@ public final class WatchRelayHost: NSObject {
             self.lingering = .invalid
             self.idle?.cancel()
             self.idle = nil
+            self.dropHc()
             Task { await self.connections.release() }
         }
         lingering = awake
         idle = Task { [weak self] in
             try? await Task.sleep(for: Self.linger)
             guard !Task.isCancelled, let self else { return }
+            self.dropHc()
             await self.connections.release()
             // A command that arrived during the close has already ended this
             // hold and taken one of its own; ending it again would end theirs.

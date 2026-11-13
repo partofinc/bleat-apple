@@ -13,6 +13,9 @@ public struct RelayResponder: Sendable {
     public var peers: @Sendable () async -> [PairedPeer]
     public var release: @Sendable (_ hostKey: String) async -> Void
     public var note: @Sendable (_ hostKey: String, PeerNote) async -> Void
+    /// One herdr-core call on that host's core. Only methods in
+    /// `RelayRequest.hcMethods` reach it.
+    public var hc: @Sendable (_ hostKey: String, _ method: String, _ params: [String: HcJSON]) async throws -> HcJSON
     /// Told about an error a command threw, so a dead connection is dropped
     /// rather than asked again. `ConnectionStore.handle` on the phone.
     public var failed: @Sendable (any Error) async -> Void
@@ -22,12 +25,14 @@ public struct RelayResponder: Sendable {
         peers: @escaping @Sendable () async -> [PairedPeer],
         release: @escaping @Sendable (_ hostKey: String) async -> Void,
         note: @escaping @Sendable (_ hostKey: String, PeerNote) async -> Void,
+        hc: @escaping @Sendable (_ hostKey: String, _ method: String, _ params: [String: HcJSON]) async throws -> HcJSON,
         failed: @escaping @Sendable (any Error) async -> Void
     ) {
         self.link = link
         self.peers = peers
         self.release = release
         self.note = note
+        self.hc = hc
         self.failed = failed
     }
 
@@ -60,6 +65,11 @@ public struct RelayResponder: Sendable {
         case .note(let hostKey, let note):
             await self.note(hostKey, note)
             return .output(Data())
+        case .hc(let hostKey, let method, let params):
+            guard RelayRequest.hcMethods.contains(method) else {
+                throw RelayFailure.other("the watch may not call \(method)")
+            }
+            return .hc(try await hc(hostKey, method, params))
         }
     }
 }

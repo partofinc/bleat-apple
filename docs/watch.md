@@ -1,10 +1,28 @@
 # The watch app
 
-> **Bleat 2 (12 Nov 2026):** the watch no longer runs herdr commands through
-> the phone — `RelayRequest.herdr` was removed with the herdr backend. It shows
-> the mirrored host list and the gate; a ready host reads "On iPhone for now".
-> The relay keeps `.peers`, `.shell`, `.release` and `.note`. A herdr-core relay
-> is still to be designed: hc speaks a framed stream, not one command at a time.
+> **Bleat 2, terminals on the watch (13 Nov 2026).** The relay carries
+> herdr-core as single calls: `RelayRequest.hc(hostKey, method, params)`,
+> answered `RelayReply.hc(result)`, herdr-core's refusal crossing as
+> `RelayFailure.hc` and thrown again as the `HcError` it was. Only
+> `terminal.list`, `.get`, `.read` and `.label` are relayed
+> (`RelayRequest.hcMethods`, checked by the phone): **the watch reads, and
+> marks what it read; it does not start, type into or end anything.**
+> - The phone's `WatchRelayHost` keeps one `HcClient` per host for the
+>   watch, on its own SSH connection, reopened once when it went stale and
+>   closed with that connection (`.release`, the idle clock, another host).
+> - A host's screen on the watch (`RelayedTerminalsView`) is its load, then
+>   its live terminals most urgent first, asked again every 5 s. A row opens
+>   `RelayedTerminalScreen`: its state and message, and the bottom of its
+>   screen as text from `terminal.read`, every 3 s. **Never attached**, so a
+>   look from the wrist takes no size from the Mac.
+> - Looking marks it seen, as on the phone (`HcSeen`): while the screen is up
+>   and the watch raised (`scenePhase == .active`).
+> - Polled, not followed: the relay is one request, one reply, and a
+>   subscription is a stream (plan, question 18). Built and tested against
+>   captured replies and on the simulators' build; **not yet run on a watch**.
+>
+> Before that, on 12 Nov 2026, `RelayRequest.herdr` went with the herdr
+> backend and a ready host read "On iPhone for now".
 >
 > **The relay's wire types lost cases** (`RelayRequest.herdr`,
 > `RelayFailure.herdr`, `PeerNote`'s session notes). A phone and a watch on

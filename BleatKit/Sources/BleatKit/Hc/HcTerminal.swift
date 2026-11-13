@@ -108,6 +108,15 @@ public struct HcTerminal: Sendable, Equatable, Identifiable, Decodable {
     }
 }
 
+extension HcTerminal {
+    /// The terminals in `terminal.list`'s reply (`Fixtures/hc-terminal-list.json`).
+    /// A record that does not read is skipped, not fatal to the list.
+    public static func list(inReply reply: HcJSON) -> [HcTerminal] {
+        guard case .array(let records)? = reply["terminals"] else { return [] }
+        return records.compactMap { try? $0.decode(HcTerminal.self) }
+    }
+}
+
 extension Sequence<HcTerminal> {
     /// Most urgent first; ties in address order, `t9` before `t10`.
     ///

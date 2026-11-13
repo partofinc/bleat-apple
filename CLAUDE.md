@@ -28,9 +28,11 @@ the herdr-core gate for 1.x peers (#77); `HcClient` and a host's live terminal
 list (#78); attaching to a terminal (#79); pairing on hc (#80); the herdr
 backend removed (#81); installing herdr-core from the gate and from `bleat
 pair` (#82); `bleat` 2.0.0 as a pre-release (#83–#85); starting terminals from
-the phone (#86), into Herdr.app's spaces. Phase A's console gate is met only in part — `bleat
+the phone (#86), into Herdr.app's spaces (#87); multi-line prompts as one
+paste (#89); marking terminals seen as Herdr.app does (#88); terminals on
+the watch, read through the phone. Phase A's console gate is met only in part — `bleat
 terminals --watch` follows events; attaching from the console is not built.
-**Left for B:** the watch on hc, and whether a core
+**Left for B:** the watch on a real device, and whether a core
 outlives the SSH login on a fresh Pi (linger; [hc facts](docs/hc-facts.md)). Two product questions are Ravil's before release: the listing's
 name and promise, and whether 1.x's unbuilt Control items carry over.
 

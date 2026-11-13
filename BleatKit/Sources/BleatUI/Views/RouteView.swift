@@ -22,7 +22,15 @@ struct RouteView: View {
             }
         case .terminal(let hostKey, let address, let title):
             if let peer = peer(hostKey) {
-                HcTerminalScreen(peer: peer, address: address, title: title, connections: context.connections)
+                if context.isRelayed {
+                    // No stream through the phone: the watch reads it as text.
+                    RelayedTerminalScreen(
+                        title: title,
+                        model: RelayedTerminalModel(peer: peer, address: address, connections: context.connections)
+                    )
+                } else {
+                    HcTerminalScreen(peer: peer, address: address, title: title, connections: context.connections)
+                }
             } else {
                 unpaired
             }

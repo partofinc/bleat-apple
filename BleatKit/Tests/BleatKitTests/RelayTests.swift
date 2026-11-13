@@ -26,6 +26,19 @@ struct RelayTests {
         }
 
         func disconnect() async { lock.withLock { log.append("disconnect") } }
+
+        /// herdr-core on this host: answers from `Fixtures/`.
+        func hc(_ method: String, _ params: [String: HcJSON]) throws -> HcJSON {
+            try record("hc \(method) \(params["terminal"]?.string ?? "")")
+            switch method {
+            case "terminal.list":
+                return try JSONDecoder().decode(HcJSON.self, from: Fixture.data("hc-terminal-list.json"))["result"] ?? .null
+            case "terminal.read":
+                return try JSONDecoder().decode(HcJSON.self, from: Fixture.data("hc-terminal-read.json"))["result"] ?? .null
+            default:
+                return .object([:])
+            }
+        }
     }
 
     private final class Phone: @unchecked Sendable {
@@ -51,6 +64,12 @@ struct RelayTests {
                 peers: { [self] in paired },
                 release: { [self] hostKey in note("release \(hostKey)") },
                 note: { [self] hostKey, change in note("note \(change)") },
+                hc: { [self] hostKey, method, params in
+                    guard paired.contains(where: { $0.hostKey == hostKey }) else {
+                        throw RelayFailure.unknownPeer
+                    }
+                    return try host.hc(method, params)
+                },
                 failed: { [self] error in note("failed \(error)") }
             )
         }
@@ -59,6 +78,46 @@ struct RelayTests {
             let responder = responder
             return RelayTransport(hostKey: hostKey) { await responder.reply(to: $0) }
         }
+    }
+
+    // MARK: - herdr-core
+
+    @Test("a herdr-core call comes back as its result, and the list reads from it")
+    func hcCall() async throws {
+        let phone = Phone()
+        let reply = try await phone.transport().call("terminal.list")
+        let terminals = HcTerminal.list(inReply: reply)
+        #expect(terminals.map(\.address) == ["t5s", "t6g"])
+        #expect(terminals.first?.isUnseenDone == true)
+        #expect(phone.host.asked == ["hc terminal.list "])
+    }
+
+    @Test("a terminal's screen comes back as text")
+    func hcRead() async throws {
+        let phone = Phone()
+        let screen = try HcScreenText(reply: try await phone.transport().call("terminal.read", ["terminal": .string("t6g"), "lines": .number(0)]))
+        #expect(screen.lastLines(2) == ["hello from scratch", "sh-3.2$"])
+    }
+
+    @Test("herdr-core refusing arrives as the HcError it was")
+    func hcError() async throws {
+        let phone = Phone()
+        let refusal = HcError(code: -32000, message: "no terminal t9", kind: "not_found")
+        phone.host.failure = refusal
+        await #expect(throws: refusal) { try await phone.transport().call("terminal.get", ["terminal": .string("t9")]) }
+    }
+
+    /// The watch reads and marks what it read; nothing it sends starts, types
+    /// into or ends anything.
+    @Test("a call outside what the watch may make is refused before the host", arguments: [
+        "terminal.run", "terminal.send", "terminal.keys", "terminal.kill", "terminal.rm", "doc.set", "server.stop",
+    ])
+    func hcRefused(method: String) async throws {
+        let phone = Phone()
+        await #expect(throws: TransportError.connectionFailed("the watch may not call \(method)")) {
+            try await phone.transport().call(method)
+        }
+        #expect(phone.host.asked.isEmpty)
     }
 
     @Test("a shell command comes back as text")

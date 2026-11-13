@@ -36,7 +36,7 @@ first run was a plain build, so the first archive is build 2 or later.
 ```sh
 # in a clean checkout of the commit to release (a worktree keeps the open
 # Xcode's edits out of it), with Version.swift already at the new version:
-Scripts/release-cli.sh 1.0.0 [--draft | --prerelease] [--skip-tap]
+Scripts/release-cli.sh 1.0.0 [--draft | --prerelease | --promote] [--skip-tap]
 ```
 
 It refuses a tree with changes, a commit not on `origin/main`, a version that
@@ -50,10 +50,26 @@ the tap**, so `install.sh` (`releases/latest`) and Homebrew keep serving the
 release before it; testers install it with `BLEAT_VERSION=<version>`. Added
 for cli-2.0.0 (13 Nov 2026), which pairs only with Bleat 2 while the App Store
 app is 1.x: published as latest, it would have stopped every 1.x user who
-upgraded `bleat` from pairing. **Running the script again for that version
-without the flag promotes it**: the release is edited to a full one, marked
-latest, given the general notes, and the formula follows. Do that when Bleat 2
-goes to App Review.
+upgraded `bleat` from pairing. Its notes promise 1.x users the release before
+it, so the script checks that first: it refuses unless the latest release is
+another tag and the formula is on another version.
+
+**`--promote` makes that pre-release the latest full release and points the
+formula at it, building nothing.** What testers ran is what ships, with the
+checksums they saw: the formula is filled from the release's own
+`SHA256SUMS`. It needs no checkout of the tagged commit and ignores
+`Version.swift`, so it runs from any up-to-date `main`, months later. It
+refuses anything but an existing pre-release, and edits the release before
+touching the tap, so a failure leaves both as they were. Run it when Bleat 2
+goes to App Review: `Scripts/release-cli.sh 2.0.0 --promote`.
+
+**A release is never converted by a rerun.** Rerunning for a version whose
+release already exists is for replacing assets after a failure, and is
+refused when the existing release is another kind (full, draft, pre-release)
+than this run would publish: a full release rerun as `--prerelease` would
+have stayed latest and kept reaching 1.x users while saying it did not. The
+tag on origin is checked as well as the local one, so a checkout that never
+fetched it cannot rebuild into a release that names another commit.
 Notarization is judged by notarytool's JSON `status`, not its exit code.
 Assets have **no version in their names** (`bleat-macos-universal.tar.gz`,
 `bleat-linux-aarch64.tar.gz`, `bleat-linux-x86_64.tar.gz`, `SHA256SUMS`), so

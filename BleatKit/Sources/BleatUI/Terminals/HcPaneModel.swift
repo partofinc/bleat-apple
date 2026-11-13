@@ -51,6 +51,7 @@ final class HcPaneModel: PaneDriving {
     /// dropping it leaves an idle terminal blank for good.
     private var pending: [Data] = []
     private var scroller: ((ScrollDirection, Int) -> Void)?
+    private var pasteMode: (() -> Bool)?
 
     /// The live attach: the client, and the channel the screen comes on.
     private var attached: (client: HcClient, channel: UInt32)?
@@ -175,6 +176,14 @@ final class HcPaneModel: PaneDriving {
         viewports[width]
     }
 
+    func attachPasteMode(_ isOn: @escaping () -> Bool) {
+        pasteMode = isOn
+    }
+
+    /// Whether the program has bracketed paste on, as the terminal on screen
+    /// read it from the stream; false before there is one.
+    var acceptsPaste: Bool { pasteMode?() ?? false }
+
     func setRowHeight(_ height: CGFloat) {
         guard height > 0, height != rowHeight else { return }
         rowHeight = height
@@ -219,14 +228,15 @@ final class HcPaneModel: PaneDriving {
         }
     }
 
-    /// The composed line, then Enter, queued together so nothing typed meanwhile
-    /// lands between them.
+    /// The composed text, then Enter, queued together so nothing typed
+    /// meanwhile lands between them. Several lines go as one bracketed paste
+    /// where the program has it on, else as one line (`SubmittedLine`).
     ///
     /// Not `terminal.send`: that waits for ~3 s without typing and refuses a
     /// blocked program, which suits an agent sending to another agent. Here the
     /// person at the phone is the one typing.
     func submit(_ line: SubmittedLine) async {
-        await enqueue([.data(Data(line.text.utf8)), .data(TerminalKey.enter.bytes)])
+        await enqueue(line.records(bracketedPaste: acceptsPaste).map { .data($0) })
     }
 
     func send(bytes: Data) async {

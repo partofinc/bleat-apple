@@ -57,6 +57,11 @@ struct TerminalHost: UIViewControllerRepresentable {
                     terminal.scrollDown(lines: notches)
                 }
             }
+            // Whether several lines can go as one paste: the mode the program
+            // set (`?2004h`), which hc's first paint restores.
+            model.attachPasteMode { [weak terminal] in
+                terminal?.getTerminal().bracketedPasteMode ?? false
+            }
         }
         controller.isActive = isActive
         controller.onInput = { [model] data in

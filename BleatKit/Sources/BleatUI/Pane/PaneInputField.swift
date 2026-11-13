@@ -18,9 +18,19 @@ struct PaneInputField: View {
     let model: any PaneDriving
     @Binding var draft: String
     @Binding var isFocused: Bool
+    /// Opens the composer, for a prompt of several lines (`PaneComposer`).
+    let onCompose: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
+            Button("Compose", systemImage: "square.and.pencil", action: onCompose)
+                .labelStyle(.iconOnly)
+                .font(.title3)
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                .frame(maxHeight: .infinity)
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+
             PaneLineField(
                 placeholder: "Type a line to send",
                 text: $draft,

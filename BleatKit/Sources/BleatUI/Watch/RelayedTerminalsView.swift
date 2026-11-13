@@ -8,6 +8,29 @@ struct RelayedTerminalsView: View {
     let peer: PairedPeer
     @State private var model: RelayedTerminalsModel
     @Environment(AppContext.self) private var context
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// A row saying what the list cannot show yet, or why.
+    @ViewBuilder
+    private var statusRow: some View {
+        switch model.phase {
+        case .loading:
+            ProgressView()
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+        case .live:
+            Text("Nothing running")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Whether the status row shows: always but while terminals are shown
+    /// and nothing has gone wrong.
+    private var showsStatus: Bool {
+        if case .failed = model.phase { return true }
+        return model.terminals.isEmpty
+    }
 
     init(peer: PairedPeer, model: RelayedTerminalsModel) {
         self.peer = peer
@@ -17,29 +40,15 @@ struct RelayedTerminalsView: View {
     var body: some View {
         List {
             HostLoadSection(peer: peer)
-            Section("Terminals") {
-                switch model.phase {
-                case .loading:
-                    if model.terminals.isEmpty { ProgressView() }
-                case .failed(let message):
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                case .live where model.terminals.isEmpty:
-                    Text("Nothing running")
-                        .foregroundStyle(.secondary)
-                case .live:
-                    EmptyView()
-                }
-                ForEach(model.terminals) { terminal in
-                    NavigationLink(value: NavigationRouter.Route.terminal(
-                        peer: peer.hostKey, address: terminal.address, title: terminal.displayName
-                    )) {
-                        HcTerminalRow(terminal: terminal)
-                    }
-                }
+            if showsStatus {
+                Section("Terminals") { statusRow }
             }
+            TerminalSections(hostKey: peer.hostKey, terminals: model.terminals, untitled: "Terminals")
         }
         .task { await model.run() }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            model.setInFront(phase == .active)
+        }
         // The load is read over the same relay; asking for the shell is what
         // makes the phone connect for it.
         .task {

@@ -34,4 +34,41 @@ public enum RelayRequest: Sendable, Codable, Equatable {
     /// label. The phone refuses any other — the watch reads, and marks what
     /// it read; it does not start, type into or end anything.
     public static let hcMethods: Set<String> = ["terminal.list", "terminal.get", "terminal.read", "terminal.label"]
+
+    /// The most history `terminal.read` is asked for: a watch shows a dozen
+    /// lines, and the reply crosses a link with a size limit.
+    public static let maxReadLines = 200
+
+    /// The params a relayed call is made with, rebuilt from what the watch
+    /// sent and checked key by key, or a refusal. **The method alone is not
+    /// enough**: `terminal.label` with any labels could take a terminal out
+    /// of its Herdr.app space or clear the Mac's "done" — so the only label
+    /// it carries is `herdr.seen`, a turn number, on one terminal.
+    public static func checked(_ method: String, _ params: [String: HcJSON]) throws -> [String: HcJSON] {
+        func refuse() -> RelayFailure { .refused("the watch may not call \(method) like that") }
+        guard hcMethods.contains(method) else { throw RelayFailure.refused("the watch may not call \(method)") }
+        func terminal() throws -> HcJSON {
+            guard let address = params["terminal"]?.string, !address.isEmpty else { throw refuse() }
+            return .string(address)
+        }
+        switch method {
+        case "terminal.list":
+            guard params.isEmpty else { throw refuse() }
+            return [:]
+        case "terminal.get":
+            guard params.count == 1 else { throw refuse() }
+            return ["terminal": try terminal()]
+        case "terminal.read":
+            guard Set(params.keys).isSubset(of: ["terminal", "lines"]) else { throw refuse() }
+            let lines = min(max(params["lines"]?.int ?? 0, 0), maxReadLines)
+            return ["terminal": try terminal(), "lines": .number(Double(lines))]
+        case "terminal.label":
+            guard params.count == 2, case .object(let labels)? = params["labels"], labels.count == 1,
+                  let turn = labels[HcSeen.label]?.string, !turn.isEmpty, turn.allSatisfy(\.isASCII), turn.allSatisfy(\.isNumber)
+            else { throw refuse() }
+            return ["terminal": try terminal(), "labels": .object([HcSeen.label: .string(turn)])]
+        default:
+            throw refuse()
+        }
+    }
 }

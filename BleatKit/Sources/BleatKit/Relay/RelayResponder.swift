@@ -19,6 +19,8 @@ public struct RelayResponder: Sendable {
     /// Told about an error a command threw, so a dead connection is dropped
     /// rather than asked again. `ConnectionStore.handle` on the phone.
     public var failed: @Sendable (any Error) async -> Void
+    /// How long a herdr-core call may take before the watch is told so.
+    public var hcDeadline: Duration = .seconds(8)
 
     public init(
         link: @escaping @Sendable (_ hostKey: String) async throws -> any PeerLink,
@@ -66,10 +68,12 @@ public struct RelayResponder: Sendable {
             await self.note(hostKey, note)
             return .output(Data())
         case .hc(let hostKey, let method, let params):
-            guard RelayRequest.hcMethods.contains(method) else {
-                throw RelayFailure.other("the watch may not call \(method)")
-            }
-            return .hc(try await hc(hostKey, method, params))
+            let checked = try RelayRequest.checked(method, params)
+            // Shorter than the watch waits for a reply: a call over an SSH
+            // session that died without a word never returns, and the phone
+            // would stay awake and connected for nothing.
+            let hc = hc
+            return .hc(try await Deadline.run(within: hcDeadline) { try await hc(hostKey, method, checked) })
         }
     }
 }

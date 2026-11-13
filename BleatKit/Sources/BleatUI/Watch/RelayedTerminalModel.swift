@@ -46,9 +46,11 @@ final class RelayedTerminalModel {
         self.init(address: address, call: connections.relayedCall(for: peer), report: { await connections.handle($0) })
     }
 
+    /// Asks while the watch is raised; lowered, it waits, so an always-on
+    /// screen does not keep the phone and the Mac's SSH session busy.
     func run() async {
         while !Task.isCancelled, phase != .ended {
-            await refresh()
+            if isInFront { await refresh() }
             try? await Task.sleep(for: Self.interval)
         }
     }
@@ -63,14 +65,18 @@ final class RelayedTerminalModel {
     func refresh() async {
         do {
             let target: [String: HcJSON] = ["terminal": .string(address)]
-            let record = try await call("terminal.get", target).decode(HcTerminal.self)
+            // Side by side: two round trips through the phone, not one after
+            // the other.
+            async let got = call("terminal.get", target)
+            async let read = call("terminal.read", target.merging(["lines": .number(0)]) { $1 })
+            let record = try await got.decode(HcTerminal.self)
             self.record = record
             guard record.isLive else {
+                _ = try? await read
                 phase = .ended
                 return
             }
-            lines = try HcScreenText(reply: try await call("terminal.read", target.merging(["lines": .number(0)]) { $1 }))
-                .lastLines(Self.lineCount)
+            lines = try HcScreenText(reply: try await read).lastLines(Self.lineCount)
             phase = .live
             await markSeen(record)
         } catch let error as HcError where error.kind == "not_found" {

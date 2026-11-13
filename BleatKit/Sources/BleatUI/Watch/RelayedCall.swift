@@ -2,7 +2,7 @@ import BleatKit
 
 /// One herdr-core call made for the watch by the phone (`RelayTransport.call`).
 /// A function, so the watch's screens are tested against a script.
-typealias RelayedCall = (_ method: String, _ params: [String: HcJSON]) async throws -> HcJSON
+typealias RelayedCall = @MainActor @Sendable (_ method: String, _ params: [String: HcJSON]) async throws -> HcJSON
 
 extension ConnectionStore {
     /// herdr-core on `peer`, through the phone: the watch's way in.

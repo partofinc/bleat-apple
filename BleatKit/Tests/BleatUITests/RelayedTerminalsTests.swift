@@ -89,6 +89,25 @@ struct RelayedTerminalsTests {
         #expect(script.seenWrites == ["4"])
     }
 
+    /// From review: an always-on watch kept the phone and the Mac's SSH
+    /// session busy for screens nobody was reading.
+    @Test("a lowered watch stops asking")
+    func pausedWhenLowered() async throws {
+        let script = Script()
+        let list = RelayedTerminalsModel(call: { try script.call($0, $1) })
+        let terminal = RelayedTerminalModel(address: "t5s", call: { try script.call($0, $1) })
+        list.setInFront(false)
+        terminal.setInFront(false)
+        let running = Task {
+            async let a: Void = list.run()
+            async let b: Void = terminal.run()
+            _ = await (a, b)
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        running.cancel()
+        #expect(script.calls.isEmpty)
+    }
+
     @Test("a terminal that finished or was removed has ended")
     func ended() async {
         let script = Script()

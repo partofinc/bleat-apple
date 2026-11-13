@@ -26,6 +26,10 @@ final class RelayedTerminalsModel {
     private let report: (any Error) async -> Void
 
     static let interval = Duration.seconds(5)
+    /// Whether the watch is raised. Lowered, it stops asking: an always-on
+    /// screen would otherwise keep the phone and the Mac's SSH session busy
+    /// for a list nobody is reading.
+    private var isInFront = true
 
     init(call: @escaping RelayedCall, report: @escaping (any Error) async -> Void = { _ in }) {
         self.call = call
@@ -39,17 +43,22 @@ final class RelayedTerminalsModel {
     /// Asks until cancelled: the view's task.
     func run() async {
         while !Task.isCancelled {
-            await refresh()
+            if isInFront { await refresh() }
             try? await Task.sleep(for: Self.interval)
         }
     }
 
+    func setInFront(_ inFront: Bool) {
+        isInFront = inFront
+    }
+
     func refresh() async {
         do {
-            let reply = try await call("terminal.list", [:])
-            // Mirrors of federated machines are left out, as on the phone:
-            // those machines are paired on their own.
-            terminals = HcTerminal.list(inReply: reply).filter { $0.isLocal && $0.isLive }.sortedByAttention()
+            // Read as the phone's list reads its snapshot, and shown by the
+            // same rule (`HcTerminalSet.listed`): local, live, most urgent first.
+            var set = HcTerminalSet()
+            set.reset(to: try await call("terminal.list", [:]))
+            terminals = set.listed
             phase = .live
         } catch {
             guard !Task.isCancelled, !(error is CancellationError) else { return }

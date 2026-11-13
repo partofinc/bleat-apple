@@ -4,17 +4,32 @@
 > herdr-core as single calls: `RelayRequest.hc(hostKey, method, params)`,
 > answered `RelayReply.hc(result)`, herdr-core's refusal crossing as
 > `RelayFailure.hc` and thrown again as the `HcError` it was. Only
-> `terminal.list`, `.get`, `.read` and `.label` are relayed
-> (`RelayRequest.hcMethods`, checked by the phone): **the watch reads, and
-> marks what it read; it does not start, type into or end anything.**
+> `terminal.list`, `.get`, `.read` and `.label` are relayed, **and their
+> params are rebuilt and checked by the phone** (`RelayRequest.checked`):
+> `terminal.label` carries only `herdr.seen=<turn number>` on one terminal,
+> and `terminal.read` at most 200 lines. **The watch reads, and marks what it
+> read; it does not start, type into or end anything** — and a buggy watch
+> build cannot take a terminal out of its Herdr.app space either.
 > - The phone's `WatchRelayHost` keeps one `HcClient` per host for the
->   watch, on its own SSH connection, reopened once when it went stale and
->   closed with that connection (`.release`, the idle clock, another host).
+>   watch, **tagged with the SSH connection it rides**
+>   (`ConnectionStore.connectionID`): when that connection goes for any
+>   reason, the next call opens afresh. A failing call drops only the client
+>   it used; a drop cancels one still opening.
+> - **Each call has a deadline (8 s)**, shorter than the watch waits:
+>   over a session that died without a word an `hc` call never returns
+>   (`Deadline`, which does not wait for work that ignores cancellation).
+> - **Failures cross as themselves.** herdr-core's protocol errors
+>   (`RelayFailure.hcProtocol`) and the phone's own refusals
+>   (`RelayFailure.refused`) are not `TransportError`s, so they do not drop
+>   the SSH connection — as `.other` they had, on every poll.
 > - A host's screen on the watch (`RelayedTerminalsView`) is its load, then
->   its live terminals most urgent first, asked again every 5 s. A row opens
->   `RelayedTerminalScreen`: its state and message, and the bottom of its
->   screen as text from `terminal.read`, every 3 s. **Never attached**, so a
->   look from the wrist takes no size from the Mac.
+>   its live terminals grouped by Herdr.app space as on the phone
+>   (`TerminalSections`, `HcTerminalSet.listed`), asked again every 5 s. A
+>   row opens `RelayedTerminalScreen`: its state and message, and the bottom
+>   of its screen as text from `terminal.read`, every 3 s — `terminal.get`
+>   and `.read` side by side. **Both stop asking while the watch is
+>   lowered.** **Never attached**, so a look from the wrist takes no size
+>   from the Mac.
 > - Looking marks it seen, as on the phone (`HcSeen`): while the screen is up
 >   and the watch raised (`scenePhase == .active`).
 > - Polled, not followed: the relay is one request, one reply, and a

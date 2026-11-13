@@ -128,6 +128,16 @@ struct HcRunTests {
         #expect(HcRunSuggestions.commands(from: terminals) == ["claude", "npm"])
     }
 
+    @Test("a terminal's program is one name for the row and the suggestions")
+    func programName() throws {
+        #expect(try terminal(#"{"address":"t1","foreground":{"argv":["/usr/local/bin/claude","--resume"]}}"#).programName == "claude")
+        #expect(try terminal(#"{"address":"t2","foreground":{"argv":["-zsh"]}}"#).programName == "zsh")
+        // An empty foreground argv falls back to how it was started.
+        #expect(try terminal(#"{"address":"t3","argv":["npm","run"],"foreground":{"argv":[]}}"#).programName == "npm")
+        #expect(try terminal(#"{"address":"t4"}"#).programName == nil)
+        #expect(try terminal(#"{"address":"t4"}"#).displayName == "t4")
+    }
+
     @Test("paths under home show as ~")
     func abbreviation() {
         #expect(HcRunSuggestions.abbreviate("/home/pi/api", home: "/home/pi") == "~/api")
@@ -143,5 +153,15 @@ struct HcRunTests {
         #expect(HostDirectory.home == #"/bin/sh -c 'printf "%s" "$HOME"'"#)
         #expect(HostDirectory.home(inOutput: "/home/pi\n") == "/home/pi")
         #expect(HostDirectory.home(inOutput: "") == nil)
+    }
+
+    /// A shell whose startup prints refused every directory when the whole
+    /// output had to be "yes".
+    @Test("a banner before the answer is skipped")
+    func banners() {
+        #expect(HostDirectory.home(inOutput: "Welcome to adam\n/home/pi") == "/home/pi")
+        #expect(HostDirectory.exists(inOutput: "Welcome to adam\nyes\n"))
+        #expect(!HostDirectory.exists(inOutput: "yes, welcome\nno\n"))
+        #expect(!HostDirectory.exists(inOutput: ""))
     }
 }

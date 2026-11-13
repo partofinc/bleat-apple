@@ -10,12 +10,18 @@ import SwiftUI
 /// like any other.
 struct NewTerminalSheet: View {
     @State private var model: NewTerminalModel
+    /// The start in flight. Held so Cancel can stop it: left to run, it
+    /// opened the terminal after the sheet had gone.
+    @State private var starting: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
+    /// The grid to start it at, when one is known for this width.
+    let size: TerminalGrid?
     /// The new terminal's address and the title to open it under.
     let onStarted: (String, String) -> Void
 
-    init(model: NewTerminalModel, onStarted: @escaping (String, String) -> Void) {
+    init(model: NewTerminalModel, size: TerminalGrid? = nil, onStarted: @escaping (String, String) -> Void) {
         _model = State(initialValue: model)
+        self.size = size
         self.onStarted = onStarted
     }
 
@@ -44,13 +50,19 @@ struct NewTerminalSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    // Also while starting: a template's agent may never get
+                    // ready, and this is the way out. What was asked for may
+                    // still start on the host; it is not opened.
+                    Button("Cancel") {
+                        starting?.cancel()
+                        dismiss()
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if model.phase == .starting {
                         ProgressView()
                     } else {
-                        Button("Start") { Task { await start() } }
+                        Button("Start") { begin() }
                             .disabled(!model.canStart)
                     }
                 }
@@ -80,14 +92,14 @@ struct NewTerminalSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.go)
-                    .onSubmit { Task { await start() } }
+                    .onSubmit { begin() }
                 if !model.commandSuggestions.isEmpty {
                     suggestions(model.commandSuggestions) { model.command = $0 }
                 }
             } header: {
                 Text("Command")
             } footer: {
-                Text("Run by the host's shell, like a line typed there.")
+                Text("Run by sh -c, with herdr-core's environment.")
             }
         case .template:
             Section {
@@ -164,9 +176,13 @@ struct NewTerminalSheet: View {
         .accessibilityLabel("Commands in use")
     }
 
-    private func start() async {
-        guard let address = await model.start(size: HcPaneModel.lastViewport) else { return }
-        onStarted(address, model.title)
+    private func begin() {
+        guard model.canStart else { return }
+        starting = Task {
+            let address = await model.start(size: size)
+            guard let address, !Task.isCancelled else { return }
+            onStarted(address, model.title)
+        }
     }
 }
 
@@ -176,24 +192,6 @@ struct NewTerminalSheet: View {
         model: NewTerminalModel(hostName: "adam", terminals: HcTerminal.samples, host: PreviewTerminalHost()),
         onStarted: { _, _ in }
     )
-}
-
-/// A host for previews: one template, a home, and a start that never returns.
-final class PreviewTerminalHost: TerminalStarting {
-    func templates() async -> [HcTemplate] {
-        [HcTemplate(name: "pi-env", description: "Claude on a Pi with Docker Compose services.", command: "claude")]
-    }
-    func shell() async throws -> any ShellRunner { PreviewShell() }
-    func start(_ request: HcRunRequest) async throws -> String {
-        try await Task.sleep(for: .seconds(3600))
-        return "t1"
-    }
-
-    private struct PreviewShell: ShellRunner {
-        func run(shell command: String) async throws -> String {
-            command == HostDirectory.home ? "/home/pi" : "yes\n"
-        }
-    }
 }
 #endif
 #endif

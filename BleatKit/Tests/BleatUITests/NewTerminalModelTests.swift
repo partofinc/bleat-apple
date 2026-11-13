@@ -14,6 +14,8 @@ struct NewTerminalModelTests {
         var directories: Set<String> = ["/home/pi", "/home/pi/api"]
         var templateList: [HcTemplate] = []
         var startResult: Result<String, any Error> = .success("t7")
+        /// Printed before every answer, as a chatty shell startup would.
+        var banner = ""
         private(set) var started: [HcRunRequest] = []
         private(set) var commands: [String] = []
 
@@ -28,9 +30,9 @@ struct NewTerminalModelTests {
 
         func answer(_ command: String) -> String {
             commands.append(command)
-            if command == HostDirectory.home { return home }
+            if command == HostDirectory.home { return banner + home }
             let checked = directories.contains { command == HostDirectory.exists($0) }
-            return checked ? "yes\n" : "no\n"
+            return banner + (checked ? "yes\n" : "no\n")
         }
 
         struct Shell: ShellRunner {
@@ -153,5 +155,50 @@ struct NewTerminalModelTests {
         await model.load()
         #expect(model.commandSuggestions == ["claude"])
         #expect(model.directorySuggestions == ["/home/pi/api"])
+    }
+
+    @Test("a host whose shell prints on startup still starts terminals")
+    func chattyHost() async {
+        let host = ScriptedHost()
+        host.banner = "Welcome to adam\n"
+        let model = form(host)
+        await model.load()
+        #expect(model.home == "/home/pi")
+        #expect(await model.start(size: nil) == "t7")
+    }
+
+    /// Cancel while starting: nothing is opened and nothing reads as failed.
+    @Test("a start cancelled part way opens nothing and says nothing failed")
+    func cancelled() async {
+        let host = ScriptedHost()
+        host.startResult = .failure(CancellationError())
+        let model = form(host)
+        #expect(await model.start(size: nil) == nil)
+        #expect(model.phase == .editing)
+    }
+
+    @Test("no directory suggestions until home is known")
+    func suggestionsWaitForHome() async throws {
+        let terminals = try [
+            JSONDecoder().decode(HcTerminal.self, from: Data(#"{"address":"t1","cwd":"/home/pi","foreground":{"cwd":"/home/pi"}}"#.utf8)),
+            JSONDecoder().decode(HcTerminal.self, from: Data(#"{"address":"t2","cwd":"/home/pi/api"}"#.utf8)),
+        ]
+        let model = form(ScriptedHost(), terminals: terminals)
+        #expect(model.directorySuggestions.isEmpty)
+        await model.load()
+        #expect(model.directorySuggestions == ["/home/pi/api"])
+    }
+
+    @Test("a home that does not read as a path is contract drift, not a failed command")
+    func unreadableHome() async {
+        let host = ScriptedHost()
+        host.home = "not a path"
+        let model = form(host)
+        #expect(await model.start(size: nil) == nil)
+        guard case .failed = model.phase else {
+            Issue.record("expected failed")
+            return
+        }
+        #expect(host.started.isEmpty)
     }
 }

@@ -77,7 +77,11 @@ final class TerminalsModel {
         let client = try await HcClient.connect(over: stream)
         self.client = client
         defer {
-            self.client = nil
+            // Only if it is still this run's. A run replaced by Try Again or a
+            // return to the foreground can end after the next one connected,
+            // and clearing unconditionally left a live list whose + did
+            // nothing until the next reconnect.
+            if self.client === client { self.client = nil }
             Task { await client.close() }
         }
         coreVersion = await client.hello?.version

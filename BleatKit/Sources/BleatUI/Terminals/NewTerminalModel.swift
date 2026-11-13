@@ -12,6 +12,11 @@ import Observation
 /// the core expands no `~` and without a directory starts the terminal in its
 /// own, `/` on a Mac; and whether the directory exists, because a missing one
 /// fails as `cannot start "/bin/sh"`, blaming the shell (both live, hc 0.1.20).
+///
+/// **A template's start can take a while**: `terminal.run` returns once the
+/// agent is ready and the first message sent, and what it does with an agent
+/// that never gets ready is open (plan, question 9). Cancel is the way out;
+/// see `NewTerminalSheet`.
 @Observable
 final class NewTerminalModel: Identifiable {
     enum Kind: String, CaseIterable, Identifiable {
@@ -57,8 +62,11 @@ final class NewTerminalModel: Identifiable {
     }
 
     /// Directories in use on the host, home left out: it is the default.
+    /// None until home is known — before that, home itself would be listed
+    /// beside "~ (home)" and every path shown in full.
     var directorySuggestions: [String] {
-        HcRunSuggestions.directories(from: terminals, excluding: home)
+        guard let home else { return [] }
+        return HcRunSuggestions.directories(from: terminals, excluding: home)
     }
 
     var selectedTemplate: HcTemplate? {
@@ -110,15 +118,22 @@ final class NewTerminalModel: Identifiable {
             let home = try await resolvedHome()
             let cwd = HcRunRequest.resolve(directory: directory, home: home)
             let shell = try await host.shell()
-            if try await shell.run(shell: HostDirectory.exists(cwd)).trimmingCharacters(in: .whitespacesAndNewlines) != "yes" {
+            if !HostDirectory.exists(inOutput: try await shell.run(shell: HostDirectory.exists(cwd))) {
                 phase = .failed("\(HcRunSuggestions.abbreviate(cwd, home: home)) is not a directory on \(hostName).")
                 return nil
             }
             let name = name.trimmingCharacters(in: .whitespaces)
             let request = HcRunRequest(program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size)
             let address = try await host.start(request)
+            // Cancelled while it started (the sheet's Cancel): the terminal
+            // may well be running on the host, and the list shows it, but the
+            // user asked not to be taken into it.
+            try Task.checkCancellation()
             phase = .editing
             return address
+        } catch is CancellationError {
+            phase = .editing
+            return nil
         } catch {
             phase = .failed(Self.message(for: error))
             return nil
@@ -136,7 +151,8 @@ final class NewTerminalModel: Identifiable {
     private func askHome() async throws -> String {
         let shell = try await host.shell()
         guard let home = HostDirectory.home(inOutput: try await shell.run(shell: HostDirectory.home)) else {
-            throw ShellError(command: HostDirectory.home, exitCode: 0, stderr: "no home directory")
+            // The command ran; what it printed did not read as a path.
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "the host's home directory did not read as a path"))
         }
         return home
     }

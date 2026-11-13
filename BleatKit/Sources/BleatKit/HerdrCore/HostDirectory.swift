@@ -18,8 +18,26 @@ public enum HostDirectory {
     }
 
     /// The home path in `home`'s output, or nil when it is not absolute.
+    ///
+    /// **The last line, not the whole output.** A host whose shell startup
+    /// prints — a motd, an `echo` in `.bashrc` — puts that before the answer,
+    /// as the herdr-core lookup found (`LoginShellLookup.path(inOutput:)`).
     public static func home(inOutput output: String) -> String? {
-        let path = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return path.hasPrefix("/") ? path : nil
+        guard let path = lastLine(of: output), path.hasPrefix("/") else { return nil }
+        return path
+    }
+
+    /// Whether `exists`' output says yes, read off its last line for the same
+    /// reason. Taking the whole output refused every directory on a host
+    /// whose shell prints on startup.
+    public static func exists(inOutput output: String) -> Bool {
+        lastLine(of: output) == "yes"
+    }
+
+    private static func lastLine(of output: String) -> String? {
+        output
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
     }
 }

@@ -25,6 +25,9 @@ struct HcTerminalScreen: View {
 
     var body: some View {
         PaneSurface(model: model, isActive: true)
+            // Its width, so the grid it is shown at is remembered for a
+            // terminal started from a list as wide.
+            .onGeometryChange(for: Int.self) { Int($0.size.width) } action: { model.screenWidth = $0 }
             .navigationTitle(title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

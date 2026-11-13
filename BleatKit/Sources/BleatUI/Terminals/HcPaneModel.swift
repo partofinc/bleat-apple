@@ -138,7 +138,7 @@ final class HcPaneModel: PaneDriving {
     func show(_ grid: TerminalGrid) {
         guard grid.isUsable else { return }
         viewport = grid
-        Self.lastViewport = grid
+        if screenWidth > 0 { Self.viewports[screenWidth] = grid }
         guard attached != nil, phase == .live else {
             // Not attached yet: the attach in flight catches up with the
             // latest size once it lands.
@@ -148,12 +148,32 @@ final class HcPaneModel: PaneDriving {
         Task { await enqueue([.resize(grid)]) }
     }
 
-    /// The grid a terminal screen last measured on this device, this run: the
-    /// size a terminal started from the phone is given before it starts, so a
-    /// program draws at the size it is about to be shown at. Nil until a
-    /// terminal has been opened; then the core's default holds until the
-    /// attach on open takes it over.
-    private(set) static var lastViewport: TerminalGrid?
+    /// The terminal screen's width in points, set by `HcTerminalScreen`. With
+    /// it the grid is remembered for that width — also the grid already
+    /// measured, since the width can arrive after the first one.
+    var screenWidth = 0 {
+        didSet {
+            guard screenWidth > 0, let viewport else { return }
+            Self.viewports[screenWidth] = viewport
+        }
+    }
+
+    /// Grids terminal screens measured on this device this run, by the
+    /// screen's width in points.
+    ///
+    /// **By width, not just the last one.** A terminal started from the
+    /// phone is given the grid it will be shown at, so the program draws at
+    /// that size from the start. The last grid of any screen was wrong after
+    /// an iPad rotation or a split-view change; one measured at the same
+    /// width as the list the + was tapped on is the screen it will open in.
+    private static var viewports: [Int: TerminalGrid] = [:]
+
+    /// The grid a terminal screen as wide as `width` was last shown at, or nil
+    /// when none has been: then the core's default holds until the attach
+    /// on open takes it over.
+    static func lastViewport(forWidth width: Int) -> TerminalGrid? {
+        viewports[width]
+    }
 
     func setRowHeight(_ height: CGFloat) {
         guard height > 0, height != rowHeight else { return }

@@ -19,11 +19,7 @@ public enum HcRunSuggestions {
     /// command a user would type: the first word's last path component.
     /// Shells are left out: "Shell" is already its own choice.
     public static func commands(from terminals: [HcTerminal]) -> [String] {
-        let all = terminals.compactMap { terminal -> String? in
-            guard let first = (terminal.foreground?.argv ?? terminal.argv)?.first else { return nil }
-            let command = (first as NSString).lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-            return command.isEmpty || shells.contains(command) ? nil : command
-        }
+        let all = terminals.compactMap(\.programName).filter { !shells.contains($0) }
         return ranked(all)
     }
 

@@ -308,9 +308,16 @@ question 15).
   `no_notify`, so the terminal keeps running when the phone goes and types
   nothing into its SSH session. Then it is opened like any row, which takes
   it over at the phone's size.
-- **It starts at the phone's grid** when a terminal has been opened this run
-  (`HcPaneModel.lastViewport`); otherwise at the core's headless default until
-  the attach on open resizes it.
+- **It starts at the phone's grid** when a terminal screen as wide as the
+  list has been shown this run (`HcPaneModel.lastViewport(forWidth:)`);
+  otherwise at the core's headless default until the attach on open resizes
+  it. By width, not just the last grid (from review): after an iPad rotation
+  or split change the last grid was another screen's.
+- **Cancel works while starting** (from review). A template's start returns
+  only once its agent is ready (question 9 open), and Cancel used to close
+  the sheet and still open the terminal when the start came back. Now it
+  cancels the wait; the terminal may still start on the host and shows in
+  the list, but is not opened.
 - **On the list's own connection.** `TerminalsModel` keeps its framed
   `HcClient` while live and asks `templates.list` and `terminal.run` on it;
   the + is disabled until the list is live. The new terminal reaches the list
@@ -318,10 +325,18 @@ question 15).
 - **Two shell questions first** (`HostDirectory`): `$HOME`, since the core
   expands no `~` and defaults to its own `/`; and whether the directory
   exists, since a missing one fails as "cannot start /bin/sh". A typed path is
-  resolved against home: empty is home, `~/x` and `x` are under it.
+  resolved against home: empty is home, `~/x` and `x` are under it. Both
+  answers are read off the **last line**, as the hc lookup is: a shell that
+  prints on startup otherwise refused every directory.
+- **A command is `sh -c` with herdr-core's environment**, not the user's
+  login shell. Measured 13 Nov 2026: that environment has `~/.local/bin` on
+  the Mac (its core keeps the login environment) and on adam (systemd user
+  unit), and `command -v claude` finds it on both.
 - **Suggestions** come from the terminals already running
   (`HcRunSuggestions`): their directories, and their programs minus shells
-  (`claude`, `npm`), most used first.
+  (`claude`, `npm`), most used first. A program's name is
+  `HcTerminal.programName`, the same one a row falls back to. Directories
+  are offered once home is known, so home is not listed twice.
 - **Not on the watch**, nor in the macOS build: the sheet is iOS-only.
 - Measured facts behind all of this are in
   [`hc-facts.md`](hc-facts.md#creating-terminals-source-schema).

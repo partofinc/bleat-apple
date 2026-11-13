@@ -76,9 +76,23 @@ public struct HcTerminal: Sendable, Equatable, Identifiable, Decodable {
     public var displayName: String {
         if let title, !title.isEmpty { return title }
         if let name, !name.isEmpty { return name }
-        let program = foreground?.argv?.first ?? argv?.first
-        if let program { return (program as NSString).lastPathComponent }
-        return address
+        return programName ?? address
+    }
+
+    /// What runs in it, as a person would type it: the foreground's first
+    /// word, else the one it was started with, as a last path component with
+    /// a login shell's leading `-` dropped (`-zsh` is `zsh`). Nil when
+    /// neither is known.
+    ///
+    /// One definition for the row's name and the new-terminal form's
+    /// suggestions, so a terminal the list calls `claude` is suggested as
+    /// `claude`.
+    public var programName: String? {
+        let first = [foreground?.argv?.first, argv?.first].compactMap { $0 }.first { !$0.isEmpty }
+        guard let first else { return nil }
+        let program = (first as NSString).lastPathComponent
+        let trimmed = program.hasPrefix("-") ? String(program.dropFirst()) : program
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// How urgently this terminal wants a person, lowest first.

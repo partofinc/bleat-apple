@@ -12,6 +12,9 @@ struct TerminalsView: View {
     @State private var attempt = 0
     /// The new-terminal sheet, while it is up.
     @State private var creating: NewTerminalModel?
+    /// The list's width in points: a terminal opened from it is as wide, so
+    /// the grid remembered for that width is the one to start a new one at.
+    @State private var width = 0
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppContext.self) private var context
 
@@ -52,8 +55,9 @@ struct TerminalsView: View {
                     .disabled(model.phase != .live)
                 }
             }
+            .onGeometryChange(for: Int.self) { Int($0.size.width) } action: { width = $0 }
             .sheet(item: $creating) { form in
-                NewTerminalSheet(model: form) { address, title in
+                NewTerminalSheet(model: form, size: HcPaneModel.lastViewport(forWidth: width)) { address, title in
                     creating = nil
                     // Opened as a row would open it: it takes the terminal
                     // over at the phone's size, which it already started at.

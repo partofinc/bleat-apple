@@ -175,6 +175,8 @@ framed straight after `hello`.
     `COLORTERM=truecolor`, `TERM_PROGRAM=ghostty`, `identity: "ghostty"`,
     fixed at start; `env` with `TERM`/`COLORTERM` alone leaves
     `TERM_PROGRAM=ghostty`. Bleat sends no identity (see `HcRunRequest`).
+  - A `line` gets the core's environment: `PATH` starts with `~/.local/bin`
+    on the Mac and on adam, so a bare `claude` resolves on both.
   - A name already live is `name_taken`: "a live terminal is already named
     …". `terminal.rm` of a live terminal is `live`, "kill it first".
   - `templates.list` gives `name`, `description`, `command` (and `error` for a

@@ -8,7 +8,9 @@ import Foundation
 /// it an `SSHTransport`.
 ///
 /// **There is no stream.** A relayed message is one request and one reply,
-/// and `hc connect` is a channel that stays open in both directions.
+/// and `hc connect` is a channel that stays open in both directions. So
+/// herdr-core is reached one call at a time (`call`), which the phone makes
+/// on its own connection to the core.
 public final class RelayTransport: PeerLink {
     /// Carries one encoded request to the phone and returns its encoded reply.
     ///
@@ -28,6 +30,16 @@ public final class RelayTransport: PeerLink {
     public func run(shell command: String) async throws -> String {
         let stdout = try await Self.output(of: .shell(hostKey: hostKey, command: command), over: channel)
         return String(decoding: stdout, as: UTF8.self)
+    }
+
+    /// One herdr-core call, made by the phone on its connection to this
+    /// host's core. herdr-core's refusal arrives as the `HcError` it was.
+    @concurrent
+    public func call(_ method: String, _ params: [String: HcJSON] = [:]) async throws -> HcJSON {
+        guard case .hc(let result) = try await Self.send(.hc(hostKey: hostKey, method: method, params: params), over: channel) else {
+            throw TransportError.connectionFailed("the iPhone sent a reply of the wrong kind")
+        }
+        return result
     }
 
     /// Tells the phone to close what it opened. Best effort: a phone that

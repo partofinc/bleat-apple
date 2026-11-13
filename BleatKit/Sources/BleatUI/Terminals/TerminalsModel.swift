@@ -86,20 +86,9 @@ final class TerminalsModel {
         }
         coreVersion = await client.hello?.version
         let subscription = try await client.subscribe()
-        var set = HcTerminalSet()
-        set.reset(to: subscription.snapshot)
-        publish(set)
-        phase = .live
-        for try await notification in subscription.notifications {
-            switch notification {
-            case .event(let params):
-                if set.apply(event: params) { publish(set) }
-            case .missed(let snapshot):
-                set.reset(to: snapshot)
-                publish(set)
-            case .heartbeat, .other:
-                continue
-            }
+        for try await update in subscription.updates {
+            publish(update.terminals)
+            phase = .live
         }
         // The stream ended without an error: the host closed it.
         if !Task.isCancelled { throw HcProtocolError.closed }

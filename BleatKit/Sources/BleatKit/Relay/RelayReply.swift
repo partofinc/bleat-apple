@@ -5,5 +5,7 @@ public enum RelayReply: Sendable, Codable, Equatable {
     /// The command's stdout, or nothing for a request that has no output.
     case output(Data)
     case peers([PairedPeer])
+    /// A herdr-core call's result.
+    case hc(HcJSON)
     case failed(RelayFailure)
 }

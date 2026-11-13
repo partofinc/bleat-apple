@@ -34,24 +34,10 @@ struct HerdrCoreGateView: View {
         switch context.herdrCore.state(of: peer) {
         case .ready:
             if context.isRelayed {
-                // The watch asks the phone for everything, and the relay
-                // carries shell commands, not hc's stream — yet. So the host's
-                // load is here, read over the relay, and its terminals are not.
-                List {
-                    HostLoadSection(peer: peer)
-                    Section {
-                        Label("Terminals are on iPhone for now", systemImage: "iphone")
-                    } footer: {
-                        Text("The watch follows in a later update.")
-                    }
-                }
-                // Asking for the shell opens nothing on the watch: the phone
-                // connects when the probe reaches it. The store reads only
-                // over a connection something else asked for, and this is that.
-                .task {
-                    _ = try? await context.connections.shell(for: peer)
-                    await context.hostLoad.refresh(for: peer)
-                }
+                // The watch asks the phone for everything: the terminals are
+                // herdr-core calls the phone makes for it, asked again while
+                // the screen is up.
+                RelayedTerminalsView(peer: peer, model: RelayedTerminalsModel(peer: peer, connections: context.connections))
             } else {
                 TerminalsView(peer: peer, connections: context.connections)
             }

@@ -25,7 +25,8 @@ public struct HcTerminalSet: Sendable, Equatable {
     public init() {}
 
     /// Starts over from a snapshot: the reply to `events.subscribe`, or the
-    /// params of a `missed` notification. Both are `{seq, terminals}`.
+    /// params of a `missed` notification. Both are `{seq, terminals}`; so is
+    /// `terminal.list`'s reply, less the `seq`, which is how the watch reads it.
     public mutating func reset(to snapshot: HcJSON) {
         records = [:]
         decoded = [:]

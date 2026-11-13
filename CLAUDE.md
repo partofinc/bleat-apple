@@ -28,16 +28,18 @@ the herdr-core gate for 1.x peers (#77); `HcClient` and a host's live terminal
 list (#78); attaching to a terminal (#79); pairing on hc (#80); the herdr
 backend removed (#81); installing herdr-core from the gate and from `bleat
 pair` (#82); `bleat` 2.0.0 as a pre-release (#83–#85); starting terminals from
-the phone (#86), into Herdr.app's spaces. Phase A's console gate is met only in part — `bleat
+the phone (#86), into Herdr.app's spaces (#87); multi-line prompts as one
+paste (#89); marking terminals seen as Herdr.app does (#88); terminals on
+the watch, read through the phone. Phase A's console gate is met only in part — `bleat
 terminals --watch` follows events; attaching from the console is not built.
-**Left for B:** the watch on hc, and whether a core
+**Left for B:** the watch on a real device, and whether a core
 outlives the SSH login on a fresh Pi (linger; [hc facts](docs/hc-facts.md)). Two product questions are Ravil's before release: the listing's
 name and promise, and whether 1.x's unbuilt Control items carry over.
 
 | Phase | Deliverable | Gate to next phase |
 |---|---|---|
 | **A — Pipe** | `HcKit` (framed codec from the start, not only for attach) and the console tool on it. `docs/hc-facts.md` verified live. Fixtures captured from `hc schema` and live replies. | From a Mac terminal, over SSH `hc connect` to a Pi, on one framed connection: hello, subscribe and print live events while sending requests, list spaces and terminals, attach and see live frames, send keys, resize, detach cleanly, survive a dropped connection. No UI code. |
-| **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone does not clear the Mac's `done`. Sessions on the watch work. |
+| **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone clears the Mac's `done`, as Herdr.app's own clients do (`herdr.seen`, decided 13 Nov 2026). Sessions on the watch work. |
 | **C — New capabilities** | Federated machines in the host list, templates when creating, anything else hc enables that we choose to take. | Agreed scope only; each item listed before work starts. |
 | **D — Release 2.0** | Demo host rebuilt on `hc`, docs and README updated, App Store listing and review notes revised, TestFlight. | Approved on the App Store as 2.0, same listing. |
 

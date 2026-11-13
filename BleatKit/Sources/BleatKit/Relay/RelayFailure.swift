@@ -10,6 +10,15 @@ import Foundation
 public enum RelayFailure: Sendable, Codable, Equatable {
     case shell(ShellError)
     case transport(TransportError)
+    /// herdr-core said no: the host was reached and refused the call.
+    case hc(code: Int, message: String, kind: String?)
+    /// The connection to herdr-core made no sense: another protocol
+    /// generation, no framed mode, closed under a call. Not the network, so
+    /// not a reason to drop the SSH connection on every poll.
+    case hcProtocol(HcProtocolError)
+    /// The phone would not do it: a call the watch may not make, a host not
+    /// yet checked for herdr-core. A rule, not a dead network.
+    case refused(String)
     /// The watch named a host the phone has no record of — unpaired on the
     /// phone since the watch last heard.
     case unknownPeer
@@ -22,6 +31,8 @@ public enum RelayFailure: Sendable, Codable, Equatable {
         case let failure as RelayFailure: self = failure
         case let shell as ShellError: self = .shell(shell)
         case let transport as TransportError: self = .transport(transport)
+        case let hc as HcError: self = .hc(code: hc.code, message: hc.message, kind: hc.kind)
+        case let hc as HcProtocolError: self = .hcProtocol(hc)
         case is CancellationError: self = .cancelled
         default: self = .other(String(describing: error))
         }
@@ -32,6 +43,11 @@ public enum RelayFailure: Sendable, Codable, Equatable {
         switch self {
         case .shell(let shell): shell
         case .transport(let transport): transport
+        case .hc(let code, let message, let kind): HcError(code: code, message: message, kind: kind)
+        case .hcProtocol(let hc): hc
+        // Itself: neither a `TransportError`, which would drop the
+        // connection, nor a host's refusal.
+        case .refused: self
         case .unknownPeer:
             TransportError.connectionFailed("this host is no longer paired on the iPhone")
         case .cancelled: CancellationError()
@@ -41,3 +57,12 @@ public enum RelayFailure: Sendable, Codable, Equatable {
 }
 
 extension RelayFailure: Error {}
+
+extension RelayFailure: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .refused(let reason): reason
+        default: String(describing: error)
+        }
+    }
+}

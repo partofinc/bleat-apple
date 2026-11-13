@@ -340,6 +340,7 @@ struct HcPaneModelTests {
         let (model, _) = model([core])
         var paste = true
         model.attachPasteMode { paste }
+        model.attach { _ in }
         model.show(TerminalGrid(cols: 53, rows: 30))
         await eventually { model.phase == .live }
         let prompt = try #require(SubmittedLine("look at this\nthen fix it"))
@@ -353,6 +354,19 @@ struct HcPaneModelTests {
         await model.submit(prompt)
         await eventually { core.input.count == 4 }
         #expect(core.input.suffix(2).map(\.payload) == [Data("look at this then fix it".utf8), TerminalKey.enter.bytes])
+        await model.close()
+    }
+
+    /// From review: the composer cleared a long prompt that then had no
+    /// stream to go to.
+    @Test("a submit with no stream to take it says so")
+    func submitWithoutStream() async throws {
+        let core = FakeCore()
+        let (model, _) = model([core])
+        #expect(await model.submit(try #require(SubmittedLine("ls"))) == false)
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.phase == .live }
+        #expect(await model.submit(try #require(SubmittedLine("ls"))))
         await model.close()
     }
 

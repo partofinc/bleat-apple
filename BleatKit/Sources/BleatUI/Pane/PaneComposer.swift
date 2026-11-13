@@ -25,12 +25,17 @@ struct PaneComposer: View {
             PaneTextView(text: $text)
                 .padding(.horizontal, 12)
                 .safeAreaInset(edge: .bottom) {
-                    Text(footer)
+                    // Read again every second: the paste mode lives in the
+                    // terminal and is not observable, and zsh turns it off
+                    // and on around every command (from review).
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(footer)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
+                    }
                 }
                 .navigationTitle("Compose")
                 .navigationBarTitleDisplayMode(.inline)
@@ -59,50 +64,17 @@ struct PaneComposer: View {
             : "This program reads a line at a time, so line breaks go as spaces."
     }
 
+    /// Clears and closes at once, and puts the text back if there was no
+    /// stream to take it, so a long prompt is not lost to a dropped
+    /// connection (from review). Queued is as far as the promise goes.
     private func send() {
         guard canSend, let line else { return }
+        let written = text
         text = ""
         dismiss()
-        Task { await model.submit(line) }
-    }
-}
-
-/// A text view that leaves what was typed alone: no smart quotes or dashes,
-/// which would rewrite the characters a command is made of. See
-/// `PaneLineField`, which is the one-line case.
-private struct PaneTextView: UIViewRepresentable {
-    @Binding var text: String
-
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
-
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
-        view.font = .preferredFont(forTextStyle: .body)
-        view.adjustsFontForContentSizeCategory = true
-        view.backgroundColor = .clear
-        view.autocapitalizationType = .none
-        view.smartDashesType = .no
-        view.smartQuotesType = .no
-        view.smartInsertDeleteType = .no
-        view.text = text
-        view.delegate = context.coordinator
-        // Up with the sheet: writing is why it was opened.
-        Task { @MainActor in view.becomeFirstResponder() }
-        return view
-    }
-
-    func updateUIView(_ view: UITextView, context: Context) {
-        context.coordinator.text = $text
-        if view.text != text { view.text = text }
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var text: Binding<String>
-
-        init(text: Binding<String>) { self.text = text }
-
-        func textViewDidChange(_ view: UITextView) {
-            text.wrappedValue = view.text
+        Task {
+            guard !(await model.submit(line)), text.isEmpty else { return }
+            text = written
         }
     }
 }

@@ -124,12 +124,14 @@ struct PaneKeyBar: View {
         }
     }
 
-    /// Opens the composer with what the field held, so a line begun there
-    /// carries on as the start of the prompt.
+    /// Opens the composer. A line begun in the field carries on there as the
+    /// start of the prompt — **only into an empty composer**: added under a
+    /// half-written prompt from earlier it would go out with it, perhaps
+    /// unseen above the fold (from review). Otherwise it stays in the field.
     private func compose() {
         isComposing = false
-        if !draft.isEmpty {
-            composition = composition.isEmpty ? draft : composition + "\n" + draft
+        if composition.isEmpty, !draft.isEmpty {
+            composition = draft
             draft = ""
         }
         isWriting = true

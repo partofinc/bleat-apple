@@ -12,7 +12,12 @@ struct SubmittedLineTests {
         #expect(try #require(SubmittedLine("  echo hi ")).text == "echo hi")
     }
 
-    @Test("line breaks are kept, as one kind", arguments: ["one\ntwo", "one\r\ntwo", "one\rtwo", "\none\ntwo\n"])
+    /// From review: vertical tab and form feed went out raw, and zsh reads
+    /// them as Ctrl-K and Ctrl-L.
+    @Test("line breaks are kept, as one kind", arguments: [
+        "one\ntwo", "one\r\ntwo", "one\rtwo", "\none\ntwo\n",
+        "one\u{0B}two", "one\u{0C}two", "one\u{85}two", "one\u{2028}two", "one\u{2029}two",
+    ])
     func lineBreaks(raw: String) throws {
         let line = try #require(SubmittedLine(raw))
         #expect(line.text == "one\ntwo")
@@ -45,11 +50,22 @@ struct SubmittedLineTests {
         #expect(line.records(bracketedPaste: false) == [Data("one two   three".utf8), Data([0x0D])])
     }
 
-    @Test("a paste's end marker inside the text cannot end it early")
-    func injectedEnd() throws {
-        let line = try #require(SubmittedLine("a\n\u{1B}[201~rm -rf x\nb"))
+    /// From review: stripping the end marker once let a nested one rebuild
+    /// itself and run the rest as typed keys.
+    @Test("no escape survives, so no paste marker can end a paste early", arguments: [
+        "a\n\u{1B}[201~rm -rf x\nb",
+        "a\n\u{1B}[201\u{1B}[201~~rm -rf x\nb",
+    ])
+    func injectedEnd(raw: String) throws {
+        let line = try #require(SubmittedLine(raw))
         let paste = String(decoding: try #require(line.records(bracketedPaste: true).first), as: UTF8.self)
-        #expect(paste == "\u{1B}[200~a\nrm -rf x\nb\u{1B}[201~")
+        #expect(paste.filter { $0 == "\u{1B}" }.count == 2, "only the paste's own markers")
+        #expect(paste.hasPrefix("\u{1B}[200~") && paste.hasSuffix("\u{1B}[201~"))
+    }
+
+    @Test("control characters go, tab stays", arguments: [("ls\u{07}\u{1B}[A -la", "ls[A -la"), ("a\tb", "a\tb"), ("x\u{7F}y\u{9B}z", "xyz")])
+    func controls(raw: String, expected: String) throws {
+        #expect(try #require(SubmittedLine(raw)).text == expected)
     }
 
     /// A bare Enter commits an agent's dialog. It must not be reachable by

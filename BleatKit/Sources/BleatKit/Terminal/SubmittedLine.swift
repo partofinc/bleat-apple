@@ -26,17 +26,33 @@ import Foundation
 /// prompt. So the terminal on screen says whether the mode is on, and
 /// `records(bracketedPaste:)` sends a paste when it is and spaces when not.
 public struct SubmittedLine: Sendable, Equatable {
-    /// What was typed, line breaks as `\n`, trimmed at both ends.
+    /// What was typed, line breaks as `\n`, trimmed at both ends, with no
+    /// control characters but tab.
     public let text: String
 
     /// Nil for text with nothing in it: an empty line is a bare Enter, which
     /// on an agent's dialog commits whatever is selected. That has its own
     /// key, and it should not be reachable by sending nothing.
+    ///
+    /// **Every line break is one** — CR, CRLF, vertical tab, form feed, NEL,
+    /// U+2028, U+2029 (`Character.isNewline`) — as 1.x's split had it. Sent
+    /// raw, form feed is Ctrl-L to zsh and vertical tab Ctrl-K (from review).
+    ///
+    /// **Control characters go**, ESC above all: typed or pasted text is text,
+    /// and a key with no text has its own button. With no ESC left, no paste
+    /// end marker can sit inside a paste, nor be rebuilt from pieces once
+    /// another is removed — `a ESC[201 ESC[201~ ~rm` became `ESC[201~rm`
+    /// under the strip-once this replaced (from review).
     public init?(_ raw: String) {
-        let text = raw
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var cleaned = ""
+        for character in raw {
+            if character.isNewline {
+                cleaned.append("\n")
+            } else if character == "\t" || !character.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+                cleaned.append(character)
+            }
+        }
+        let text = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         self.text = text
     }
@@ -54,14 +70,16 @@ public struct SubmittedLine: Sendable, Equatable {
     /// - Parameter bracketedPaste: whether the program has bracketed paste on
     ///   (`?2004h`). Only a multi-line text is wrapped: one line goes as it
     ///   always has, the way that was measured on both backends.
+    ///
+    /// **Line breaks inside the paste are LF**, kept after review: that is
+    /// what zsh and Claude Code were measured taking, and what SwiftTerm's own
+    /// paste sends (`iOSTerminalView.paste`, the text as it is). That paste
+    /// is not reused here because it reads only `UIPasteboard`.
     public func records(bracketedPaste: Bool) -> [Data] {
         let enter = TerminalKey.enter.bytes
         guard isMultiline else { return [Data(text.utf8), enter] }
         guard bracketedPaste else { return [Data(flattened.utf8), enter] }
-        // A paste's own end marker inside it would end the paste early and
-        // run the rest as typed keys.
-        let body = text.replacingOccurrences(of: Self.pasteEnd, with: "")
-        return [Data((Self.pasteStart + body + Self.pasteEnd).utf8), enter]
+        return [Data((Self.pasteStart + text + Self.pasteEnd).utf8), enter]
     }
 
     static let pasteStart = "\u{1B}[200~"

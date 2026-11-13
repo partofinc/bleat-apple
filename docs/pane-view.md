@@ -47,12 +47,21 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
   lines and Claude Code showed one two-line prompt. So a multi-line text is
   sent as a paste when SwiftTerm says the mode is on
   (`attachPasteMode`), and joined with spaces when it is off, as before.
-  One line is sent as it always was. The paste's end marker is stripped
-  from inside the text. Multi-line text is written in **Compose**
+  One line is sent as it always was. From review: **typed text loses its
+  control characters but tab, ESC included**, so no paste marker can sit in
+  a paste or be rebuilt from pieces (stripping the end marker once could be
+  beaten by nesting one); **every line break counts** (VT, FF, NEL, U+2028
+  and U+2029 too — zsh reads FF as Ctrl-L); a multi-line send **waits up to
+  2 s for the first paint after an attach**, which restores the modes; line
+  breaks inside the paste stay LF, as measured and as SwiftTerm's own paste
+  sends them. Multi-line text is written in **Compose**
   (`square.and.pencil` beside the field), a sheet with a UIKit text view
   (no smart punctuation, as `PaneLineField`); the bar keeps its fixed
   height, and the sheet's keyboard freezes the grid like any other. Its
-  footer says how the text will arrive before it is sent.
+  footer says how the text will arrive before it is sent, read again every
+  second because zsh switches the mode around each command. Send clears and
+  closes at once and puts the text back if no stream took it; a line in the
+  field moves into Compose only when Compose is empty.
 - **One terminal's failure is reported, never `release()`d**: the list shares
   the SSH connection, and one `hc connect` ending says nothing about it.
   Keys and resizes share one ordered queue.

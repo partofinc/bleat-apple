@@ -57,6 +57,9 @@ final class HcPaneModel: PaneDriving {
     private var pending: [Data] = []
     private var scroller: ((ScrollDirection, Int) -> Void)?
     private var pasteMode: (() -> Bool)?
+    /// Whether this attach's first paint has reached the terminal, and with
+    /// it the program's modes.
+    private var paintedSinceAttach = false
 
     /// The live attach: the client, and the channel the screen comes on.
     private var attached: (client: HcClient, channel: UInt32)?
@@ -152,6 +155,8 @@ final class HcPaneModel: PaneDriving {
     func attach(_ sink: @escaping (Data) -> Void) {
         self.sink = sink
         for data in pending { sink(data) }
+        // A paint held for the renderer has reached it now.
+        if !pending.isEmpty, attached != nil { paintedSinceAttach = true }
         pending.removeAll()
     }
 
@@ -288,8 +293,20 @@ final class HcPaneModel: PaneDriving {
     /// Not `terminal.send`: that waits for ~3 s without typing and refuses a
     /// blocked program, which suits an agent sending to another agent. Here the
     /// person at the phone is the one typing.
-    func submit(_ line: SubmittedLine) async {
+    ///
+    /// **Several lines wait for the first paint after attaching**, up to two
+    /// seconds: until it lands the terminal holds the last attach's modes, or
+    /// none, and a paste would go out flattened (from review).
+    @discardableResult
+    func submit(_ line: SubmittedLine) async -> Bool {
+        if line.isMultiline {
+            for _ in 0..<40 where attached != nil && !paintedSinceAttach {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        guard attached != nil else { return false }
         await enqueue(line.records(bracketedPaste: acceptsPaste).map { .data($0) })
+        return true
     }
 
     func send(bytes: Data) async {
@@ -377,6 +394,7 @@ final class HcPaneModel: PaneDriving {
                 // and resizes would go to a client nobody reads.
                 try Task.checkCancellation()
                 attached = (connected, attachment.channel)
+                paintedSinceAttach = false
                 grid = size
                 phase = .live
                 newLook()
@@ -389,6 +407,7 @@ final class HcPaneModel: PaneDriving {
                     // two screens.
                     guard !Task.isCancelled else { break }
                     deliver(chunk)
+                    if sink != nil { paintedSinceAttach = true }
                     // Credit once the bytes are in the terminal, which is when
                     // they have been dealt with.
                     await connected.grant(chunk.count, on: attachment.channel)

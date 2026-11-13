@@ -32,7 +32,9 @@ protocol PaneDriving: AnyObject {
     func send(_ key: TerminalKey) async
     func send(_ keys: [TerminalKey], spacedBy pause: Duration) async
     func send(bytes: Data) async
-    func submit(_ line: SubmittedLine) async
+    /// Whether it went to a live stream; false when there was none to take it.
+    @discardableResult
+    func submit(_ line: SubmittedLine) async -> Bool
     func scroll(_ direction: ScrollDirection, notches: Int) async
 
     func close() async

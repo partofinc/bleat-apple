@@ -36,7 +36,7 @@ first run was a plain build, so the first archive is build 2 or later.
 ```sh
 # in a clean checkout of the commit to release (a worktree keeps the open
 # Xcode's edits out of it), with Version.swift already at the new version:
-Scripts/release-cli.sh 1.0.0 [--draft] [--skip-tap]
+Scripts/release-cli.sh 1.0.0 [--draft | --prerelease] [--skip-tap]
 ```
 
 It refuses a tree with changes, a commit not on `origin/main`, a version that
@@ -45,6 +45,15 @@ another commit. **It is safe to rerun** for the same version: an existing
 release has its assets replaced, and an unchanged formula is not committed.
 **`--draft` skips the tap and pushes no tag**: a draft's assets cannot be
 downloaded, so a formula pointing at them would break every install.
+**`--prerelease` publishes a GitHub pre-release not marked latest, and skips
+the tap**, so `install.sh` (`releases/latest`) and Homebrew keep serving the
+release before it; testers install it with `BLEAT_VERSION=<version>`. Added
+for cli-2.0.0 (13 Nov 2026), which pairs only with Bleat 2 while the App Store
+app is 1.x: published as latest, it would have stopped every 1.x user who
+upgraded `bleat` from pairing. **Running the script again for that version
+without the flag promotes it**: the release is edited to a full one, marked
+latest, given the general notes, and the formula follows. Do that when Bleat 2
+goes to App Review.
 Notarization is judged by notarytool's JSON `status`, not its exit code.
 Assets have **no version in their names** (`bleat-macos-universal.tar.gz`,
 `bleat-linux-aarch64.tar.gz`, `bleat-linux-x86_64.tar.gz`, `SHA256SUMS`), so

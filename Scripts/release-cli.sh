@@ -3,7 +3,7 @@
 # (aarch64, x86_64), packs each as a tarball, attaches them with SHA256SUMS to
 # a GitHub release, and points the Homebrew formula at them.
 #
-#   Scripts/release-cli.sh <version> [--draft] [--skip-tap]
+#   Scripts/release-cli.sh <version> [--draft | --prerelease] [--skip-tap]
 #
 # Run from a clean checkout of a commit already on origin/main. The tag is
 # `cli-<version>`, created here if it does not exist yet, and <version> must be
@@ -13,6 +13,13 @@
 # --draft makes a draft release and implies --skip-tap: a draft's assets are
 # not downloadable, so a formula pointing at them would break every install.
 # The tag is not pushed either; GitHub creates it when the draft is published.
+#
+# --prerelease publishes a GitHub pre-release that is not marked latest, and
+# implies --skip-tap: install.sh's `releases/latest` and Homebrew keep serving
+# the release before it. For a tool that only a newer, unreleased app pairs
+# with (cli-2.0.0, ahead of Bleat 2 on the App Store). Testers install it with
+# BLEAT_VERSION=<version>. Running again without the flag promotes it: the
+# release becomes a full one, marked latest, and the formula follows.
 #
 # Safe to run again for the same version after a failure: an existing release
 # gets its assets replaced, and an unchanged formula is not committed.
@@ -31,17 +38,24 @@
 # Needs: Xcode, the Linux SDK and toolchain Scripts/build-linux.sh needs, gh.
 set -euo pipefail
 
-version=${1:?usage: Scripts/release-cli.sh <version> [--draft] [--skip-tap]}
+version=${1:?usage: Scripts/release-cli.sh <version> [--draft | --prerelease] [--skip-tap]}
 shift
 draft=
+prerelease=
 skip_tap=
 for flag in "$@"; do
     case $flag in
         --draft) draft=1; skip_tap=1 ;;
+        --prerelease) prerelease=1; skip_tap=1 ;;
         --skip-tap) skip_tap=1 ;;
         *) echo "error: unknown flag $flag" >&2; exit 2 ;;
     esac
 done
+
+if [[ -n $draft && -n $prerelease ]]; then
+    echo "error: --draft and --prerelease are different releases; pick one" >&2
+    exit 2
+fi
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 slug=partofinc/bleat-apple
@@ -158,11 +172,27 @@ curl -fsSL https://raw.githubusercontent.com/$slug/main/Scripts/install.sh | sh 
 \`\`\`
 
 Static Linux builds for aarch64, from ARMv8.0 (Raspberry Pi 4 and newer), and for x86_64. The x86_64 build is new and less tried: please open an issue if it misbehaves."
+if [[ -n $prerelease ]]; then
+    notes="**Pre-release, for Bleat 2.** This \`bleat\` pairs hosts running herdr-core (\`hc\`) with the Bleat 2 app, which is not on the App Store yet; the Bleat 1.x app cannot pair with it. Homebrew and the install script still give 1.x users the release before this one. To try it:
+
+\`\`\`sh
+curl -fsSL https://raw.githubusercontent.com/$slug/main/Scripts/install.sh | BLEAT_VERSION=$version sh
+\`\`\`
+
+Static Linux builds for aarch64, from ARMv8.0 (Raspberry Pi 4 and newer), and for x86_64."
+fi
 
 echo "== GitHub release $tag"
 if gh release view "$tag" --repo "$slug" >/dev/null 2>&1; then
     echo "-- $tag exists; replacing its assets"
     gh release upload "$tag" --repo "$slug" --clobber "$dist"/*.tar.gz "$dist/SHA256SUMS"
+    if [[ -z $draft && -z $prerelease ]] &&
+        [[ $(gh release view "$tag" --repo "$slug" --json isPrerelease -q .isPrerelease) == true ]]; then
+        # The pre-release's time has come: a full release, latest, with
+        # notes for everyone.
+        echo "-- promoting $tag from pre-release to latest"
+        gh release edit "$tag" --repo "$slug" --prerelease=false --latest --notes "$notes"
+    fi
 elif [[ -n $draft ]]; then
     gh release create "$tag" --repo "$slug" --draft --target "$head" \
         --title "bleat $version" --notes "$notes" "$dist"/*.tar.gz "$dist/SHA256SUMS"
@@ -171,13 +201,20 @@ else
         git tag -a "$tag" -m "bleat $version"
     fi
     git push origin "refs/tags/$tag"
-    gh release create "$tag" --repo "$slug" --latest \
-        --title "bleat $version" --notes "$notes" "$dist"/*.tar.gz "$dist/SHA256SUMS"
+    if [[ -n $prerelease ]]; then
+        gh release create "$tag" --repo "$slug" --prerelease --latest=false \
+            --title "bleat $version" --notes "$notes" "$dist"/*.tar.gz "$dist/SHA256SUMS"
+    else
+        gh release create "$tag" --repo "$slug" --latest \
+            --title "bleat $version" --notes "$notes" "$dist"/*.tar.gz "$dist/SHA256SUMS"
+    fi
 fi
 
 if [[ -n $skip_tap ]]; then
     if [[ -n $draft ]]; then
         echo "== skipped the Homebrew formula: assets of a draft cannot be downloaded"
+    elif [[ -n $prerelease ]]; then
+        echo "== skipped the Homebrew formula: a pre-release is not for everyone yet"
     else
         echo "== skipped the Homebrew formula (--skip-tap)"
     fi

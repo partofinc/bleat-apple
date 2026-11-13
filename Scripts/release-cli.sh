@@ -98,8 +98,14 @@ formula_version() {
 
 # gh learnt `release edit --latest` and `release create --latest=false` late;
 # an old gh would fail part way.
+#
+# The help is read whole before it is searched: piped into `grep -q`, grep
+# exits at the first match, gh dies of SIGPIPE, and under `pipefail` the
+# pipeline fails — this refused gh 2.104 on its first run.
 need_gh_latest() {
-    gh release "$1" --help 2>&1 | grep -q -- '--latest' ||
+    local help
+    help=$(gh release "$1" --help 2>&1) || true
+    [[ $help == *--latest* ]] ||
         { echo "error: this gh has no 'release $1 --latest'; update gh" >&2; exit 1; }
 }
 

@@ -25,6 +25,11 @@ import Observation
 /// must neither install itself nor paint its buffered bytes into the
 /// terminal the new one is drawing.
 ///
+/// **Looking at it marks it seen** (`HcSeen`, Herdr.app's `herdr.seen`): the
+/// same connection follows this terminal's events, and while the screen is
+/// on show, attached and the app in front, each turn that ends is written as
+/// seen, so it stops being "done" on the Mac too.
+///
 /// One `hc connect` per attach, on the shared SSH connection; the list behind
 /// it has its own. The bytes are never inspected: they go to SwiftTerm exactly
 /// as they arrived.
@@ -62,6 +67,15 @@ final class HcPaneModel: PaneDriving {
     private var isActive = true
     /// Set first in `close()`: nothing may attach once the screen is gone.
     private var isClosing = false
+    /// Whether the app is in front (`scenePhase == .active`), set by the
+    /// screen. Behind the app switcher or the lock screen nobody is reading.
+    private var isInFront = true
+    /// This terminal's record, followed on the attach's connection; nil until
+    /// the subscription's snapshot.
+    private(set) var record: HcTerminal?
+    /// This look's seen writes. A new attach is a new look.
+    private var seen = HcSeen()
+    private var turns: Task<Void, Never>?
 
     /// Read by `PaneGeometryTests` to check that the chrome around the terminal
     /// does not change its size between phases — the shape of bug that put an
@@ -202,6 +216,17 @@ final class HcPaneModel: PaneDriving {
         }
     }
 
+    /// The app came to the front or left it. Back in front is a new look, so
+    /// a turn that ended meanwhile is marked seen now.
+    func setInFront(_ inFront: Bool) {
+        guard inFront != isInFront else { return }
+        isInFront = inFront
+        if inFront {
+            seen = HcSeen()
+            markSeen()
+        }
+    }
+
     func setWantsKeyboard(_ wanted: Bool) {
         wantsKeyboard = wanted
     }
@@ -284,6 +309,9 @@ final class HcPaneModel: PaneDriving {
     private func detach() {
         reader?.cancel()
         reader = nil
+        turns?.cancel()
+        turns = nil
+        record = nil
         pending.removeAll()
         outgoing.removeAll()
         if let attached {
@@ -315,6 +343,8 @@ final class HcPaneModel: PaneDriving {
                 attached = (connected, attachment.channel)
                 grid = size
                 phase = .live
+                seen = HcSeen()
+                turns = Task { [weak self] in await self?.followTurns(on: connected) }
                 // Measured again while the attach was opening — a rotation.
                 if let latest = viewport, latest != size { await enqueue([.resize(latest)]) }
                 for try await chunk in screen {
@@ -349,6 +379,53 @@ final class HcPaneModel: PaneDriving {
             phase = .failed(ErrorMessage.of(error))
             wantsKeyboard = false
             await report(error)
+        }
+    }
+
+    // MARK: - Seen
+
+    /// This terminal's events, on the attach's own connection: its turn, and
+    /// the seen label other clients write. Ends with the attach. A core that
+    /// refuses the subscription costs only the marking, never the screen.
+    private func followTurns(on client: HcClient) async {
+        guard let subscription = try? await client.subscribe(["terminal": .string(address)]) else { return }
+        var set = HcTerminalSet()
+        set.reset(to: subscription.snapshot)
+        update(from: set)
+        do {
+            for try await notification in subscription.notifications {
+                guard !Task.isCancelled else { return }
+                switch notification {
+                case .event(let params):
+                    if set.apply(event: params) { update(from: set) }
+                case .missed(let snapshot):
+                    set.reset(to: snapshot)
+                    update(from: set)
+                case .heartbeat, .other:
+                    continue
+                }
+            }
+        } catch {}
+    }
+
+    private func update(from set: HcTerminalSet) {
+        guard !Task.isCancelled else { return }
+        record = set.terminals.first { $0.address == address }
+        markSeen()
+    }
+
+    /// Writes the turn as seen if someone is looking: on show, attached, the
+    /// app in front.
+    private func markSeen() {
+        guard isActive, isInFront, phase == .live, let attached, let record,
+              let turn = seen.turnToWrite(for: record) else { return }
+        let address = address
+        Task { [weak self] in
+            do {
+                _ = try await attached.client.call("terminal.label", HcSeen.params(address: address, turn: turn))
+            } catch {
+                self?.seen.failed(turn)
+            }
         }
     }
 

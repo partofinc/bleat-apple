@@ -22,6 +22,10 @@ struct HcPaneModelTests {
         private(set) var sent: [HcFrame] = []
         private(set) var closed = false
         let paint = Data("first paint\r\n$ ".utf8)
+        /// The terminal's record in the subscription's snapshot.
+        var record = #"{"address":"t5n","state":"live","turn":3,"labels":{}}"#
+        /// `herdr.seen` values the client asked `terminal.label` to set.
+        private(set) var seenWrites: [String] = []
 
         init() { (output, feed) = AsyncThrowingStream<Data, any Error>.makeStream() }
 
@@ -40,9 +44,23 @@ struct HcPaneModelTests {
                     sent.append(frame)
                     guard frame.channel == 0,
                           let request = try? JSONDecoder().decode(HcJSON.self, from: frame.payload),
-                          request["method"]?.string == "terminal.attach",
                           let id = request["id"]?.int
                     else { continue }
+                    switch request["method"]?.string {
+                    case "events.subscribe":
+                        let reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{"channel":2,"seq":1,"terminals":[\#(record)]}}"#
+                        replies.append(HcFrame(channel: 0, kind: .data, payload: Data(reply.utf8)).encoded())
+                        continue
+                    case "terminal.label":
+                        if let value = request["params"]?["labels"]?["herdr.seen"]?.string { seenWrites.append(value) }
+                        let reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{}}"#
+                        replies.append(HcFrame(channel: 0, kind: .data, payload: Data(reply.utf8)).encoded())
+                        continue
+                    case "terminal.attach":
+                        break
+                    default:
+                        continue
+                    }
                     let reply = #"{"jsonrpc":"2.0","id":\#(id),"result":{"channel":1,"terminal":{"address":"t5n","state":"live"}}}"#
                     replies.append(HcFrame(channel: 0, kind: .data, payload: Data(reply.utf8)).encoded())
                     replies.append(HcFrame(channel: 1, kind: .data, payload: paint).encoded())
@@ -55,6 +73,14 @@ struct HcPaneModelTests {
             lock.withLock { closed = true }
             feed.finish()
         }
+
+        /// An event on the subscription's channel, as hc sends one.
+        func event(_ type: String, seq: Int, data: String) {
+            let line = #"{"jsonrpc":"2.0","method":"event","params":{"type":"\#(type)","terminal":"t5n","seq":\#(seq),"data":\#(data)}}"#
+            feed.yield(HcFrame(channel: 2, kind: .data, payload: Data((line + "\n").utf8)).encoded())
+        }
+
+        var seen: [String] { lock.withLock { seenWrites } }
 
         /// The core closes the screen's channel: the program ended.
         func endProgram() { feed.yield(HcFrame(channel: 1, kind: .close).encoded()) }
@@ -132,6 +158,57 @@ struct HcPaneModelTests {
         #expect(input.map(\.knownKind) == [.data, .resize, .data])
         #expect(input.first?.payload == Data("a".utf8))
         #expect(Array(input[1].payload) == [90, 0, 20, 0])
+        await model.close()
+    }
+
+    // MARK: - Seen
+
+    @Test("looking at a terminal marks its turn seen, once per turn")
+    func marksSeen() async {
+        let core = FakeCore()
+        let (model, _) = model([core])
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { core.seen == ["3"] }
+        #expect(core.seen == ["3"])
+
+        // A turn ends while it is on show.
+        core.event("turn", seq: 2, data: #"{"turn":4}"#)
+        await eventually { core.seen == ["3", "4"] }
+        #expect(core.seen == ["3", "4"])
+
+        // Another client marks it unread: a screen nobody may be reading
+        // does not overrule that.
+        core.event("labels", seq: 3, data: #"{"labels":{"herdr.seen":"3"}}"#)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(core.seen == ["3", "4"])
+        await model.close()
+    }
+
+    @Test("a turn already seen is not written again")
+    func alreadySeen() async {
+        let core = FakeCore()
+        core.record = #"{"address":"t5n","state":"live","turn":3,"labels":{"herdr.seen":"3"}}"#
+        let (model, _) = model([core])
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.record != nil }
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(core.seen.isEmpty)
+        await model.close()
+    }
+
+    /// Behind the app switcher or the lock screen nobody is reading.
+    @Test("nothing is marked while the app is not in front, and coming back marks it")
+    func notInFront() async {
+        let core = FakeCore()
+        let (model, _) = model([core])
+        model.setInFront(false)
+        model.show(TerminalGrid(cols: 53, rows: 30))
+        await eventually { model.record != nil }
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(core.seen.isEmpty)
+        model.setInFront(true)
+        await eventually { core.seen == ["3"] }
+        #expect(core.seen == ["3"])
         await model.close()
     }
 

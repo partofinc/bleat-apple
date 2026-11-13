@@ -153,7 +153,7 @@ Re-verify before relying on any of it; the host wins over this file.
 | Phase | Deliverable | Gate to next phase |
 |---|---|---|
 | **A — Pipe** | `HcKit` (the framed codec from the start, not only for attach) and the console tool on it. `docs/hc-facts.md` verified live. Fixtures captured from `hc schema` and live replies. | From a Mac terminal, over SSH `hc connect` to a Pi, on **one framed connection**: hello, subscribe and print live events while sending requests, list spaces and terminals, attach and see live frames, send keys, resize, detach cleanly, survive a dropped connection. No UI code. |
-| **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone does not clear the Mac's `done`. Sessions on the watch work. |
+| **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone clears the Mac's `done`, as Herdr.app's own clients do (`herdr.seen`, decided 13 Nov 2026). Sessions on the watch work. |
 | **C — New capabilities** | Federated machines in the host list, templates when creating, anything else hc enables that we choose to take. | Agreed scope only; each item listed before work starts. |
 | **D — Release 2.0** | Demo host rebuilt on `hc`, docs and README updated, App Store listing and review notes revised, TestFlight. | Approved on the App Store as 2.0, same listing. |
 
@@ -267,7 +267,10 @@ here. **Must be closed before:** the phase named.
    count as a resize, so that merely opening a pane on the phone reflows the
    Mac? And should the phone attach with `observe` until the user types?
    *Before B.*
-7. **What clears `done`.** hc never clears it (`status.rs`); "done and not yet
+7. *Decided 13 Nov 2026: follow Herdr.app's convention.* The terminal
+   screen writes `herdr.seen=<turn>` while it is looked at
+   ([pane view](pane-view.md)). The original question:
+   **What clears `done`.** hc never clears it (`status.rs`); "done and not yet
    looked at" is the client's idea. **Live, 12 Nov 2026:** `herdr.seen` holds
    the turn last looked at, and the list reads `seen < turn` as unseen. Probably Herdr.app keeps the last turn
    someone looked at in `herdr.seen` and compares it with `turn`. Confirm in
@@ -310,10 +313,8 @@ here. **Must be closed before:** the phase named.
     document is `herdr-app`, and a terminal labeled `herdr.space` is taken
     into that space in a new tab ([hc facts](hc-facts.md)); Bleat places the
     terminals it starts. A core with no Herdr.app has no spaces, and they
-    start hidden. Still open: herdr-app's `docs/labels.md` names "the phone
-    app" as a client that writes `herdr.seen` when it shows an agent, which
-    would clear the Mac's "done" — the opposite of Phase B's gate. Ravil's
-    call. The original question:
+    start hidden. `herdr.seen` is written as `docs/labels.md` says (question
+    7, decided 13 Nov 2026). The original question:
     **The spaces and tabs convention.** `herdr.space`, `herdr.tab`, `where`
     and `herdr.seen` are Herdr.app's labels, and tab and space names live in
     a core doc. There is no `doc.list`, so the adapter must know the doc's

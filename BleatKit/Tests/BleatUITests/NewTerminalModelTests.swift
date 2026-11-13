@@ -13,6 +13,7 @@ struct NewTerminalModelTests {
         var home = "/home/pi"
         var directories: Set<String> = ["/home/pi", "/home/pi/api"]
         var templateList: [HcTemplate] = []
+        var spaceList: [HerdrSpace] = []
         var startResult: Result<String, any Error> = .success("t7")
         /// Printed before every answer, as a chatty shell startup would.
         var banner = ""
@@ -20,6 +21,8 @@ struct NewTerminalModelTests {
         private(set) var commands: [String] = []
 
         func templates() async -> [HcTemplate] { templateList }
+
+        func spaces() async -> [HerdrSpace] { spaceList }
 
         func shell() async throws -> any ShellRunner { Shell(host: self) }
 
@@ -187,6 +190,34 @@ struct NewTerminalModelTests {
         #expect(model.directorySuggestions.isEmpty)
         await model.load()
         #expect(model.directorySuggestions == ["/home/pi/api"])
+    }
+
+    @Test("by default it goes in the space whose folder holds its directory")
+    func spaceByFolder() async throws {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api"), HerdrSpace(id: "sp2", name: "", folder: "/srv")]
+        let model = form(host)
+        await model.load()
+        #expect(model.space == nil, "home is in no space")
+        model.directory = "api"
+        #expect(model.space?.id == "sp1")
+        _ = await model.start(size: nil)
+        #expect(try #require(host.started.first).space == "sp1")
+    }
+
+    @Test("a space picked by hand wins, and None starts it hidden from Herdr.app")
+    func spacePicked() async throws {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api"), HerdrSpace(id: "sp2", name: "", folder: "/srv")]
+        let model = form(host)
+        await model.load()
+        model.directory = "api"
+        model.placement = .space("sp2")
+        #expect(model.spaceByFolder?.id == "sp1")
+        _ = await model.start(size: nil)
+        model.placement = .hidden
+        _ = await model.start(size: nil)
+        #expect(host.started.map(\.space) == ["sp2", nil])
     }
 
     @Test("a home that does not read as a path is contract drift, not a failed command")

@@ -3,7 +3,7 @@ import BleatKit
 import SwiftUI
 
 /// Starting a terminal on a host: the shell, a command, or a template, in a
-/// directory, under an optional name.
+/// directory, under an optional name, in a Herdr.app space or none.
 ///
 /// Started detached from the phone (`HcRunRequest`), so it keeps running
 /// after the phone goes; then opened, which takes it over at the phone's size
@@ -39,6 +39,9 @@ struct NewTerminalSheet: View {
                 program
                 directory
                 name
+                if !model.spaces.isEmpty {
+                    herdrSpace
+                }
                 if case .failed(let message) = model.phase {
                     Section {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -161,6 +164,33 @@ struct NewTerminalSheet: View {
                 Text("Unique on the host, so it can be found by name.")
             }
         }
+    }
+
+    /// Only where Herdr.app has spaces on the host: elsewhere there is nothing
+    /// to pick, and the terminal shows in Bleat and `hc ls`.
+    private var herdrSpace: some View {
+        Section {
+            Picker("Space", selection: $model.placement) {
+                Text(matchingTitle).tag(NewTerminalModel.Placement.matching)
+                Text("None").tag(NewTerminalModel.Placement.hidden)
+                ForEach(model.spaces) { space in
+                    Text(space.displayName(home: model.home)).tag(NewTerminalModel.Placement.space(space.id))
+                }
+            }
+        } header: {
+            Text("Herdr")
+        } footer: {
+            if let space = model.space {
+                Text("Shown in Herdr on \(model.hostName), in a new tab of \(space.displayName(home: model.home)).")
+            } else {
+                Text("Not shown in Herdr. It runs on \(model.hostName) and shows here.")
+            }
+        }
+    }
+
+    private var matchingTitle: String {
+        guard let space = model.spaceByFolder else { return "By folder (none)" }
+        return "By folder (\(space.displayName(home: model.home)))"
     }
 
     private func suggestions(_ values: [String], pick: @escaping (String) -> Void) -> some View {

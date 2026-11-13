@@ -300,9 +300,18 @@ and neither is fixed. Written down rather than discovered twice.
 The terminal list's **+** opens `NewTerminalSheet`. Decided by Ravil: the
 host's **shell**, a **command** line, or one of the host's **templates** with
 a first message (Template appears only where the host has one); a
-**directory**; an optional **name**. No `herdr.*` labels: where it shows in
-Herdr.app is left to Herdr.app until the spaces convention is settled (plan,
-question 15).
+**directory**; an optional **name**; and the **Herdr.app space** it shows in.
+
+- **The space** (`HerdrSpace`, from the host core's `herdr-app` document): by
+  default the space whose folder holds the directory most closely ("By
+  folder"), or one picked by hand, or None. The terminal gets `herdr.space`
+  and `herdr.seen=0`, and Herdr.app gives it a new tab there; never
+  `herdr.tab`, so it does not split beside someone's agent. Where the host
+  has no spaces (a Pi without Herdr.app on it, the demo host) the row is not
+  shown and the terminal starts hidden from Herdr.app, as before. Bleat
+  never writes the document. Added 13 Nov 2026, after the first terminals
+  started from the phone ran on the Mac but did not show in Herdr.app.
+  ([hc facts](hc-facts.md), "How Herdr.app takes in a terminal it did not start")
 
 - **Detached from the phone, always**: `HcRunRequest` sends `no_parent` and
   `no_notify`, so the terminal keeps running when the phone goes and types

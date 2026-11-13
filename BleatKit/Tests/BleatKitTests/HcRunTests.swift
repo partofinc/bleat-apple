@@ -24,7 +24,8 @@ struct HcRunTests {
         let params = HcRunRequest(program: program).params
         #expect(params["no_parent"] == .bool(true))
         #expect(params["no_notify"] == .bool(true))
-        // No identity and no labels: the core's, as every other terminal.
+        // No identity: the core's, as every other terminal. No labels
+        // without a space.
         #expect(params["env"] == nil)
         #expect(params["labels"] == nil)
     }
@@ -90,6 +91,57 @@ struct HcRunTests {
         #expect(HcRunRequest.resolve(directory: "developer", home: home) == "/home/pi/developer")
         #expect(HcRunRequest.resolve(directory: " /srv/app ", home: home) == "/srv/app")
         #expect(HcRunRequest.resolve(directory: "~/x", home: "/home/pi/") == "/home/pi/x")
+    }
+
+    // MARK: - Herdr.app's spaces
+
+    /// Herdr.app shows only terminals labeled with a space; with no tab label
+    /// it gives the terminal a new tab there. Never `herdr.tab`.
+    @Test("a space is the herdr.space label, with seen at 0 as a new terminal's")
+    func spaceLabels() {
+        let params = HcRunRequest(program: .shell, space: "spa4f8").params
+        #expect(params["labels"] == .object(["herdr.space": .string("spa4f8"), "herdr.seen": .string("0")]))
+        #expect(HcRunRequest(program: .shell, space: "").params["labels"] == nil)
+    }
+
+    @Test("spaces, as captured from Herdr.app's document, read in its order")
+    func capturedSpaces() throws {
+        let spaces = HerdrSpace.list(inReply: try json("hc-doc-herdr-app.json"))
+        #expect(spaces.count == 6)
+        #expect(spaces.first?.name == "acme-health")
+        #expect(spaces.first?.id == "sp0c76818d68b5426ba2b46194c2d3a72a")
+        #expect(spaces[3].folder == "/Users/robin/Developer/acme")
+    }
+
+    @Test("a core Herdr.app never wrote to has no spaces, and a space that does not read is left out")
+    func noSpaces() {
+        #expect(HerdrSpace.list(inReply: .object(["value": .null, "version": .number(0)])).isEmpty)
+        let reply = HcJSON.object(["value": .object(["spaces": .array([
+            .object(["id": .string("sp1"), "folder": .string("/a")]),
+            .object(["name": .string("no id")]),
+            .string("not a space"),
+        ])])])
+        #expect(HerdrSpace.list(inReply: reply) == [HerdrSpace(id: "sp1", name: "", folder: "/a")])
+    }
+
+    @Test("an unnamed space is called after its folder, Herdr.app's way")
+    func spaceNames() {
+        #expect(HerdrSpace(id: "a", name: "web", folder: "/srv/web").displayName(home: nil) == "web")
+        #expect(HerdrSpace(id: "a", name: "", folder: "/home/pi/developer/api/").displayName(home: "/home/pi") == "api")
+        #expect(HerdrSpace(id: "a", name: "", folder: "/home/pi").displayName(home: "/home/pi") == "~")
+    }
+
+    @Test("a directory belongs to the space whose folder holds it most closely")
+    func matching() {
+        let spaces = [
+            HerdrSpace(id: "acme", name: "", folder: "/u/dev/acme"),
+            HerdrSpace(id: "links", name: "", folder: "/u/dev/acme/links"),
+            HerdrSpace(id: "none", name: "", folder: ""),
+        ]
+        #expect(HerdrSpace.matching("/u/dev/acme/links/src", in: spaces)?.id == "links")
+        #expect(HerdrSpace.matching("/u/dev/acme", in: spaces)?.id == "acme")
+        #expect(HerdrSpace.matching("/u/dev/acme-other", in: spaces) == nil)
+        #expect(HerdrSpace.matching("/u", in: spaces) == nil)
     }
 
     // MARK: - Templates

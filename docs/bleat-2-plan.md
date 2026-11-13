@@ -306,7 +306,15 @@ here. **Must be closed before:** the phase named.
 14. **New package or rewrite in place.** `HcKit` as a new target beside
     `BleatKit`, or BleatKit's domain layer replaced in place? Renaming is
     churn; a new target keeps the macOS-client option clean. *Before A.*
-15. **The spaces and tabs convention.** `herdr.space`, `herdr.tab`, `where`
+15. *Answered for creating, 13 Nov 2026, from herdr-app's source:* the
+    document is `herdr-app`, and a terminal labeled `herdr.space` is taken
+    into that space in a new tab ([hc facts](hc-facts.md)); Bleat places the
+    terminals it starts. A core with no Herdr.app has no spaces, and they
+    start hidden. Still open: herdr-app's `docs/labels.md` names "the phone
+    app" as a client that writes `herdr.seen` when it shows an agent, which
+    would clear the Mac's "done" — the opposite of Phase B's gate. Ravil's
+    call. The original question:
+    **The spaces and tabs convention.** `herdr.space`, `herdr.tab`, `where`
     and `herdr.seen` are Herdr.app's labels, and tab and space names live in
     a core doc. There is no `doc.list`, so the adapter must know the doc's
     name: take it from `doc` events on `events.subscribe` or from herdr-app's

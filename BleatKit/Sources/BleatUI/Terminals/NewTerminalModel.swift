@@ -17,6 +17,10 @@ import Observation
 /// agent is ready and the first message sent, and what it does with an agent
 /// that never gets ready is open (plan, question 9). Cancel is the way out;
 /// see `NewTerminalSheet`.
+///
+/// **Where it shows in Herdr.app** (`HerdrSpace`): by default the space whose
+/// folder holds its directory, in a new tab; or a space picked by hand; or
+/// none, and Herdr.app does not show it.
 @Observable
 final class NewTerminalModel: Identifiable {
     enum Kind: String, CaseIterable, Identifiable {
@@ -29,6 +33,15 @@ final class NewTerminalModel: Identifiable {
             case .template: "Template"
             }
         }
+    }
+
+    /// Which Herdr.app space it goes in.
+    enum Placement: Hashable {
+        /// The space whose folder holds the directory, if one does.
+        case matching
+        /// None: Herdr.app does not show it.
+        case hidden
+        case space(String)
     }
 
     enum Phase: Equatable {
@@ -44,9 +57,12 @@ final class NewTerminalModel: Identifiable {
     /// As typed: `~/api`, `api`, `/srv/web`, or empty for home.
     var directory = ""
     var name = ""
+    var placement: Placement = .matching
 
     private(set) var phase: Phase = .editing
     private(set) var templates: [HcTemplate] = []
+    /// Herdr.app's spaces on the host; none where Herdr.app never ran.
+    private(set) var spaces: [HerdrSpace] = []
     private(set) var home: String?
 
     let hostName: String
@@ -67,6 +83,32 @@ final class NewTerminalModel: Identifiable {
     var directorySuggestions: [String] {
         guard let home else { return [] }
         return HcRunSuggestions.directories(from: terminals, excluding: home)
+    }
+
+    /// The space it will be shown in, as the form stands. For `.matching`,
+    /// none until home is known, since the directory is resolved against it.
+    var space: HerdrSpace? {
+        guard let home else {
+            if case .space(let id) = placement { return spaces.first { $0.id == id } }
+            return nil
+        }
+        return space(for: HcRunRequest.resolve(directory: directory, home: home))
+    }
+
+    /// The space whose folder holds the directory, whatever is picked: what
+    /// "By folder" would choose. None until home is known.
+    var spaceByFolder: HerdrSpace? {
+        guard let home else { return nil }
+        return HerdrSpace.matching(HcRunRequest.resolve(directory: directory, home: home), in: spaces)
+    }
+
+    /// The space whose folder holds `cwd`, or the one picked.
+    private func space(for cwd: String) -> HerdrSpace? {
+        switch placement {
+        case .matching: HerdrSpace.matching(cwd, in: spaces)
+        case .hidden: nil
+        case .space(let id): spaces.first { $0.id == id }
+        }
     }
 
     var selectedTemplate: HcTemplate? {
@@ -100,12 +142,15 @@ final class NewTerminalModel: Identifiable {
         }
     }
 
-    /// Home and templates, side by side. Neither failing stops the form: home
-    /// is asked again on start, and no templates means no Template choice.
+    /// Home, templates and spaces, side by side. None failing stops the form:
+    /// home is asked again on start, no templates means no Template choice,
+    /// and no spaces means it starts hidden from Herdr.app.
     func load() async {
         async let templates = host.templates()
+        async let spaces = host.spaces()
         async let home = askHome()
         self.templates = await templates
+        self.spaces = await spaces
         if templateName == nil { templateName = self.templates.first?.name }
         self.home = try? await home
     }
@@ -123,7 +168,9 @@ final class NewTerminalModel: Identifiable {
                 return nil
             }
             let name = name.trimmingCharacters(in: .whitespaces)
-            let request = HcRunRequest(program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size)
+            let request = HcRunRequest(
+                program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space(for: cwd)?.id
+            )
             let address = try await host.start(request)
             // Cancelled while it started (the sheet's Cancel): the terminal
             // may well be running on the host, and the list shows it, but the

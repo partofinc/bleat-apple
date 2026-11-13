@@ -119,6 +119,14 @@ final class TerminalsModel {
         return HcTemplate.list(inReply: reply)
     }
 
+    /// Herdr.app's spaces on this host, or none: a core Herdr.app never wrote
+    /// to, or one whose document cannot be read, starts terminals hidden.
+    func spaces() async -> [HerdrSpace] {
+        guard let client else { return [] }
+        guard let reply = try? await client.call("doc.get", ["name": .string(HerdrSpace.documentName)]) else { return [] }
+        return HerdrSpace.list(inReply: reply)
+    }
+
     /// Starts a terminal and returns its address. The list shows it from the
     /// `created` event, as it would one started on the Mac.
     func start(_ request: HcRunRequest) async throws -> String {
@@ -131,3 +139,7 @@ final class TerminalsModel {
         try await connections.shell(for: peer)
     }
 }
+
+// Here, not beside the protocol: a class's Sendable conformance must be
+// declared in its own file.
+extension TerminalsModel: TerminalStarting {}

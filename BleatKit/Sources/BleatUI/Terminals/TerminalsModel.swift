@@ -25,6 +25,10 @@ final class TerminalsModel {
     private(set) var terminals: [HcTerminal] = []
     /// What `hello` said, for the screen to show beside the host's name.
     private(set) var coreVersion: String?
+    /// The connection the list follows, while it is live. Starting a terminal
+    /// asks on it rather than dialling another: framed, it takes requests
+    /// while it carries the subscription.
+    private var client: HcClient?
 
     let peer: PairedPeer
     private let connections: ConnectionStore
@@ -71,7 +75,15 @@ final class TerminalsModel {
 
     private func follow(_ stream: any DuplexStream) async throws {
         let client = try await HcClient.connect(over: stream)
-        defer { Task { await client.close() } }
+        self.client = client
+        defer {
+            // Only if it is still this run's. A run replaced by Try Again or a
+            // return to the foreground can end after the next one connected,
+            // and clearing unconditionally left a live list whose + did
+            // nothing until the next reconnect.
+            if self.client === client { self.client = nil }
+            Task { await client.close() }
+        }
         coreVersion = await client.hello?.version
         let subscription = try await client.subscribe()
         var set = HcTerminalSet()
@@ -95,5 +107,27 @@ final class TerminalsModel {
 
     private func publish(_ set: HcTerminalSet) {
         terminals = set.listed
+    }
+
+    // MARK: - Starting a terminal
+
+    /// The host's templates, or none: a host without any, or a core that
+    /// cannot list them, offers the shell and a command.
+    func templates() async -> [HcTemplate] {
+        guard let client else { return [] }
+        guard let reply = try? await client.call("templates.list") else { return [] }
+        return HcTemplate.list(inReply: reply)
+    }
+
+    /// Starts a terminal and returns its address. The list shows it from the
+    /// `created` event, as it would one started on the Mac.
+    func start(_ request: HcRunRequest) async throws -> String {
+        guard let client, phase == .live else { throw HcProtocolError.closed }
+        return try HcRunRequest.address(inReply: try await client.call("terminal.run", request.params))
+    }
+
+    /// A shell on the host, for the questions starting a terminal asks first.
+    func shell() async throws -> any ShellRunner {
+        try await connections.shell(for: peer)
     }
 }

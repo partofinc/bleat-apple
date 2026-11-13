@@ -130,6 +130,12 @@ Re-verify before relying on any of it; the host wins over this file.
   `startedSessions` (old records still decode: unknown keys are ignored).
   `docs/herdr-facts.md` and `docs/creating-from-the-phone.md` moved to
   `docs/archive/`.
+- **Starting terminals from the phone, 13 Nov 2026**: shell, command or
+  template, in a directory, optionally named; detached (`no_parent`,
+  `no_notify`), at the phone's grid, no `herdr.*` labels, the core's own
+  terminal identity (question 10's identity half: answered). See
+  `app-screens.md`. Question 9 (a template whose agent never gets ready)
+  is still open.
 - **Installing herdr-core from Bleat, 12 Nov 2026.** "Install herdr-core" on
   the gate screen shows herdr-core's one-liner and runs it on the host after
   a confirmation (`HerdrCoreInstall`), over its own short connection like the

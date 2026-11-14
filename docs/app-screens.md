@@ -302,36 +302,36 @@ host's **shell**, a **command** line, or one of the host's **templates** with
 a first message (Template appears only where the host has one); a
 **directory**; an optional **name**; and the **Herdr.app space** it shows in.
 
-- **The space** (`HerdrSpace`, from the host core's `herdr-app` document): by
-  default the space whose folder holds the directory most closely ("By
-  folder"), or one picked by hand, or None. The terminal gets `herdr.space`
-  and `herdr.seen=0`, and Herdr.app gives it a new tab there; never
-  `herdr.tab`, so it does not split beside someone's agent. Where the host
-  has no spaces (a Pi without Herdr.app on it, the demo host) the row is not
-  shown and the terminal starts hidden from Herdr.app, as before. Bleat
-  never writes the document. From review:
-  - A document that cannot be read (`needs_update`, the list reconnecting)
-    is said so in the section's footer, not taken for "no spaces"; it is
-    read again on Start.
-  - The spaces are read again on Start, and a picked space Herdr.app no
-    longer has fails the start: its id would make Herdr.app create a new,
-    unnamed space.
-  - "By folder" says nothing about the space until home is known, since
-    Start places it then. Added 13 Nov 2026, after the first terminals
-  started from the phone ran on the Mac but did not show in Herdr.app.
-  ([hc facts](hc-facts.md), "How Herdr.app takes in a terminal it did not start")
-  - **"By folder" finding no space is a warning** (14 Nov 2026), in
-    orange, saying to pick a space. A phone's terminal went missing on the
-    Mac again: its folder (bleat-apple) had no space yet when it started,
-    and the footer's plain "Not shown in Herdr" was read past. None,
-    picked, keeps the plain line. Herdr.app making a space was not taken:
-    an unknown id gets an unnamed space, and the user did not ask for one.
-  - **And Start refuses it** (from review): "By folder" on a host with
-    spaces and none holding the directory fails with "No space in Herdr …
-    holds …. Pick a space, or None to start it hidden." Decided from the
-    host's spelling of the directory, so a symlink out of a space's folder
-    is caught, and from the spaces as read on Start, so a folder's space
-    closed meanwhile is too. None is how to start one hidden on purpose.
+- **The space** (`HerdrSpace`, from the host core's `herdr-app` document).
+  **Decided by Ravil, 14 Nov 2026: a space of its own.** Each terminal
+  started from the phone gets a new space id, and Herdr.app makes the space
+  on its next listing, with the terminal's directory as its folder and so
+  named after it ([hc facts](hc-facts.md), "How Herdr.app takes in a
+  terminal it did not start"). Tabs mean little on a phone, and the first
+  version's "By folder" put a terminal in a tab of whichever space's folder
+  held its directory, a parent's included.
+  - **A selector only where Herdr.app already has a space for that very
+    folder**: those spaces, each as a new tab there, or New space. The
+    existing one is the default. A parent folder's space does not count.
+  - **No "None"**: every terminal started from the phone shows in Herdr.app.
+    This replaces the first version's warning and refusal for "By folder"
+    finding no space (#92), which existed only because a terminal could
+    start hidden.
+  - **Decided on Start from the host's spelling** of the directory
+    (`/bin/pwd -P`), with the spaces read again: a symlink into a space's
+    folder joins it, a typed path that only looks like one does not, and a
+    folder's space closed meanwhile gives a new space. A space picked by
+    hand that has closed fails the start ("Pick again") rather than being
+    swapped.
+  - The terminal gets `herdr.space` and `herdr.seen=0`, never `herdr.tab`,
+    so it does not split beside someone's agent. Bleat never writes the
+    document.
+  - Spaces that cannot be read (`needs_update`, the list reconnecting) are
+    said so in red, and read again on Start. If they still cannot be read
+    it gets a new space.
+  - Not yet seen on a host without Herdr.app's own spaces (adam): its core
+    gets the label, and whether the Mac's Herdr.app then shows a space for
+    adam is to be checked on a phone.
 
 - **Command, directory and name are typed literally** (`LiteralTextField`,
   a `UITextField`): SwiftUI's field cannot turn Smart Punctuation off, and

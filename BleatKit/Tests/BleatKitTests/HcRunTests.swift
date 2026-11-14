@@ -131,26 +131,33 @@ struct HcRunTests {
         #expect(HerdrSpace(id: "a", name: "", folder: "/home/pi").displayName(home: "/home/pi") == "~")
     }
 
-    @Test("a directory belongs to the space whose folder holds it most closely")
-    func matching() {
+    @Test("a directory's spaces are the ones whose folder is that directory, not a parent")
+    func spacesForFolder() {
         let spaces = [
             HerdrSpace(id: "acme", name: "", folder: "/u/dev/acme"),
             HerdrSpace(id: "links", name: "", folder: "/u/dev/acme/links"),
+            HerdrSpace(id: "acme2", name: "Acme again", folder: "/u/dev/acme/"),
             HerdrSpace(id: "none", name: "", folder: ""),
         ]
-        #expect(HerdrSpace.matching("/u/dev/acme/links/src", in: spaces)?.id == "links")
-        #expect(HerdrSpace.matching("/u/dev/acme", in: spaces)?.id == "acme")
-        #expect(HerdrSpace.matching("/u/dev/acme-other", in: spaces) == nil)
-        #expect(HerdrSpace.matching("/u", in: spaces) == nil)
+        #expect(HerdrSpace.spaces(for: "/u/dev/acme", in: spaces).map(\.id) == ["acme", "acme2"])
+        #expect(HerdrSpace.spaces(for: "/u/dev/acme/links/", in: spaces).map(\.id) == ["links"])
+        #expect(HerdrSpace.spaces(for: "/u/dev/acme/links/src", in: spaces).isEmpty, "a parent's space does not count")
+        #expect(HerdrSpace.spaces(for: "/u/dev/acme-other", in: spaces).isEmpty)
     }
 
-    @Test("a trailing slash is the same folder, for matching and naming")
+    @Test("a trailing slash is the same folder, for naming and resolving")
     func trailingSlashes() {
         let space = HerdrSpace(id: "a", name: "", folder: "/u/dev/")
-        #expect(HerdrSpace.matching("/u/dev/x", in: [space])?.id == "a")
         #expect(space.displayName(home: "/u/dev/") == "~")
         #expect(HcRunRequest.resolve(directory: "x", home: "/u/dev/") == "/u/dev/x")
-        #expect(HerdrSpace.matching("/anything", in: [HerdrSpace(id: "root", name: "", folder: "/")])?.id == "root")
+    }
+
+    @Test("a new space id is in Herdr.app's form, and new every time")
+    func newSpaceID() {
+        let id = HerdrSpace.newID()
+        #expect(id.count == 34 && id.hasPrefix("sp"))
+        #expect(id.dropFirst(2).allSatisfy { $0.isHexDigit && !$0.isUppercase })
+        #expect(HerdrSpace.newID() != id)
     }
 
     // MARK: - Templates

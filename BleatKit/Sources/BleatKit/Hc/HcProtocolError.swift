@@ -10,6 +10,11 @@ public enum HcProtocolError: Error, Sendable, Equatable, Codable {
     case unsupportedGeneration(Int)
     /// The core does not offer methods Bleat needs: an older herdr-core than
     /// Bleat supports. `version` is what `hello` said, when it said.
+    ///
+    /// A new case on a `Codable` error the watch relay carries
+    /// (`RelayFailure.hcProtocol`): a watch app still on the build before it
+    /// reads it as a reply it cannot read. Kept (from review) — the watch app
+    /// ships inside the phone's and catches up with it.
     case outdated(version: String?, missing: [String])
     /// The connection closed with calls or streams still open.
     case closed
@@ -23,8 +28,9 @@ extension HcProtocolError: CustomStringConvertible {
         case .unsupportedGeneration(let generation):
             "herdr-core speaks protocol generation \(generation), which this version of Bleat does not"
         case .outdated(let version, let missing):
-            "herdr-core\(version.map { " \($0)" } ?? "") on this host is too old for Bleat: "
-                + "it has no \(missing.joined(separator: ", ")). Update herdr-core on the host."
+            "herdr-core\(version.map { " \($0)" } ?? "") on this host is too old for Bleat. "
+                + "Update it on the host to \(HcClient.oldestKnownGood) or later. "
+                + "(Missing: \(missing.joined(separator: ", ")).)"
         case .closed: "the connection to herdr-core closed"
         }
     }

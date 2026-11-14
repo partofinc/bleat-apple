@@ -22,6 +22,10 @@
 >   (`RelayFailure.hcProtocol`) and the phone's own refusals
 >   (`RelayFailure.refused`) are not `TransportError`s, so they do not drop
 >   the SSH connection — as `.other` they had, on every poll.
+>   They are `Codable` cases, so a case the phone's build has and the
+>   watch's does not (`HcProtocolError.outdated`, 14 Nov 2026) reads on the
+>   watch as a reply it could not read until the watch app catches up with
+>   the phone's. Accepted: the watch app ships inside the phone's.
 > - A host's screen on the watch (`RelayedTerminalsView`) is its load, then
 >   its live terminals grouped by Herdr.app space as on the phone
 >   (`TerminalSections`, `HcTerminalSet.listed`), asked again every 5 s. A

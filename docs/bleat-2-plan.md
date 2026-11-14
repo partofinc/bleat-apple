@@ -296,14 +296,21 @@ here. **Must be closed before:** the phase named.
     `resumed` avoid reflowing the Mac? *Before A (gate).*
 12. *Answered 14 Nov 2026: a floor by methods, not by version.* `hello`
     lists the core's `methods`; `HcClient` refuses a core that lacks one in
-    `HcClient.requiredMethods` with `HcProtocolError.outdated`, which names
-    the version and what is missing and says to update herdr-core. A newer
+    `HcClient.requiredMethods` with `HcProtocolError.outdated`, which says to
+    update herdr-core to 0.1.18 or later and then names what is missing.
+    The floor is only what reading takes (`events.subscribe`,
+    `terminal.list/get/read/attach`); `terminal.run`, `doc.get`,
+    `terminal.label` and `templates.list` fail at their own call instead of
+    refusing every screen (from review). An empty `methods` list, like a
+    missing one, is not refused. A newer
     core passes while it keeps those methods; one that changes the protocol
     is refused by `generation`, as before. Every core met so far (0.1.18 on
     adam, 0.1.20 on mika, 0.1.21 on the Mac) has them all
     ([hc facts](hc-facts.md)). **Left open:** the gate's `--version` check
     and pairing's `HostInspector` do not apply the floor, so an outdated core
-    is first named when its terminal list opens. The original question:
+    is first named when its terminal list opens, as a failure with Try
+    Again — which is right once herdr-core is updated, and fails the same
+    way until then. The original question:
     **Version floor and drift.** What is the minimum hc version Bleat
     accepts, how is it checked (at `hello`, and at pairing in
     `HostInspector`), and what does the app say on an older or newer core?

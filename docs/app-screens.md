@@ -361,6 +361,26 @@ a first message (Template appears only where the host has one); a
   `HcClient` while live and asks `templates.list` and `terminal.run` on it;
   the + is disabled until the list is live. The new terminal reaches the list
   through its `created` event, like one started on the Mac.
+  - **The shell questions ride it too, never `ConnectionStore.shell(for:)`**
+    (found on a phone on adam, 14 Nov 2026). The sheet opened with "Herdr's
+    spaces could not be read: the connection to herdr-core closed", and no
+    Template choice although adam has `pi-env`. It asked for home through
+    `shell(for:)` alongside the spaces read. That call re-dials when the
+    network has changed since the dial, and a re-dial closes the connection
+    under the list's stream, the hazard `liveShell` was made for. The list
+    now hands out the connection its stream rides. A dropped transport
+    refuses commands rather than dialling (`SSHTransport.disconnect`), so
+    holding it cannot open a session.
+  - **The list reconnects by itself** while the app is in front: a closed
+    stream or a dropped connection is dialled again after 1, 2, 4 and 8
+    seconds, and the list says `.connecting` meanwhile. Then it fails with
+    Try Again. Not for a refusal that would repeat: an old core, a refused
+    key, a changed host key. Never in the background, where `RootView`
+    releases the connection.
+  - **The sheet's questions wait for it**, up to 15 seconds. The two reads,
+    the spaces and the templates, are asked once more on the next stream if
+    the stream closes under them. `terminal.run` is not, since the terminal
+    may have started.
 - **Two shell questions first** (`HostDirectory`): `$HOME`, since the core
   expands no `~` and defaults to its own `/`; and the directory's physical
   path, or `no`, since a missing one fails as "cannot start /bin/sh". The

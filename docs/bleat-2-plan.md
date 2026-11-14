@@ -294,10 +294,20 @@ here. **Must be closed before:** the phase named.
     active again. **Left open:** after iOS drops the socket, do we diff the
     fresh snapshot against what we hold, and does a re-attach with
     `resumed` avoid reflowing the Mac? *Before A (gate).*
-12. **Version floor and drift.** Drift already exists: the Pis run 0.1.18, the
-    Mac 0.1.19. What is the minimum hc version Bleat accepts, how is it checked
-    (at `hello`, and at pairing in `HostInspector`), and what does the app say
-    on an older or newer core? *Before B.*
+12. *Answered 14 Nov 2026: a floor by methods, not by version.* `hello`
+    lists the core's `methods`; `HcClient` refuses a core that lacks one in
+    `HcClient.requiredMethods` with `HcProtocolError.outdated`, which names
+    the version and what is missing and says to update herdr-core. A newer
+    core passes while it keeps those methods; one that changes the protocol
+    is refused by `generation`, as before. Every core met so far (0.1.18 on
+    adam, 0.1.20 on mika, 0.1.21 on the Mac) has them all
+    ([hc facts](hc-facts.md)). **Left open:** the gate's `--version` check
+    and pairing's `HostInspector` do not apply the floor, so an outdated core
+    is first named when its terminal list opens. The original question:
+    **Version floor and drift.** What is the minimum hc version Bleat
+    accepts, how is it checked (at `hello`, and at pairing in
+    `HostInspector`), and what does the app say on an older or newer core?
+    *Before B.*
 13. **Isolated scratch cores for testing.** `hc server` takes no session
     option; sessions are chosen only by `--session`/`HC_SESSION` on the
     client. Does a scratch session get its own core and socket, sharing nothing

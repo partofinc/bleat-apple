@@ -45,6 +45,12 @@ When the host disagrees with this file, the host wins.
   and reads one line back: `result` carries `framed: true`, `generation: 1`,
   `version`, `core: {id, name}`, `features`, `methods`. Every byte after that
   newline is frames (`herdr-core/tests/common/framed.rs` does the same).
+- **`methods` is the floor Bleat checks** (live, 14 Nov 2026). The lists
+  from 0.1.18 (adam), 0.1.20 (mika) and 0.1.21 (this Mac) are identical;
+  of the features, 0.1.18 lacks `restart_environment`, which Bleat does not use. Bleat needs eight of them
+  (`HcClient.requiredMethods`) and refuses a core without one, by name, as
+  `HcProtocolError.outdated`. A hello with no `methods` key is not refused.
+  `Fixtures/hc-hello-0.1.18.json` is adam's reply.
 - A call is one JSON-RPC request in one DATA frame on channel 0; its reply
   comes back the same way, matched by `id`. Errors carry `data.kind`.
 - `events.subscribe` answers `{channel, seq, terminals}` on channel 0. The

@@ -20,6 +20,16 @@ After a version ships, `MARKETING_VERSION` (both targets in
 `Bleat.xcodeproj/project.xcproj`) moves to the next one, so builds of `main`
 upload as that version rather than as another build of the released one.
 
+**2.0 went to TestFlight before Phase D** (decided by Ravil, 14 Nov 2026),
+so Bleat 2 builds can reach his phone away from the Mac's cable and network.
+`MARKETING_VERSION` is 2.0 and `v2.0` starts the Release workflow as any
+`v` tag does. A later TestFlight build of Bleat 2 is another 2.0 build, not
+a new version; how it is started (Start Build in App Store Connect on
+`main`, or a tag the workflow's start condition matches) is not settled —
+the start condition lives in App Store Connect, not in this repo. Do not
+move `v2.0`. It is not a release: no GitHub release is made for it, and the
+App Store submission is Phase D's.
+
 Xcode Cloud onboarding could not be finished from `main`: it asked for access
 to every public dependency repository (`apple/swift-system` first), which
 nobody outside those organizations can grant. It was finished on a local branch

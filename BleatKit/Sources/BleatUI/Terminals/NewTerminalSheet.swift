@@ -90,12 +90,7 @@ struct NewTerminalSheet: View {
             }
         case .command:
             Section {
-                TextField("claude", text: $model.command)
-                    .font(.body.monospaced())
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .onSubmit { begin() }
+                LiteralTextField(placeholder: "claude", text: $model.command, returnKey: .go) { begin() }
                 if !model.commandSuggestions.isEmpty {
                     suggestions(model.commandSuggestions) { model.command = $0 }
                 }
@@ -111,6 +106,9 @@ struct NewTerminalSheet: View {
                         Text(template.name).tag(Optional(template.name))
                     }
                 }
+                // Smart punctuation left on (kept from review): this goes
+                // to an agent as prose, which reads `—verbose` as meant, and
+                // a multi-line UIKit field in a Form is not worth that.
                 TextField("First message (optional)", text: $model.task, axis: .vertical)
                     .lineLimit(2...6)
             } footer: {
@@ -124,10 +122,7 @@ struct NewTerminalSheet: View {
     private var directory: some View {
         Section {
             HStack {
-                TextField("~", text: $model.directory)
-                    .font(.body.monospaced())
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                LiteralTextField(placeholder: "~", text: $model.directory)
                 if !model.directorySuggestions.isEmpty {
                     Menu {
                         Button("~ (home)") { model.directory = "" }
@@ -151,10 +146,7 @@ struct NewTerminalSheet: View {
 
     private var name: some View {
         Section {
-            TextField("Optional", text: $model.name)
-                .font(.body.monospaced())
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+            LiteralTextField(placeholder: "Optional", text: $model.name)
         } header: {
             Text("Name")
         } footer: {
@@ -187,6 +179,14 @@ struct NewTerminalSheet: View {
                 Text("Shown in Herdr on \(model.hostName) in the space whose folder holds the directory, if one does.")
             } else if let space = model.space {
                 Text("Shown in Herdr on \(model.hostName), in a new tab of \(space.displayName(home: model.home)).")
+            } else if model.noSpaceForFolder {
+                // Said as a warning, not as the plain "not shown": it was
+                // read past once, and the terminal went missing on the Mac.
+                Label(
+                    "No space in Herdr on \(model.hostName) holds this folder, so it will not show there. Pick a space to show it in one.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
             } else {
                 Text("Not shown in Herdr. It runs on \(model.hostName) and shows here.")
             }

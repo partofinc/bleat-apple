@@ -39,6 +39,20 @@ final class PaneTerminalView: TerminalView {
 
     override var canBecomeFirstResponder: Bool { acceptsKeyboard }
 
+    /// Keeps SwiftTerm from adding a pan of its own when a program asks for
+    /// the mouse.
+    ///
+    /// SwiftTerm answers any mouse mode by installing a
+    /// `UIPanGestureRecognizer` on this view, to report drags as mouse motion.
+    /// Mouse reporting is off here (`PaneTerminalController`), so it reports
+    /// nothing — but it still wins every drag from `PaneScrollGesture`, and a
+    /// pane under such a program stops scrolling. Claude Code became one when
+    /// it went full-screen (`?1049h`, `?1000h`/`?1002h`/`?1003h`, SGR; 2.1.325,
+    /// found on a phone 14 Nov 2026). Its wheel still reaches it: the scroller
+    /// in `TerminalHost` encodes the clicks itself from `mouseMode`, which this
+    /// leaves as the program set it.
+    override func mouseModeChanged(source: Terminal) {}
+
     /// Takes SwiftTerm's own accessory bar off the keyboard.
     ///
     /// It installs a `TerminalAccessory` — Esc, Tab, Ctrl, arrows — from its

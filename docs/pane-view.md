@@ -42,8 +42,14 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
   it went full-screen: its paint sets `?1049h`, `?1000h`, `?1002h`,
   `?1003h` and `?1006h` (2.1.325, a scratch terminal's attach, 14 Nov
   2026), and its panes stopped scrolling on the phone. `PaneTerminalView`
-  overrides `mouseModeChanged` to add nothing; the mode itself stays as the
-  program set it, so the scroller still sends SGR wheel clicks.
+  refuses SwiftTerm's pans in `gestureRecognizerShouldBegin` unless a
+  selection is up, so a selection's drag still extends it: from review, the
+  selection pan (long press → Select, a double or triple tap) took drags the
+  same way, and refusing at the start leaves SwiftTerm's hooks its own. The
+  mouse mode stays as the program set it, so the scroller still sends SGR
+  wheel clicks (tested as bytes). SwiftTerm's mouse pan handler reports
+  drags whether or not the pane has the keyboard, which is one more reason
+  mouse reporting stays off.
 - **Off screen is not gone.** The screen calls `setActive(false)` when it
   disappears and `setActive(true)` when it comes back: a covering sheet or an
   iPad column change returns with its state, and a model closed for good left

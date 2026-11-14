@@ -123,12 +123,14 @@ final class PaneTerminalController: UIViewController {
         // 6 and 8 Sept 2026; see `docs/pane-view.md`.)
         terminalView.isScrollEnabled = false
 
-        // **Taking the keyboard re-arms mouse reporting, and that undoes the
-        // "a button, not a tap on the pane" rule.** SwiftTerm gates its tap and
-        // pan handlers on `isFirstResponder`, and `allowMouseReporting`
-        // defaults to true — so once the pane can be typed into, a tap on it
-        // sends a mouse press to any program that has enabled mouse mode. On an
-        // agent sitting at a dialog that is a click on one of its buttons.
+        // **Mouse reporting stays off: "a button, not a tap on the pane".**
+        // `allowMouseReporting` defaults to true, and with it SwiftTerm sends
+        // any program that enabled mouse mode a press for a tap — its tap
+        // handler only once the pane can be typed into (`isFirstResponder`),
+        // but its mouse pan handler **whether or not** it can (corrected at
+        // review, 14 Nov 2026; SwiftTerm 1.20.0). On an agent sitting at a
+        // dialog that is a click on one of its buttons. The pan itself is
+        // refused by `PaneTerminalView`, so drags scroll.
         terminalView.allowMouseReporting = false
         // Turns on `rangeChanged`, which is off by default. It is the only
         // hook that proves a repaint pass ran; one delegate call per repaint.

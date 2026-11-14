@@ -19,11 +19,11 @@ struct HostStatusProbeTests {
         #expect(status.load.cores == 8)
         // Anonymous less purgeable, wired, and the compressor, in 16 KiB pages
         // — not total less free, which would read 16 GB used.
-        #expect(status.load.memory == .init(used: 859_385 * 16_384, total: 17_179_869_184))
+        #expect(status.load.memory == HostLoad.Usage(used: 859_385 * 16_384, total: 17_179_869_184))
         // Total less available: the volume's own "Used" leaves out the other
         // volumes in its container.
-        #expect(status.load.disk == .init(used: 401_000_924 * 1024, total: 482_766_932 * 1024))
-        #expect(status.load.uptime == .seconds(192_518))
+        #expect(status.load.disk == HostLoad.Usage(used: 401_000_924 * 1024, total: 482_766_932 * 1024))
+        #expect(status.load.uptime == Duration.seconds(192_518 as Int64))
         // The second line of `iostat`, not the first, which is since boot and
         // says 27%.
         #expect(status.load.cpuUsage == 1)
@@ -41,9 +41,9 @@ struct HostStatusProbeTests {
         #expect(status.info.model == "Raspberry Pi Compute Module 5 Rev 1.0")
         #expect(status.info.modelName == nil)
         #expect(status.load.cores == 4)
-        #expect(status.load.memory == .init(used: 775_520 * 1024, total: 8_255_824 * 1024))
-        #expect(status.load.disk == .init(used: 7_712_816 * 1024, total: 29_465_692 * 1024))
-        #expect(status.load.uptime == .seconds(439_391))
+        #expect(status.load.memory == HostLoad.Usage(used: 775_520 * 1024, total: 8_255_824 * 1024))
+        #expect(status.load.disk == HostLoad.Usage(used: 7_712_816 * 1024, total: 29_465_692 * 1024))
+        #expect(status.load.uptime == Duration.seconds(439_391 as Int64))
         // Every tick between the two readings was idle.
         #expect(status.load.cpuUsage == 0)
         #expect(status.load.loadAverage == 0.08)

@@ -228,6 +228,29 @@ struct NewTerminalModelTests {
         #expect(host.started.map(\.space) == ["sp2", nil])
     }
 
+    /// 14 Nov 2026: a phone's terminal went missing on the Mac because its
+    /// folder had no space yet, and the sheet only said "not shown".
+    @Test("by folder finding no space is warned about; None picked, or no spaces at all, is not")
+    func noSpaceForFolder() async throws {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api")]
+        let model = form(host)
+        #expect(!model.noSpaceForFolder, "undecided until home is known")
+        await model.load()
+        model.directory = "web"
+        #expect(model.noSpaceForFolder)
+        model.directory = "api/src"
+        #expect(!model.noSpaceForFolder)
+        model.directory = "web"
+        model.placement = .hidden
+        #expect(!model.noSpaceForFolder)
+
+        let bare = form(ScriptedHost())
+        await bare.load()
+        bare.directory = "web"
+        #expect(!bare.noSpaceForFolder, "where Herdr.app has no spaces there is nothing to pick")
+    }
+
     /// The review's case: before home is known the sheet could only say "not
     /// shown", and Start then placed it after all.
     @Test("by folder is undecided until home is known, and Start places it then")

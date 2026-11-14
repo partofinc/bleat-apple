@@ -320,6 +320,19 @@ a first message (Template appears only where the host has one); a
     Start places it then. Added 13 Nov 2026, after the first terminals
   started from the phone ran on the Mac but did not show in Herdr.app.
   ([hc facts](hc-facts.md), "How Herdr.app takes in a terminal it did not start")
+  - **"By folder" finding no space is a warning** (14 Nov 2026), in
+    orange, saying to pick a space. A phone's terminal went missing on the
+    Mac again: its folder (bleat-apple) had no space yet when it started,
+    and the footer's plain "Not shown in Herdr" was read past. None,
+    picked, keeps the plain line. Herdr.app making a space was not taken:
+    an unknown id gets an unnamed space, and the user did not ask for one.
+
+- **Command, directory and name are typed literally** (`LiteralTextField`,
+  a `UITextField`): SwiftUI's field cannot turn Smart Punctuation off, and
+  `.autocorrectionDisabled()` does not. `claude --continue` started from
+  the phone ran as `claude —continue`, and Claude took the em dash word for
+  a first message, starting a new conversation (14 Nov 2026). The
+  template's first message is prose and keeps a SwiftUI field.
 
 - **Detached from the phone, always**: `HcRunRequest` sends `no_parent` and
   `no_notify`, so the terminal keeps running when the phone goes and types

@@ -102,6 +102,14 @@ final class NewTerminalModel: Identifiable {
     /// What "By folder" would choose, whatever is picked.
     var spaceByFolder: HerdrSpace? { space(.matching, for: typedDirectory) }
 
+    /// Whether "By folder" is chosen and finds no space, so the terminal will
+    /// not show in Herdr.app although it has spaces here — the case to warn
+    /// about: a phone's terminal went missing on the Mac this way, its folder
+    /// having no space yet (14 Nov 2026). "None", picked, is not warned about.
+    var noSpaceForFolder: Bool {
+        placement == .matching && home != nil && !spaces.isEmpty && spaceByFolder == nil
+    }
+
     /// Whether "By folder" cannot be told yet: home is not known, so neither
     /// is the directory. Start asks for home and places it then.
     var spaceAwaitsHome: Bool { placement == .matching && home == nil }

@@ -251,6 +251,37 @@ struct NewTerminalModelTests {
         #expect(!bare.noSpaceForFolder, "where Herdr.app has no spaces there is nothing to pick")
     }
 
+    @Test("Start refuses By folder finding no space, by the host's spelling; None starts it hidden")
+    func startUnplacedRefused() async throws {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api")]
+        // A symlink: typed under the space's folder, really outside it.
+        host.spelling = ["/home/pi/api/link": "/data/link"]
+        let model = form(host)
+        await model.load()
+        model.directory = "api/link"
+        #expect(!model.noSpaceForFolder, "the typed path looks placed")
+        #expect(await model.start(size: nil) == nil)
+        #expect(host.started.isEmpty)
+        #expect(model.phase == .failed("No space in Herdr on adam holds /data/link. Pick a space, or None to start it hidden."))
+
+        model.placement = .hidden
+        _ = await model.start(size: nil)
+        #expect(try #require(host.started.first).space == nil)
+    }
+
+    @Test("the folder's space closing while the sheet is open is refused, not started hidden")
+    func folderSpaceGone() async {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp1", name: "", folder: "/home/pi/api"), HerdrSpace(id: "sp2", name: "", folder: "/srv")]
+        let model = form(host)
+        await model.load()
+        model.directory = "api"
+        host.spaceList = [HerdrSpace(id: "sp2", name: "", folder: "/srv")]
+        #expect(await model.start(size: nil) == nil)
+        #expect(host.started.isEmpty)
+    }
+
     /// The review's case: before home is known the sheet could only say "not
     /// shown", and Start then placed it after all.
     @Test("by folder is undecided until home is known, and Start places it then")

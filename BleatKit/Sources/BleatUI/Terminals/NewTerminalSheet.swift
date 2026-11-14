@@ -106,6 +106,9 @@ struct NewTerminalSheet: View {
                         Text(template.name).tag(Optional(template.name))
                     }
                 }
+                // Smart punctuation left on (kept from review): this goes
+                // to an agent as prose, which reads `—verbose` as meant, and
+                // a multi-line UIKit field in a Form is not worth that.
                 TextField("First message (optional)", text: $model.task, axis: .vertical)
                     .lineLimit(2...6)
             } footer: {

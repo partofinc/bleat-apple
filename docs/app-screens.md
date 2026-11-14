@@ -326,13 +326,22 @@ a first message (Template appears only where the host has one); a
     and the footer's plain "Not shown in Herdr" was read past. None,
     picked, keeps the plain line. Herdr.app making a space was not taken:
     an unknown id gets an unnamed space, and the user did not ask for one.
+  - **And Start refuses it** (from review): "By folder" on a host with
+    spaces and none holding the directory fails with "No space in Herdr …
+    holds …. Pick a space, or None to start it hidden." Decided from the
+    host's spelling of the directory, so a symlink out of a space's folder
+    is caught, and from the spaces as read on Start, so a folder's space
+    closed meanwhile is too. None is how to start one hidden on purpose.
 
 - **Command, directory and name are typed literally** (`LiteralTextField`,
   a `UITextField`): SwiftUI's field cannot turn Smart Punctuation off, and
   `.autocorrectionDisabled()` does not. `claude --continue` started from
   the phone ran as `claude —continue`, and Claude took the em dash word for
   a first message, starting a new conversation (14 Nov 2026). The
-  template's first message is prose and keeps a SwiftUI field.
+  template's first message is prose for an agent and keeps a SwiftUI
+  field (kept from review). No clear button: `UITextField`'s clears without
+  `editingChanged`, so a cleared command still ran. Return ends editing
+  before it starts, so a failure is not under the keyboard.
 
 - **Detached from the phone, always**: `HcRunRequest` sends `no_parent` and
   `no_notify`, so the terminal keeps running when the phone goes and types

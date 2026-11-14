@@ -32,10 +32,7 @@ struct PaneLineField: UIViewRepresentable {
         field.enablesReturnKeyAutomatically = true
         // What is typed here is as often a command as a sentence, and a
         // capital on `ls` is a command that does not exist.
-        field.autocapitalizationType = .none
-        field.smartDashesType = .no
-        field.smartQuotesType = .no
-        field.smartInsertDeleteType = .no
+        field.typesLiterally()
         field.delegate = context.coordinator
         field.addTarget(
             context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged

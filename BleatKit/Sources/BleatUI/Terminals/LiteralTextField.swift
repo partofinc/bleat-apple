@@ -12,6 +12,12 @@ import UIKit
 /// new conversation instead of continuing one (14 Nov 2026). Curly quotes
 /// would break a shell's quoting the same way. Autocorrect is off too: none
 /// of these is a sentence.
+///
+/// **No clear button** (from review): `UITextField`'s clears without an
+/// `editingChanged`, so a command that looked gone still ran on Start.
+///
+/// **Return ends editing before it submits** (from review), so a start that
+/// fails says so in a form the keyboard no longer covers.
 struct LiteralTextField: UIViewRepresentable {
     let placeholder: String
     @Binding var text: String
@@ -23,18 +29,12 @@ struct LiteralTextField: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextField {
         let field = UITextField()
         field.placeholder = placeholder
-        field.font = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize, weight: .regular)
-        )
+        field.font = Self.font
         field.adjustsFontForContentSizeCategory = true
-        field.autocapitalizationType = .none
+        field.typesLiterally()
         field.autocorrectionType = .no
         field.spellCheckingType = .no
-        field.smartDashesType = .no
-        field.smartQuotesType = .no
-        field.smartInsertDeleteType = .no
         field.returnKeyType = returnKey
-        field.clearButtonMode = .whileEditing
         field.delegate = context.coordinator
         field.addTarget(
             context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged
@@ -44,6 +44,18 @@ struct LiteralTextField: UIViewRepresentable {
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
+    }
+
+    /// Body, monospaced, at the reader's text size. Scaled from body's size at
+    /// the default setting: scaling the current size scaled it twice (from
+    /// review).
+    private static var font: UIFont {
+        let base = UIFont.preferredFont(
+            forTextStyle: .body, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)
+        )
+        return UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: .monospacedSystemFont(ofSize: base.pointSize, weight: .regular)
+        )
     }
 
     func updateUIView(_ field: UITextField, context: Context) {
@@ -61,11 +73,8 @@ struct LiteralTextField: UIViewRepresentable {
         }
 
         func textFieldShouldReturn(_ field: UITextField) -> Bool {
-            guard let submit = parent.onSubmit else {
-                field.resignFirstResponder()
-                return false
-            }
-            submit()
+            field.resignFirstResponder()
+            parent.onSubmit?()
             return false
         }
     }

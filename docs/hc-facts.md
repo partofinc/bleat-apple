@@ -253,14 +253,29 @@ framed straight after `hello`.
   enable-linger …` (strings in the binary — not yet seen live). adam and the
   other Pis already linger. Whether a fresh Pi's SSH login may turn linger on
   without a password is not yet measured.
+- **On a lingering Pi the core outlives every login** (mika, Debian 13,
+  systemd 257, hc 0.1.20; 14 Nov 2026). `Linger=yes` for `pi`; the core
+  runs as `hc-serve-…` and `hc-hold-…` user services under
+  `user@1000.service`, in no session's scope. It started 17 s after boot
+  (boot 10:50:06, `herdr-core serve` 10:50:23, pid 1175), before any login,
+  and kept that pid for over two days while about 126 SSH sessions opened
+  and closed (the current one is session 127). Its `hello` and `hc machine
+  ls` leave `keeps_running_after_logout` and `logout_linger_user` null, so a
+  client cannot read this from the core yet.
+- **Stock polkit lets a user set their own linger from any session**,
+  SSH included: `org.freedesktop.login1.set-self-linger` is `allow_any`,
+  `allow_inactive` and `allow_active` `yes` in systemd 257's policy (mika).
+  Local rules in `/etc/polkit-1/rules.d` are root-only and were not read.
 
 ## Not yet known
 
 - Whether `<session>/<session>.sock` is the general socket path pattern: only
   `~/.local/state/herdr-core/default/default.sock` has been observed.
 - Whether a fresh Raspberry Pi OS user, logged in over SSH only, gets linger
-  from hc without a password (polkit's `set-self-linger`), or the core dies
-  when the phone disconnects. Blocks Phase B's gate on a fresh Pi.
+  from hc without a password (polkit's `set-self-linger`, which the stock
+  policy allows; see above), or the core dies when the phone disconnects.
+  Blocks Phase B's gate on a fresh Pi. Measuring it needs a user that has
+  never lingered, which takes sudo on the Pi to create.
 - Whether a scratch `--session` gets its own core. `hc server` takes no
   session option; sessions are chosen only by `--session`/`HC_SESSION` on the
   client. Check `paths.rs` and `server.rs`.

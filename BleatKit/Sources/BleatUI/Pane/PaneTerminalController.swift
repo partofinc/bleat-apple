@@ -123,17 +123,18 @@ final class PaneTerminalController: UIViewController {
         // 6 and 8 Sept 2026; see `docs/pane-view.md`.)
         terminalView.isScrollEnabled = false
 
-        // **Mouse reporting stays off: "a button, not a tap on the pane".**
+        // **Mouse reporting stays off; the clicks a tap sends are this app's.**
         // `allowMouseReporting` defaults to true, and with it SwiftTerm sends
         // any program that enabled mouse mode a press for a tap — its tap
         // handler only once the pane can be typed into (`isFirstResponder`),
         // but its mouse pan handler **whether or not** it can (corrected at
-        // review, 14 Nov 2026; SwiftTerm 1.20.0). On an agent sitting at a
-        // dialog that is a click on one of its buttons. The pan itself is
-        // refused by `PaneTerminalView`, so drags scroll.
+        // review, 14 Nov 2026; SwiftTerm 1.20.0), and hover as motion. Taps
+        // click only full screen, decided by Ravil on 14 Nov 2026 over 1.x's
+        // "a button, not a tap on the pane" (`PaneTerminalView.takesClicks`),
+        // and are sent by `enableClicks()`, so nothing else SwiftTerm would
+        // report goes out. The pans are refused by `PaneTerminalView`, so
+        // drags scroll.
         terminalView.allowMouseReporting = false
-        // Taps click, but only full screen (`PaneTerminalView.takesClicks`),
-        // and sent by this app rather than by SwiftTerm's reporting.
         terminalView.enableClicks()
         // Turns on `rangeChanged`, which is off by default. It is the only
         // hook that proves a repaint pass ran; one delegate call per repaint.
@@ -283,9 +284,11 @@ final class PaneTerminalController: UIViewController {
         )
     }
 
-    /// The height SwiftTerm draws a row at (`PaneTerminalView.cellSize`).
+    /// The height SwiftTerm draws a row at (`PaneTerminalView.cellSize`,
+    /// pixel-snapped as SwiftTerm draws it; from review, the unsnapped figure
+    /// was off by a third of a point a row on a 3x phone).
     ///
-    /// The frame's height over the row count is not the same number: SwiftTerm
+    /// The view's height over the row count is not the same number: SwiftTerm
     /// takes `Int(height / cellHeight)` rows and leaves the remainder as a
     /// strip at the bottom, so that quotient is a fraction of a point too
     /// large.

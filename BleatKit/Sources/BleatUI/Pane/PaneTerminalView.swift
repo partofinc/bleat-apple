@@ -18,9 +18,11 @@ import UIKit
 ///
 /// **The recognisers stay off the raising path anyway.** `acceptsKeyboard` is
 /// set from an explicit toolbar button, not from a tap on the pane: a stray tap
-/// on a surface whose whole job is to be dragged would otherwise start sending
-/// keystrokes to a live agent. What this flag buys is the *ability* to become
-/// first responder; `PaneTerminalController` decides when.
+/// on a surface whose whole job is to be dragged would otherwise raise the
+/// keyboard over a live agent. What this flag buys is the *ability* to become
+/// first responder; `PaneTerminalController` decides when. A tap does reach
+/// the program in one case, as a click: full screen, when it asked for the
+/// mouse (`takesClicks`; decided by Ravil, 14 Nov 2026).
 ///
 /// Note this view's **scrolling** is switched off separately, by
 /// `PaneTerminalController` — see CLAUDE.md for why there is nothing to scroll.
@@ -65,11 +67,18 @@ final class PaneTerminalView: TerminalView {
            recognizer !== panGestureRecognizer, !selectionActive {
             return false
         }
+        // The click tap only when a tap is a click (from review): otherwise
+        // it would compete with SwiftTerm's single tap for nothing, in a
+        // shell as well, and could win.
+        if recognizer === clickRecognizer {
+            return clicksNow
+        }
         // SwiftTerm's own single tap, while taps are clicks: with the
         // keyboard up it would also pop its menu by the cursor or follow a
-        // link under the finger, on top of the click.
-        if let tap = recognizer as? UITapGestureRecognizer, tap.view === self, tap !== clickRecognizer,
-           tap.numberOfTapsRequired == 1, takesClicks {
+        // link under the finger, on top of the click. While a selection is
+        // up it is SwiftTerm's again, to clear it (from review).
+        if let tap = recognizer as? UITapGestureRecognizer, tap.view === self,
+           tap.numberOfTapsRequired == 1, clicksNow {
             return false
         }
         return super.gestureRecognizerShouldBegin(recognizer)
@@ -97,8 +106,12 @@ final class PaneTerminalView: TerminalView {
         }
     }
 
+    /// Whether a tap right now clicks: `takesClicks`, and no selection up —
+    /// a tap then is to dismiss it, as anywhere else, and goes to SwiftTerm.
+    var clicksNow: Bool { takesClicks && !selectionActive }
+
     /// The tap that clicks. Installed by `enableClicks()`.
-    private var clickRecognizer: UITapGestureRecognizer?
+    private(set) var clickRecognizer: UITapGestureRecognizer?
 
     /// Turns taps into clicks while `takesClicks`. Call once, after the view
     /// has set up its own recognisers.
@@ -124,9 +137,9 @@ final class PaneTerminalView: TerminalView {
     }
 
     /// Sends the program a left press and release on the cell under `point`,
-    /// in this view's coordinates, if it takes clicks.
+    /// in this view's coordinates, if a tap clicks now.
     func click(at point: CGPoint) {
-        guard takesClicks, let cell = cell(at: point) else { return }
+        guard clicksNow, let cell = cell(at: point) else { return }
         let terminal = getTerminal()
         let press = terminal.encodeButton(button: 0, release: false, shift: false, meta: false, control: false)
         let release = terminal.encodeButton(button: 0, release: true, shift: false, meta: false, control: false)
@@ -150,15 +163,20 @@ final class PaneTerminalView: TerminalView {
         return (col, row)
     }
 
-    /// The size SwiftTerm draws a cell at — its `computeFontDimensions`, line
-    /// for line, which it keeps internal: the width of a `W`, and the font's
-    /// ascent, descent and leading, rounded up. If SwiftTerm's line spacing
-    /// is ever changed from its default of 1, this has to follow.
+    /// The size SwiftTerm draws a cell at: its own figure, read through the
+    /// public `getOptimalFrameSize()` (its cell size times the grid).
+    ///
+    /// **Not recomputed from the font** (from review): SwiftTerm snaps the
+    /// cell to the pixel grid and applies its line spacing, and a copy of its
+    /// maths without the snapping drifted a fraction of a point per cell — by
+    /// half a cell around column 45 or row 23 on a 3x phone, so a tap there
+    /// clicked the cell beside it. The scroll step and the keyboard anchor
+    /// read the same figure (`PaneTerminalController.rowHeight`).
     var cellSize: CGSize {
-        let width = "W".size(withAttributes: [.font: font]).width
-        let ctFont = font as CTFont
-        let height = ceil(CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont) + CTFontGetLeading(ctFont))
-        return CGSize(width: width, height: height)
+        let terminal = getTerminal()
+        guard terminal.cols > 0, terminal.rows > 0 else { return .zero }
+        let frame = getOptimalFrameSize()
+        return CGSize(width: frame.width / CGFloat(terminal.cols), height: frame.height / CGFloat(terminal.rows))
     }
 
     /// Takes SwiftTerm's own accessory bar off the keyboard.

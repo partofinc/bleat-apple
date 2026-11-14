@@ -140,9 +140,44 @@ struct PaneMouseModeTests {
 
         let (shell, _, shellWindow) = try pane(modes: Data())
         defer { shellWindow.isHidden = true }
-        let shellSingles = (shell.gestureRecognizers ?? []).compactMap { $0 as? UITapGestureRecognizer }
-            .filter { $0.numberOfTapsRequired == 1 }
-        #expect(shellSingles.allSatisfy { shell.gestureRecognizerShouldBegin($0) })
+        let ours = try #require(shell.clickRecognizer)
+        let theirs = (shell.gestureRecognizers ?? []).compactMap { $0 as? UITapGestureRecognizer }
+            .filter { $0.numberOfTapsRequired == 1 && $0 !== ours }
+        #expect(!shell.gestureRecognizerShouldBegin(ours), "in a shell the click tap does not compete")
+        #expect(theirs.allSatisfy { shell.gestureRecognizerShouldBegin($0) })
+    }
+
+    @Test("with a selection up, a tap is SwiftTerm's, to clear it, and clicks nothing")
+    func tapClearsSelection() throws {
+        let (terminal, sent, window) = try pane()
+        defer { window.isHidden = true }
+        terminal.selectAll()
+        let ours = try #require(terminal.clickRecognizer)
+        let theirs = (terminal.gestureRecognizers ?? []).compactMap { $0 as? UITapGestureRecognizer }
+            .filter { $0.numberOfTapsRequired == 1 && $0 !== ours }
+        #expect(!terminal.gestureRecognizerShouldBegin(ours))
+        #expect(theirs.allSatisfy { terminal.gestureRecognizerShouldBegin($0) })
+        terminal.click(at: point(col: 2, row: 2, on: terminal))
+        #expect(sent.bytes.isEmpty)
+    }
+
+    /// From review: a copy of SwiftTerm's cell maths without its pixel
+    /// snapping drifted half a cell by the far columns on a 3x phone. Measured
+    /// from SwiftTerm's own frame, not from `cellSize`. **It does not catch
+    /// that drift here**: swapped back in, the copy passed, since this hostless
+    /// window gives SwiftTerm no screen scale to snap to (checked 14 Nov 2026).
+    /// What prevents it is `cellSize` reading SwiftTerm's figure; this keeps
+    /// the far corner mapped to the far cell.
+    @Test("a tap in the bottom-right cell clicks the bottom-right cell")
+    func farCornerCell() throws {
+        let (terminal, sent, window) = try pane()
+        defer { window.isHidden = true }
+        let engine = terminal.getTerminal()
+        let frame = terminal.getOptimalFrameSize()
+        let corner = CGPoint(x: terminal.bounds.origin.x + frame.width - 1, y: terminal.bounds.origin.y + frame.height - 1)
+        terminal.click(at: corner)
+        let at = "\(engine.cols);\(engine.rows)"
+        #expect(String(decoding: sent.bytes, as: UTF8.self) == "\u{1B}[<0;\(at)M\u{1B}[<0;\(at)m")
     }
 
     @Test("a wheel click goes out as SGR, the encoding Claude Code asked for")

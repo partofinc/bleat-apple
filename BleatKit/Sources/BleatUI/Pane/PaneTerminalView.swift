@@ -39,6 +39,35 @@ final class PaneTerminalView: TerminalView {
 
     override var canBecomeFirstResponder: Bool { acceptsKeyboard }
 
+    /// Keeps SwiftTerm's own pans from taking the drag, except to extend a
+    /// selection.
+    ///
+    /// SwiftTerm adds `UIPanGestureRecognizer`s to this view: one whenever a
+    /// program asks for the mouse, to report drags as motion, and one when a
+    /// selection starts (long press → Select, a double or triple tap), to
+    /// extend it — which is not always taken away when the selection ends.
+    /// Either wins every drag from `PaneScrollGesture`. The mouse one also
+    /// reports nothing, since mouse reporting is off here
+    /// (`PaneTerminalController`), so a pane under such a program simply
+    /// stopped scrolling. Claude Code became one when it went full-screen
+    /// (`?1049h`, `?1000h`/`?1002h`/`?1003h`, SGR; 2.1.325, found on a phone
+    /// 14 Nov 2026).
+    ///
+    /// **Refused at the start, not kept from being added** (from review):
+    /// SwiftTerm's `mouseModeChanged` and the paths that add a pan stay its
+    /// own, so whatever else they do survives an update, and a pan added some
+    /// other way is refused all the same. The mouse mode itself is left as the
+    /// program set it, so the scroller in `TerminalHost` still encodes wheel
+    /// clicks the way it asked. The scroll view's own pan is left to
+    /// `isScrollEnabled`.
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        if recognizer is UIPanGestureRecognizer, recognizer.view === self,
+           recognizer !== panGestureRecognizer, !selectionActive {
+            return false
+        }
+        return super.gestureRecognizerShouldBegin(recognizer)
+    }
+
     /// Takes SwiftTerm's own accessory bar off the keyboard.
     ///
     /// It installs a `TerminalAccessory` — Esc, Tab, Ctrl, arrows — from its

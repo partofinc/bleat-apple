@@ -32,6 +32,28 @@ public actor HcClient {
     /// The protocol generation this build speaks.
     public static let generation = 1
 
+    /// The methods Bleat cannot work without: the floor it sets on a core.
+    ///
+    /// Checked against `hello`'s `methods` rather than a version number, so a
+    /// newer core passes for as long as it keeps them, and an older one is
+    /// named for what it lacks. Every core seen so far (0.1.18 to 0.1.21) has
+    /// all of them.
+    ///
+    /// **Only what reading a host takes** — the list, a terminal, its screen
+    /// (from review). Every connection checks it, the list's, a pane's, the
+    /// watch's and `bleat`'s, so a method one feature uses refuses them all.
+    /// Those are left to fail at their own call, in herdr-core's words:
+    /// `terminal.run` and `doc.get` (the new-terminal sheet), `terminal.label`
+    /// (marking seen, which retries), `templates.list`. So this is a subset
+    /// of what Bleat calls on purpose, not a list to keep in step with it.
+    public static let requiredMethods: [String] = [
+        "events.subscribe", "terminal.list", "terminal.get", "terminal.read", "terminal.attach",
+    ]
+
+    /// The oldest herdr-core Bleat has been run against, for telling someone
+    /// what to update to. Not checked: the floor is `requiredMethods`.
+    public static let oldestKnownGood = "0.1.18"
+
     private let stream: any DuplexStream
     private let outgoing: AsyncStream<Data>.Continuation
     private var reader: Task<Void, Never>?
@@ -73,8 +95,9 @@ public actor HcClient {
 
     /// Shakes hands over `stream` and returns a client on it.
     ///
-    /// - Throws: `HcProtocolError` when the core will not speak framed mode or
-    ///   speaks another generation; the stream's own error when it ends first.
+    /// - Throws: `HcProtocolError` when the core will not speak framed mode,
+    ///   speaks another generation, or lacks a method in `requiredMethods`;
+    ///   the stream's own error when it ends first.
     public static func connect(over stream: any DuplexStream) async throws -> HcClient {
         let client = HcClient(stream: stream)
         do {
@@ -123,6 +146,16 @@ public actor HcClient {
         guard generation == Self.generation else { throw HcProtocolError.unsupportedGeneration(generation) }
         var features: [String] = []
         if case .array(let listed)? = result["features"] { features = listed.compactMap(\.string) }
+        // A core that lists no methods says nothing either way, an empty list
+        // as much as a missing key (from review); its calls fail one by one,
+        // by name, as they would have before this check.
+        if case .array(let listed)? = result["methods"], !listed.isEmpty {
+            let offered = Set(listed.compactMap(\.string))
+            let missing = Self.requiredMethods.filter { !offered.contains($0) }
+            if !missing.isEmpty {
+                throw HcProtocolError.outdated(version: result["version"]?.string, missing: missing)
+            }
+        }
         hello = Hello(
             coreID: result["core"]?["id"]?.string,
             coreName: result["core"]?["name"]?.string,

@@ -109,6 +109,54 @@ struct HcClientTests {
         await #expect(throws: HcProtocolError.notFramed) { try await client.value }
     }
 
+    @Test("a core without a method Bleat needs is refused, naming what it lacks")
+    func outdatedCore() async throws {
+        let core = ScriptedCore()
+        let client = Task { try await HcClient.connect(over: core) }
+        _ = await core.written(atLeast: 1)
+        let methods = HcClient.requiredMethods.filter { $0 != "terminal.read" && $0 != "terminal.attach" }
+        let listed = methods.map { "\"\($0)\"" }.joined(separator: ",")
+        core.reply(json(#"{"jsonrpc":"2.0","id":0,"result":{"framed":true,"generation":1,"version":"0.1.9","methods":["#) + json(listed) + json("]}}\n"))
+        await #expect(throws: HcProtocolError.outdated(version: "0.1.9", missing: ["terminal.read", "terminal.attach"])) { try await client.value }
+    }
+
+    @Test("a core without what only creating or marking seen uses is not refused")
+    func optionalMethodsMissing() async throws {
+        let core = ScriptedCore()
+        let client = Task { try await HcClient.connect(over: core) }
+        _ = await core.written(atLeast: 1)
+        let listed = HcClient.requiredMethods.map { "\"\($0)\"" }.joined(separator: ",")
+        core.reply(json(#"{"jsonrpc":"2.0","id":0,"result":{"framed":true,"generation":1,"methods":["#) + json(listed) + json("]}}\n"))
+        _ = try await client.value
+    }
+
+    @Test("an empty methods list says nothing, as a missing one does")
+    func emptyMethods() async throws {
+        let core = ScriptedCore()
+        let client = Task { try await HcClient.connect(over: core) }
+        _ = await core.written(atLeast: 1)
+        core.reply(json(#"{"jsonrpc":"2.0","id":0,"result":{"framed":true,"generation":1,"methods":[]}}"#) + json("\n"))
+        _ = try await client.value
+    }
+
+    @Test("the message says what to update to before what is missing")
+    func outdatedMessage() {
+        let message = HcProtocolError.outdated(version: "0.1.9", missing: ["terminal.attach"]).description
+        #expect(message == "herdr-core 0.1.9 on this host is too old for Bleat. Update it on the host to 0.1.18 or later. (Missing: terminal.attach.)")
+    }
+
+    /// 0.1.18 is the oldest core Bleat has met (adam); 0.1.20 is this Mac's.
+    @Test("every captured hello offers what Bleat needs", arguments: ["hc-hello.json", "hc-hello-0.1.18.json"])
+    func capturedHelloMeetsTheFloor(fixture: String) throws {
+        let hello = try JSONDecoder().decode(HcJSON.self, from: Fixture.data(fixture))
+        guard case .array(let listed)? = hello["result"]?["methods"] else {
+            Issue.record("\(fixture) lists no methods")
+            return
+        }
+        let offered = Set(listed.compactMap(\.string))
+        #expect(HcClient.requiredMethods.allSatisfy(offered.contains))
+    }
+
     @Test("another protocol generation is refused by name")
     func otherGeneration() async throws {
         let core = ScriptedCore()

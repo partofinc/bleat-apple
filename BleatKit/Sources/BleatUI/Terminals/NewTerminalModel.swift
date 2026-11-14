@@ -102,6 +102,19 @@ final class NewTerminalModel: Identifiable {
     /// What "By folder" would choose, whatever is picked.
     var spaceByFolder: HerdrSpace? { space(.matching, for: typedDirectory) }
 
+    /// Whether "By folder" is chosen and finds no space, so the terminal will
+    /// not show in Herdr.app although it has spaces here — the case to warn
+    /// about: a phone's terminal went missing on the Mac this way, its folder
+    /// having no space yet (14 Nov 2026). "None", picked, is not warned about.
+    ///
+    /// The sheet's hint, from the typed path; Start decides again from the
+    /// host's spelling of it (`startsUnplaced`). The conditions are spelled
+    /// out here rather than left to the footer's order of checks (from
+    /// review): the property has to be right however the view asks.
+    var noSpaceForFolder: Bool {
+        placement == .matching && home != nil && !spaces.isEmpty && spaceByFolder == nil
+    }
+
     /// Whether "By folder" cannot be told yet: home is not known, so neither
     /// is the directory. Start asks for home and places it then.
     var spaceAwaitsHome: Bool { placement == .matching && home == nil }
@@ -177,6 +190,12 @@ final class NewTerminalModel: Identifiable {
                 phase = .failed("That space is no longer in Herdr on \(hostName). Pick another.")
                 return nil
             }
+            if startsUnplaced(cwd: cwd) {
+                phase = .failed(
+                    "No space in Herdr on \(hostName) holds \(HcRunSuggestions.abbreviate(cwd, home: home)). Pick a space, or None to start it hidden."
+                )
+                return nil
+            }
             let name = name.trimmingCharacters(in: .whitespaces)
             let request = HcRunRequest(
                 program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space(placement, for: cwd)?.id
@@ -195,6 +214,17 @@ final class NewTerminalModel: Identifiable {
             phase = .failed(Self.message(for: error))
             return nil
         }
+    }
+
+    /// Whether Start would put a terminal in `cwd` nowhere in Herdr.app
+    /// without having been told to: "By folder", on a host that has spaces,
+    /// and none holds it. Refused rather than started (from review, 14 Nov
+    /// 2026): the warning was a footer and a footer can be read past, the
+    /// typed path can be a symlink to one no space holds, and the folder's
+    /// space can close while the sheet is open. None is the way to say
+    /// hidden on purpose.
+    private func startsUnplaced(cwd: String) -> Bool {
+        placement == .matching && !spaces.isEmpty && space(.matching, for: cwd) == nil
     }
 
     private var program: HcRunRequest.Program {

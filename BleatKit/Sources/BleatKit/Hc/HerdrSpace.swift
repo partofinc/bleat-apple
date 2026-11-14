@@ -47,20 +47,25 @@ public struct HerdrSpace: Sendable, Equatable, Identifiable {
         }
     }
 
-    /// The space a terminal in `directory` belongs in: the one whose folder
-    /// holds it most closely. None when no space's folder holds it.
+    /// The spaces whose folder is `directory` itself, in Herdr.app's order:
+    /// the ones a terminal started there may go in. A parent folder's space
+    /// does not count (decided by Ravil, 14 Nov 2026): a terminal in a
+    /// folder of its own gets a space of its own, not a tab in the parent's.
     ///
     /// Compared as written, so `directory` should be the host's own spelling
     /// (`HostDirectory.physical`): on a Mac a typed `~/developer` exists but
     /// would match no `Developer` folder.
-    public static func matching(_ directory: String, in spaces: [HerdrSpace]) -> HerdrSpace? {
-        spaces
-            .filter { !$0.folder.isEmpty && Self.folder($0.folder, holds: directory) }
-            .max { $0.folder.count < $1.folder.count }
+    public static func spaces(for directory: String, in spaces: [HerdrSpace]) -> [HerdrSpace] {
+        let directory = directory.droppingTrailingSlash
+        return spaces.filter { !$0.folder.isEmpty && $0.folder.droppingTrailingSlash == directory }
     }
 
-    private static func folder(_ folder: String, holds directory: String) -> Bool {
-        let folder = folder.droppingTrailingSlash
-        return directory == folder || directory.hasPrefix(folder == "/" ? "/" : folder + "/")
+    /// A fresh space id, in Herdr.app's form (`sp` and 32 hex digits). A
+    /// terminal labeled with an id Herdr.app does not know makes a new
+    /// space under it, unnamed, with the terminal's directory as its folder,
+    /// so it is called after the folder ([hc facts], "How Herdr.app takes in
+    /// a terminal it did not start").
+    public static func newID() -> String {
+        "sp" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 }

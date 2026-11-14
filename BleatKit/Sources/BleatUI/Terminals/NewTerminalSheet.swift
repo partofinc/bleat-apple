@@ -3,7 +3,8 @@ import BleatKit
 import SwiftUI
 
 /// Starting a terminal on a host: the shell, a command, or a template, in a
-/// directory, under an optional name, in a Herdr.app space or none.
+/// directory, under an optional name, in a Herdr.app space: its own, or one
+/// already there for that folder.
 ///
 /// Started detached from the phone (`HcRunRequest`), so it keeps running
 /// after the phone goes; then opened, which takes it over at the phone's size
@@ -39,9 +40,7 @@ struct NewTerminalSheet: View {
                 program
                 directory
                 name
-                if !model.spaces.isEmpty || model.spacesProblem != nil {
-                    herdrSpace
-                }
+                herdrSpace
                 if case .failed(let message) = model.phase {
                     Section {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -140,7 +139,11 @@ struct NewTerminalSheet: View {
         } header: {
             Text("Directory")
         } footer: {
-            Text("On \(model.hostName). Empty is home; a path without / is under home.")
+            if model.spacesForFolder.isEmpty, model.spacesProblem == nil {
+                Text("On \(model.hostName). Empty is home; a path without / is under home. It gets a new space in Herdr, named after the folder.")
+            } else {
+                Text("On \(model.hostName). Empty is home; a path without / is under home.")
+            }
         }
     }
 
@@ -158,45 +161,40 @@ struct NewTerminalSheet: View {
         }
     }
 
-    /// Only where Herdr.app has spaces on the host: elsewhere there is nothing
-    /// to pick, and the terminal shows in Bleat and `hc ls`.
+    /// Where it shows in Herdr.app. A selector only where Herdr.app already
+    /// has a space for this very folder (decided by Ravil, 14 Nov 2026):
+    /// anywhere else it gets a new space and there is nothing to choose.
+    @ViewBuilder
     private var herdrSpace: some View {
-        Section {
-            Picker("Space", selection: $model.placement) {
-                Text(matchingTitle).tag(NewTerminalModel.Placement.matching)
-                Text("None").tag(NewTerminalModel.Placement.hidden)
-                ForEach(model.spaces) { space in
-                    Text(space.displayName(home: model.home)).tag(NewTerminalModel.Placement.space(space.id))
+        let existing = model.spacesForFolder
+        if !existing.isEmpty || model.spacesProblem != nil {
+            Section {
+                if !existing.isEmpty {
+                    Picker("Space", selection: placement) {
+                        ForEach(existing) { space in
+                            Text(space.displayName(home: model.home)).tag(NewTerminalModel.Placement.space(space.id))
+                        }
+                        Text("New space").tag(NewTerminalModel.Placement.newSpace)
+                    }
                 }
-            }
-        } header: {
-            Text("Herdr")
-        } footer: {
-            if let problem = model.spacesProblem {
-                Text("Herdr's spaces could not be read: \(problem)")
-                    .foregroundStyle(.red)
-            } else if model.spaceAwaitsHome {
-                Text("Shown in Herdr on \(model.hostName) in the space whose folder holds the directory, if one does.")
-            } else if let space = model.space {
-                Text("Shown in Herdr on \(model.hostName), in a new tab of \(space.displayName(home: model.home)).")
-            } else if model.noSpaceForFolder {
-                // Said as a warning, not as the plain "not shown": it was
-                // read past once, and the terminal went missing on the Mac.
-                Label(
-                    "No space in Herdr on \(model.hostName) holds this folder, so it will not show there. Pick a space to show it in one.",
-                    systemImage: "exclamationmark.triangle"
-                )
-                .foregroundStyle(.orange)
-            } else {
-                Text("Not shown in Herdr. It runs on \(model.hostName) and shows here.")
+            } header: {
+                Text("Herdr")
+            } footer: {
+                if let problem = model.spacesProblem {
+                    Text("Herdr's spaces could not be read: \(problem). It will get a new space.")
+                        .foregroundStyle(.red)
+                } else if let space = model.space {
+                    Text("In a new tab of \(space.displayName(home: model.home)), in Herdr on \(model.hostName).")
+                } else {
+                    Text("In a new space beside it, named after the folder.")
+                }
             }
         }
     }
 
-    private var matchingTitle: String {
-        if model.home == nil { return "By folder" }
-        guard let space = model.spaceByFolder else { return "By folder (none)" }
-        return "By folder (\(space.displayName(home: model.home)))"
+    /// The selector's choice: what the model will do, and what a pick sets.
+    private var placement: Binding<NewTerminalModel.Placement> {
+        Binding { model.placement } set: { model.picked = $0 }
     }
 
     private func suggestions(_ values: [String], pick: @escaping (String) -> Void) -> some View {

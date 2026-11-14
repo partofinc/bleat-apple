@@ -14,9 +14,11 @@ import Foundation
 /// outlives the phone and is viewed on the Mac too, so it gets the core's
 /// identity, the same as every terminal the phone already shows.
 ///
-/// **In Herdr.app only when a space is given.** Herdr.app shows only
-/// terminals labeled `herdr.space`; with one, it takes the terminal into that
-/// space in a new tab (`HerdrSpace`). Then it also gets `herdr.seen=0`, as
+/// **In Herdr.app only when a space is given**, and the app always gives
+/// one: a new id for a space of its own, or the folder's existing space
+/// (`NewTerminalModel`). Herdr.app shows only terminals labeled
+/// `herdr.space`; with one, it takes the terminal into that space in a new
+/// tab, making the space first if the id is new (`HerdrSpace`). Then it also gets `herdr.seen=0`, as
 /// herdr-app's `docs/labels.md` says a terminal a client starts does. Never
 /// `herdr.tab`: a new tab, not a split beside someone's running agent.
 public struct HcRunRequest: Sendable, Equatable {

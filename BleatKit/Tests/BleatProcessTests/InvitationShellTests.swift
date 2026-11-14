@@ -18,18 +18,29 @@ struct InvitationShellTests {
         endpoints: [Endpoint(host: "adam.local"), Endpoint(host: "100.101.102.103", port: 2222)]
     )
 
-    /// A home with a `herdr` on the login shell's `PATH`, so the redeeming
-    /// side's lookup succeeds, and the user's own key already installed.
+    /// A home with its own herdr-core, so the redeeming side's lookup
+    /// succeeds, and the user's own key already installed.
+    ///
+    /// **A stub `hc` in the scratch home, not whatever the machine has.** It
+    /// was a `herdr` stub, left from 1.x; after pairing moved to herdr-core
+    /// (#80) the lookup found this Mac's real `hc` instead, and the test
+    /// passed here and failed on Xcode Cloud, which has none ("herdr-core (hc)
+    /// is not installed on that host"; run 5, 14 Nov 2026). It sits in
+    /// `~/.local/bin`, which the lookup asks under this `HOME` whatever the
+    /// login shell's `PATH` says, and first on that `PATH` for `sh`, `bash`
+    /// and `zsh` logins, so it wins either way.
     private func scratchHome() async throws -> (URL, LocalShell) {
         let home = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("bleat-invite-\(UUID().uuidString)")
-        let bin = home.appendingPathComponent("bin")
+        let bin = home.appendingPathComponent(".local/bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let herdr = bin.appendingPathComponent("herdr")
-        try "#!/bin/sh\necho stub\n".write(to: herdr, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: herdr.path)
-        try "PATH=\(bin.path):$PATH\n"
-            .write(to: home.appendingPathComponent(".profile"), atomically: true, encoding: .utf8)
+        let hc = bin.appendingPathComponent("hc")
+        try "#!/bin/sh\necho 'hc 0.1.20'\n".write(to: hc, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hc.path)
+        for profile in [".profile", ".zprofile"] {
+            try "PATH=\(bin.path):$PATH\n"
+                .write(to: home.appendingPathComponent(profile), atomically: true, encoding: .utf8)
+        }
         let shell = LocalShell(home: home)
         _ = try await shell.run(shell: AuthorizedKeys.appendCommand(line: usersKey))
         return (home, shell)

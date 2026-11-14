@@ -24,11 +24,14 @@ upload as that version rather than as another build of the released one.
 so Bleat 2 builds can reach his phone away from the Mac's cable and network.
 `MARKETING_VERSION` is 2.0 and `v2.0` starts the Release workflow as any
 `v` tag does. A later TestFlight build of Bleat 2 is another 2.0 build, not
-a new version; how it is started (Start Build in App Store Connect on
-`main`, or a tag the workflow's start condition matches) is not settled —
-the start condition lives in App Store Connect, not in this repo. Do not
-move `v2.0`. It is not a release: no GitHub release is made for it, and the
-App Store submission is Phase D's.
+a new version, **made by moving `v2.0`** to the commit (decided by Ravil, 14
+Nov 2026): delete it locally and on `origin`, tag again, push. The push
+starts the run. Starting one by hand on `main` is refused — the Release
+workflow's only start condition is tags with the prefix `v` (read through the
+API), and Xcode Cloud will not build a branch a workflow does not name. First
+moved from `323c8fa` to `06f4b01` (#98), whose run 6 was 2.0's first
+TestFlight build. It is not a release: no GitHub release is made for it, and
+the App Store submission is Phase D's.
 
 Xcode Cloud onboarding could not be finished from `main`: it asked for access
 to every public dependency repository (`apple/swift-system` first), which

@@ -50,6 +50,20 @@ scroll gesture) with `HcPaneModel` instead of `PaneModel`; both conform to
   wheel clicks (tested as bytes). SwiftTerm's mouse pan handler reports
   drags whether or not the pane has the keyboard, which is one more reason
   mouse reporting stays off.
+- **Full screen, a tap is a click** (decided by Ravil, 14 Nov 2026, over
+  1.x's "a button, not a tap on the pane"). Claude Code runs full screen and
+  is driven by its mouse there. `PaneTerminalView.takesClicks` is the
+  alternate screen with press-and-release tracking (`?1000h`, `?1002h` or
+  `?1003h`); then a tap sends a left press and release on the tapped cell,
+  in the program's encoding, through the same input path as keys. Anything
+  else, a shell or a program on the main screen, gets nothing for a tap, as
+  before. Taps still never raise the keyboard, and mouse reporting stays
+  off, so drags and an iPad pointer's hover report nothing. The click waits
+  for SwiftTerm's double tap to fail, so a double tap still selects a word;
+  while taps click, SwiftTerm's own single tap is refused, so a tap by the
+  cursor with the keyboard up does not also open its menu. The cell size is
+  SwiftTerm's `computeFontDimensions`, recomputed (`cellSize`), shared with
+  the scroll step.
 - **Off screen is not gone.** The screen calls `setActive(false)` when it
   disappears and `setActive(true)` when it comes back: a covering sheet or an
   iPad column change returns with its state, and a model closed for good left

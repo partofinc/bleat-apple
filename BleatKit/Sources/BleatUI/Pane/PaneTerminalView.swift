@@ -65,7 +65,100 @@ final class PaneTerminalView: TerminalView {
            recognizer !== panGestureRecognizer, !selectionActive {
             return false
         }
+        // SwiftTerm's own single tap, while taps are clicks: with the
+        // keyboard up it would also pop its menu by the cursor or follow a
+        // link under the finger, on top of the click.
+        if let tap = recognizer as? UITapGestureRecognizer, tap.view === self, tap !== clickRecognizer,
+           tap.numberOfTapsRequired == 1, takesClicks {
+            return false
+        }
         return super.gestureRecognizerShouldBegin(recognizer)
+    }
+
+    // MARK: - Taps as clicks, full screen only
+
+    /// Whether a tap is a click: the program is full screen (the alternate
+    /// screen) and asked for presses and releases.
+    ///
+    /// **Decided by Ravil, 14 Nov 2026,** over the rule this pane had kept
+    /// since 1.x — "a button, not a tap on the pane", so a stray touch could
+    /// not click a live agent's dialog. Claude Code now runs full screen and
+    /// is driven by its mouse there, and a pane that ignores taps is one
+    /// that cannot be used like the Mac's. Kept from the rule: nothing
+    /// outside full screen is clicked (a shell, or a program on the main
+    /// screen, gets no press for a tap), taps never raise the keyboard, and
+    /// mouse reporting itself stays off, so drags and hover report nothing.
+    var takesClicks: Bool {
+        let terminal = getTerminal()
+        guard terminal.isCurrentBufferAlternate else { return false }
+        switch terminal.mouseMode {
+        case .vt200, .buttonEventTracking, .anyEvent: return true
+        default: return false
+        }
+    }
+
+    /// The tap that clicks. Installed by `enableClicks()`.
+    private var clickRecognizer: UITapGestureRecognizer?
+
+    /// Turns taps into clicks while `takesClicks`. Call once, after the view
+    /// has set up its own recognisers.
+    ///
+    /// **It waits for SwiftTerm's double tap to fail**, a beat after the
+    /// finger lifts, so a double tap still selects a word instead of
+    /// clicking twice first.
+    func enableClicks() {
+        guard clickRecognizer == nil else { return }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(clicked(_:)))
+        for other in gestureRecognizers ?? [] {
+            if let double = other as? UITapGestureRecognizer, double.numberOfTapsRequired == 2 {
+                tap.require(toFail: double)
+            }
+        }
+        addGestureRecognizer(tap)
+        clickRecognizer = tap
+    }
+
+    @objc private func clicked(_ tap: UITapGestureRecognizer) {
+        guard tap.state == .ended else { return }
+        click(at: tap.location(in: self))
+    }
+
+    /// Sends the program a left press and release on the cell under `point`,
+    /// in this view's coordinates, if it takes clicks.
+    func click(at point: CGPoint) {
+        guard takesClicks, let cell = cell(at: point) else { return }
+        let terminal = getTerminal()
+        let press = terminal.encodeButton(button: 0, release: false, shift: false, meta: false, control: false)
+        let release = terminal.encodeButton(button: 0, release: true, shift: false, meta: false, control: false)
+        terminal.sendEvent(buttonFlags: press, x: cell.col, y: cell.row)
+        terminal.sendEvent(buttonFlags: release, x: cell.col, y: cell.row)
+    }
+
+    /// The screen cell under `point`, zero-based. The bounds' origin is the
+    /// scroll offset, so it is taken off first: rows count from the top of
+    /// what is drawn, which on the alternate screen is the screen.
+    func cell(at point: CGPoint) -> (col: Int, row: Int)? {
+        let size = cellSize
+        guard size.width > 0, size.height > 0 else { return nil }
+        let terminal = getTerminal()
+        let x = point.x - bounds.origin.x
+        let y = point.y - bounds.origin.y
+        guard x >= 0, y >= 0 else { return nil }
+        let col = Int(x / size.width)
+        let row = Int(y / size.height)
+        guard col < terminal.cols, row < terminal.rows else { return nil }
+        return (col, row)
+    }
+
+    /// The size SwiftTerm draws a cell at — its `computeFontDimensions`, line
+    /// for line, which it keeps internal: the width of a `W`, and the font's
+    /// ascent, descent and leading, rounded up. If SwiftTerm's line spacing
+    /// is ever changed from its default of 1, this has to follow.
+    var cellSize: CGSize {
+        let width = "W".size(withAttributes: [.font: font]).width
+        let ctFont = font as CTFont
+        let height = ceil(CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont) + CTFontGetLeading(ctFont))
+        return CGSize(width: width, height: height)
     }
 
     /// Takes SwiftTerm's own accessory bar off the keyboard.

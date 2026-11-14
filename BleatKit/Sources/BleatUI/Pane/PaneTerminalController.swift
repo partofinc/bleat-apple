@@ -132,6 +132,9 @@ final class PaneTerminalController: UIViewController {
         // dialog that is a click on one of its buttons. The pan itself is
         // refused by `PaneTerminalView`, so drags scroll.
         terminalView.allowMouseReporting = false
+        // Taps click, but only full screen (`PaneTerminalView.takesClicks`),
+        // and sent by this app rather than by SwiftTerm's reporting.
+        terminalView.enableClicks()
         // Turns on `rangeChanged`, which is off by default. It is the only
         // hook that proves a repaint pass ran; one delegate call per repaint.
         terminalView.notifyUpdateChanges = true
@@ -280,19 +283,13 @@ final class PaneTerminalController: UIViewController {
         )
     }
 
-    /// The height SwiftTerm draws a row at.
+    /// The height SwiftTerm draws a row at (`PaneTerminalView.cellSize`).
     ///
-    /// **Recomputed, because SwiftTerm keeps its own internal** — this is
-    /// `computeFontDimensions`, line for line: the font's ascent, descent and
-    /// leading, rounded up. The frame's height over the row count is not the
-    /// same number: SwiftTerm takes `Int(height / cellHeight)` rows and leaves
-    /// the remainder as a strip at the bottom, so that quotient is a fraction
-    /// of a point too large. If SwiftTerm's line spacing is ever changed from
-    /// its default of 1, this has to follow.
-    private var rowHeight: CGFloat {
-        let font = terminalView.font as CTFont
-        return ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))
-    }
+    /// The frame's height over the row count is not the same number: SwiftTerm
+    /// takes `Int(height / cellHeight)` rows and leaves the remainder as a
+    /// strip at the bottom, so that quotient is a fraction of a point too
+    /// large.
+    private var rowHeight: CGFloat { terminalView.cellSize.height }
 
     /// The lowest row with anything on it, or the cursor's if that is lower.
     ///

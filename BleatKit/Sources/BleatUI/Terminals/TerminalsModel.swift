@@ -65,6 +65,9 @@ final class TerminalsModel {
     private let retryDelays: [Duration]
     /// How long a list must stay live to earn its retries back.
     private let steadyLive: Duration
+    /// How long `hello`, and then the snapshot, may each take
+    /// (`HcClient.answerLimit`).
+    private let answerLimit: Duration
     /// How long the sheet's questions wait for a reconnecting list.
     private let liveWait: Duration
 
@@ -87,6 +90,7 @@ final class TerminalsModel {
         release: @escaping () async -> Void,
         retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4), .seconds(8)],
         steadyLive: Duration = .seconds(10),
+        answerLimit: Duration = HcClient.answerLimit,
         liveWait: Duration = .seconds(15)
     ) {
         self.peer = peer
@@ -95,6 +99,7 @@ final class TerminalsModel {
         self.release = release
         self.retryDelays = retryDelays
         self.steadyLive = steadyLive
+        self.answerLimit = answerLimit
         self.liveWait = liveWait
     }
 
@@ -178,8 +183,9 @@ final class TerminalsModel {
     /// dial another screen's `release()` called off under it, the race a
     /// reconnect is for.
     nonisolated static func isWorthRetrying(_ error: any Error) -> Bool {
+        if quietEnd(error) { return true }
         switch error {
-        case HcProtocolError.closed, HcProtocolError.noHello, is CancellationError:
+        case is CancellationError:
             return true
         case let transport as TransportError:
             switch transport {
@@ -191,8 +197,20 @@ final class TerminalsModel {
         }
     }
 
+    /// **`hello` and the snapshot each have `answerLimit`** (from review of
+    /// #102, moved into `HcClient`): a channel that opened and stayed silent
+    /// kept the list "connecting" for good. Past the limit the client fails
+    /// with a `TransportError`, so `handle` drops the connection at once and
+    /// the retry dials afresh, within the sheet's 15 seconds.
+    ///
+    /// Kept from review: the limit starts after `open()`, because the dial
+    /// races its addresses and gives up at the network's own timeout, and
+    /// the exec channel opens inside the stream, where `hello`'s limit
+    /// covers it. And a core slow to start (a cold Pi) is not given longer:
+    /// it answers in well under a second once running, and each retry
+    /// finds it further along.
     private func follow(_ opened: Opened) async throws {
-        let client = try await HcClient.connect(over: opened.stream)
+        let client = try await HcClient.connect(over: opened.stream, answerWithin: answerLimit)
         session = Session(client: client, shell: opened.shell)
         defer {
             // Only if it is still this run's. A run replaced by Try Again or a
@@ -203,7 +221,7 @@ final class TerminalsModel {
             Task { await client.close() }
         }
         coreVersion = await client.hello?.version
-        let subscription = try await client.subscribe()
+        let subscription = try await client.subscribe(answerWithin: answerLimit)
         for try await update in subscription.updates {
             publish(update.terminals)
             if liveSince == nil { liveSince = .now }

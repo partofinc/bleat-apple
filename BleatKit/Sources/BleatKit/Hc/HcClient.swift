@@ -15,6 +15,17 @@ import Foundation
 /// A call registers for its reply *before* its frame is queued, so a reply that
 /// races back cannot arrive with nobody waiting for it.
 ///
+/// **A limit on the first answer** (from review of #102). A channel that
+/// opened and then stayed silent left `hello`, and the subscription after
+/// it, waiting for good: a list that said "connecting" on a connection that
+/// was up. `connect` waits `answerLimit` for `hello` by default, and a call
+/// given a limit waits that long for its reply. Past it the connection is
+/// failed with `TransportError.connectionFailed`, a network error, so
+/// `ConnectionStore.handle` drops the connection and the next open dials
+/// afresh. The check runs on this actor, where the reply is recorded, so an
+/// answer that has arrived is never undone by the limit, and a failure that
+/// came first is the one reported.
+///
 /// Not reusable after the stream ends: every call and channel fails with the
 /// reason, and the caller dials again. `hello` is cheap and the subscription
 /// snapshot rebuilds everything, which is what makes reconnecting the
@@ -54,6 +65,10 @@ public actor HcClient {
     /// what to update to. Not checked: the floor is `requiredMethods`.
     public static let oldestKnownGood = "0.1.18"
 
+    /// How long `connect` waits for `hello`, and the screens for their first
+    /// reply: herdr-core answers in well under a second once it runs.
+    public static let answerLimit: Duration = .seconds(10)
+
     private let stream: any DuplexStream
     private let outgoing: AsyncStream<Data>.Continuation
     private var reader: Task<Void, Never>?
@@ -78,6 +93,8 @@ public actor HcClient {
     /// than kept in `early` for good, and the core is told to close them.
     private var abandoned: Set<UInt32> = []
     private var failure: (any Error)?
+    /// The limits armed on `hello` and on calls, cancelled once answered.
+    private var limits: [Int: Task<Void, Never>] = [:]
 
     public private(set) var hello: Hello?
 
@@ -97,11 +114,15 @@ public actor HcClient {
     ///
     /// - Throws: `HcProtocolError` when the core will not speak framed mode,
     ///   speaks another generation, or lacks a method in `requiredMethods`;
-    ///   the stream's own error when it ends first.
-    public static func connect(over stream: any DuplexStream) async throws -> HcClient {
+    ///   the stream's own error when it ends first;
+    ///   `TransportError.connectionFailed` when `hello` takes longer than
+    ///   `limit`. Nil waits for good.
+    public static func connect(
+        over stream: any DuplexStream, answerWithin limit: Duration? = answerLimit
+    ) async throws -> HcClient {
         let client = HcClient(stream: stream)
         do {
-            try await client.start()
+            try await client.start(limit: limit)
         } catch {
             await client.close()
             throw error
@@ -109,7 +130,7 @@ public actor HcClient {
         return client
     }
 
-    private func start() async throws {
+    private func start(limit: Duration?) async throws {
         reader = Task { [stream] in
             do {
                 for try await chunk in stream.output {
@@ -125,6 +146,9 @@ public actor HcClient {
             "params": .object(["framed": .bool(true), "generation": .number(Double(Self.generation))]),
         ])
         outgoing.yield(try JSONEncoder().encode(request) + Data("\n".utf8))
+        // Id 0 is hello's, and no call is given it.
+        arm(limit, for: 0)
+        defer { disarm(0) }
 
         let reply = try await withCheckedThrowingContinuation { continuation in
             if let ready = helloReply {
@@ -169,9 +193,15 @@ public actor HcClient {
 
     /// Calls `method` on channel 0 and returns its `result`.
     ///
+    /// - Parameter limit: how long to wait for the reply before failing the
+    ///   whole connection, as `connect` does for `hello`. For a screen's
+    ///   first request, which says whether the channel is alive; nil, the
+    ///   default, waits for good, as a template's `terminal.run` must.
     /// - Throws: `HcError` when the core answers with an error, or why the
     ///   connection ended.
-    public func call(_ method: String, _ params: [String: HcJSON] = [:]) async throws -> HcJSON {
+    public func call(
+        _ method: String, _ params: [String: HcJSON] = [:], answerWithin limit: Duration? = nil
+    ) async throws -> HcJSON {
         if let failure { throw failure }
         let id = nextID
         nextID += 1
@@ -180,9 +210,11 @@ public actor HcClient {
             "method": .string(method), "params": .object(params),
         ])
         let frame = HcFrame(channel: 0, kind: .data, payload: try JSONEncoder().encode(request))
+        defer { disarm(id) }
         let reply = try await withCheckedThrowingContinuation { continuation in
             pending[id] = (method, continuation)
             outgoing.yield(frame.encoded())
+            arm(limit, for: id)
         }
         if let error = reply["error"] {
             var refused = (try? error.decode(HcError.self)) ?? HcError(code: 0, message: "herdr-core refused \(method)")
@@ -190,6 +222,40 @@ public actor HcClient {
             throw refused
         }
         return reply["result"] ?? .null
+    }
+
+    // MARK: - Limits
+
+    private func arm(_ limit: Duration?, for id: Int) {
+        guard let limit, failure == nil else { return }
+        limits[id] = Task { [weak self] in
+            do { try await Task.sleep(for: limit) } catch { return }
+            await self?.expire(id, limit: limit)
+        }
+    }
+
+    private func disarm(_ id: Int) {
+        limits.removeValue(forKey: id)?.cancel()
+    }
+
+    /// The limit on `id` ran out. Only if it is still unanswered: the reply
+    /// may have been recorded while this was on its way here.
+    private func expire(_ id: Int, limit: Duration) async {
+        limits[id] = nil
+        let waiting = id == 0 ? hello == nil && helloReply == nil : pending[id] != nil
+        guard waiting, failure == nil else { return }
+        fail(TransportError.connectionFailed("herdr-core did not answer within \(Self.seconds(limit))"))
+        reader?.cancel()
+        writer?.cancel()
+        await stream.close()
+    }
+
+    /// "10 seconds", rounded up (from review): a limit under a second is
+    /// not "0 seconds".
+    static func seconds(_ limit: Duration) -> String {
+        let (whole, fraction) = limit.components
+        let seconds = whole + (fraction > 0 ? 1 : 0)
+        return seconds == 1 ? "1 second" : "\(seconds) seconds"
     }
 
     // MARK: - Channels
@@ -318,6 +384,8 @@ public actor HcClient {
         pending = [:]
         for (_, continuation) in channels { continuation.finish(throwing: error) }
         channels = [:]
+        for (_, limit) in limits { limit.cancel() }
+        limits = [:]
         outgoing.finish()
     }
 

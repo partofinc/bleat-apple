@@ -34,9 +34,13 @@ struct TerminalsModelTests {
         let dropOn: String?
         /// Closes right after the snapshot: a core that goes live and drops.
         let endAfterSnapshot: Bool
+        /// Says nothing at all, not even to `hello`: a channel that opened
+        /// and stayed silent.
+        let silent: Bool
 
-        init(dropOn: String? = nil, endAfterSnapshot: Bool = false) {
+        init(dropOn: String? = nil, endAfterSnapshot: Bool = false, silent: Bool = false) {
             self.dropOn = dropOn
+            self.silent = silent
             self.endAfterSnapshot = endAfterSnapshot
             (output, feed) = AsyncThrowingStream<Data, any Error>.makeStream()
         }
@@ -44,6 +48,7 @@ struct TerminalsModelTests {
         var methods: [String] { lock.withLock { asked } }
 
         func send(_ data: Data) async throws {
+            if silent { return }
             var replies: [Data] = []
             var drop = false
             lock.withLock {
@@ -130,6 +135,7 @@ struct TerminalsModelTests {
         failure: (any Error)? = nil,
         retryDelays: [Duration] = [.milliseconds(20), .milliseconds(20)],
         steadyLive: Duration = .seconds(10),
+        answerLimit: Duration = .seconds(10),
         liveWait: Duration = .seconds(2)
     ) -> (TerminalsModel, Opens) {
         let opens = Opens()
@@ -150,6 +156,7 @@ struct TerminalsModelTests {
             release: { opens.releases += 1 },
             retryDelays: retryDelays,
             steadyLive: steadyLive,
+            answerLimit: answerLimit,
             liveWait: liveWait
         )
         return (model, opens)
@@ -191,6 +198,46 @@ struct TerminalsModelTests {
         await eventually { opens.count == 4 && model.phase == .live }
         #expect(opens.count == 4)
         #expect(opens.releases == 1, "only the second quiet end in a row, so the next open dials afresh")
+    }
+
+    /// Suspected on a phone on adam, 15 Nov 2026: the list said it was
+    /// reconnecting for good on a connection that was up.
+    @Test("a stream that never answers is given up on, and the next one goes live")
+    func silentStreamGivenUp() async {
+        let silent = ListCore(silent: true)
+        let (model, opens) = list([silent, ListCore()], answerLimit: .milliseconds(150))
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .live }
+        #expect(model.phase == .live)
+        #expect(opens.count == 2)
+        // From review: as a network error, so the store drops the connection
+        // after the first stall, not the second, and the retry dials afresh.
+        #expect(opens.handled == [Self.stalled])
+    }
+
+    @Test("streams that keep stalling end at Try Again, saying so")
+    func stallsEndAtTryAgain() async {
+        let silent = (0..<3).map { _ in ListCore(silent: true) }
+        let (model, opens) = list(silent, answerLimit: .milliseconds(50))
+        await model.run()
+        #expect(opens.count == 3)
+        #expect(opens.handled == Array(repeating: Self.stalled, count: 3))
+        #expect(model.phase == .failed(Self.stalled))
+    }
+
+    /// What a stall says, a limit under a second rounded up.
+    private static let stalled = "could not connect: herdr-core did not answer within 1 second"
+
+    @Test("a live list is not cut off by the handshake limit")
+    func liveOutlastsLimit() async {
+        let (model, opens) = list([ListCore()], answerLimit: .milliseconds(50))
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .live }
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(model.phase == .live)
+        #expect(opens.count == 1)
     }
 
     @Test("a core that goes live and drops at once is not retried forever")

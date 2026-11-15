@@ -398,6 +398,22 @@ a first message (Template appears only where the host has one); a
     - The retries come back only after 10 seconds live, so a core that
       goes live and drops at once ends at Try Again.
     - A dial another screen's `release()` called off is retried.
+    - **`hello` and the subscription's snapshot each have 10 seconds**
+      (`HcClient.answerLimit`). Without a limit, a channel that opened and
+      stayed silent kept the list "connecting" for good. The limit is in
+      `HcClient`, not the list (from review of #102), so a terminal's
+      attach, the watch relay's calls and `bleat terminals` have it too, and
+      it is checked on the client's actor: a reply already recorded is never
+      undone, and a stream error that came first is the one reported. Past
+      it the connection fails as `TransportError.connectionFailed`, a
+      network error, so the store drops it at once and the retry dials
+      afresh, inside the sheet's 15 seconds; as a quiet end it took two
+      stalls, about 22 seconds. A call with no limit (a template's
+      `terminal.run`) still waits for good.
+      Suspected, not caught, on a phone on adam (15 Nov 2026): after the
+      phone re-dialled as a new terminal opened, the sheet said "still
+      reconnecting" on a connection the host's log shows was up. Watched
+      live on adam afterwards, it did not happen again.
   - **The sheet's questions wait for it**, up to 15 seconds in all. The two
     reads, the spaces and the templates, are asked once more on the next
     stream if the stream closes under them. `terminal.run` is not, since

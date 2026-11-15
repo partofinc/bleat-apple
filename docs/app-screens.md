@@ -321,14 +321,27 @@ a first message (Template appears only where the host has one); a
     (`/bin/pwd -P`), with the spaces read again: a symlink into a space's
     folder joins it, a typed path that only looks like one does not, and a
     folder's space closed meanwhile gives a new space. A space picked by
-    hand that has closed fails the start ("Pick again") rather than being
-    swapped.
+    hand is used or the start refused, never swapped: "That space is no
+    longer in Herdr" when it has closed, "That space is for another
+    folder" when the typed path leads elsewhere (from review). A pick
+    belongs to the directory it was made for and is dropped when the
+    directory changes.
+  - **One new space id per sheet** (from review), so a Start tried again
+    after a failure goes to the same new space.
   - The terminal gets `herdr.space` and `herdr.seen=0`, never `herdr.tab`,
     so it does not split beside someone's agent. Bleat never writes the
     document.
   - Spaces that cannot be read (`needs_update`, the list reconnecting) are
     said so in red, and read again on Start. If they still cannot be read
-    it gets a new space.
+    the list from when the sheet opened is used (kept from review): a space
+    in it that has closed comes back as a new space under its old id with
+    this folder, the same as the default.
+  - **Every host gets the label** (decided by Ravil, 15 Nov 2026), also a
+    Pi and the demo host, where only Bleat reads it.
+  - **What it costs on the Mac**: Herdr.app sets `keep: true` on every
+    terminal it takes in, so a throwaway shell from the phone leaves a
+    space and a kept terminal there until closed (from review; kept, as
+    the rule's consequence).
   - Not yet seen on a host without Herdr.app's own spaces (adam): its core
     gets the label, and whether the Mac's Herdr.app then shows a space for
     adam is to be checked on a phone.

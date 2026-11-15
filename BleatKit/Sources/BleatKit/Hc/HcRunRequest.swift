@@ -17,10 +17,11 @@ import Foundation
 /// **In Herdr.app only when a space is given**, and the app always gives
 /// one: a new id for a space of its own, or the folder's existing space
 /// (`NewTerminalModel`). Herdr.app shows only terminals labeled
-/// `herdr.space`; with one, it takes the terminal into that space in a new
-/// tab, making the space first if the id is new (`HerdrSpace`). Then it also gets `herdr.seen=0`, as
-/// herdr-app's `docs/labels.md` says a terminal a client starts does. Never
-/// `herdr.tab`: a new tab, not a split beside someone's running agent.
+/// `herdr.space`; with one, it takes the terminal into that space in a
+/// new tab, making the space first if the id is new (`HerdrSpace`). Then it
+/// also gets `herdr.seen=0`, as herdr-app's `docs/labels.md` says a terminal
+/// a client starts does. Never `herdr.tab`: a new tab, not a split beside
+/// someone's running agent.
 public struct HcRunRequest: Sendable, Equatable {
     public enum Program: Sendable, Equatable {
         /// The host's login shell: `argv: []` starts `$SHELL -l` (live:
@@ -45,7 +46,9 @@ public struct HcRunRequest: Sendable, Equatable {
     /// it will be shown at. Without one the core's headless default (200×120)
     /// holds until the phone attaches and takes it over.
     public var size: TerminalGrid?
-    /// The Herdr.app space to show it in (`HerdrSpace.id`); none: hidden there.
+    /// The Herdr.app space to show it in (`HerdrSpace.id`): an existing one,
+    /// or a new id for Herdr.app to make. None would leave it hidden there;
+    /// the app always gives one.
     public var space: String?
 
     public init(program: Program, name: String? = nil, cwd: String? = nil, size: TerminalGrid? = nil, space: String? = nil) {

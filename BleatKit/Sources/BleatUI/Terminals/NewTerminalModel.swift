@@ -59,11 +59,19 @@ final class NewTerminalModel: Identifiable {
     var templateName: String?
     var task = ""
     /// As typed: `~/api`, `api`, `/srv/web`, or empty for home.
-    var directory = ""
+    var directory = "" {
+        // A pick was for the folder it was made in (from review): carried
+        // to another, "New space" would skip that folder's own space.
+        didSet { if directory != oldValue { picked = nil } }
+    }
     var name = ""
-    /// What was picked in the selector; nil until something is. Kept only
-    /// while it is still a choice for the directory (`placement`).
+    /// What was picked in the selector, for the directory typed now; nil
+    /// until something is, and again whenever the directory changes.
     var picked: Placement?
+
+    /// The id a new space gets: one per sheet (from review), so a Start
+    /// tried again after a failure goes to the same new space.
+    @ObservationIgnored private let newSpaceID = HerdrSpace.newID()
 
     private(set) var phase: Phase = .editing
     private(set) var templates: [HcTemplate] = []
@@ -189,16 +197,30 @@ final class NewTerminalModel: Identifiable {
             }
             // Again, as they are now: the sheet may have been open a while.
             await readSpaces()
-            // A space picked by hand that has closed is said so rather than
-            // swapped for another: the user chose to join it.
-            if case .space(let id)? = picked, !spaces.contains(where: { $0.id == id }) {
+            // If this read fails, the list from when the sheet opened is used
+            // (kept from review): a space in it that has closed since comes
+            // back as a new space under its old id, with this folder, the
+            // same as the new-space default; refusing would stop every
+            // start on a core that cannot read the document.
+            //
+            // A space picked by hand is used or the start refused, never
+            // swapped for another: the user chose to join it. Checked
+            // against the host's spelling (from review): a typed path that
+            // is a symlink elsewhere is not that space's folder.
+            if case .space(let id)? = picked, !spaces(for: cwd).contains(where: { $0.id == id }) {
                 picked = nil
-                phase = .failed("That space is no longer in Herdr on \(hostName). Pick again.")
+                if spaces.contains(where: { $0.id == id }) {
+                    phase = .failed(
+                        "That space is for another folder: \(HcRunSuggestions.abbreviate(typed, home: home)) is \(HcRunSuggestions.abbreviate(cwd, home: home)) on \(hostName). Pick again."
+                    )
+                } else {
+                    phase = .failed("That space is no longer in Herdr on \(hostName). Pick again.")
+                }
                 return nil
             }
             let name = name.trimmingCharacters(in: .whitespaces)
             let space: String = switch placement(for: cwd) {
-            case .newSpace: HerdrSpace.newID()
+            case .newSpace: newSpaceID
             case .space(let id): id
             }
             let request = HcRunRequest(

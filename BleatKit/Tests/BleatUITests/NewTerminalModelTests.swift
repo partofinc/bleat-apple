@@ -212,21 +212,44 @@ struct NewTerminalModelTests {
         #expect(model.spacesForFolder.isEmpty, "home's space is a parent, not this folder's")
         #expect(model.placement == .newSpace)
         _ = await model.start(size: nil)
-        let space = try #require(host.started.first?.space)
-        #expect(space != "sp1" && space.hasPrefix("sp") && space.count == 34)
+        #expect(isNewSpace(host.started.first?.space, not: ["sp1"]))
     }
 
-    @Test("every start gets its own new space, and a host without Herdr.app's spaces gets one too")
-    func newSpaceEachTime() async throws {
+    /// A new space's id as Herdr.app writes them, and none of `taken`.
+    private func isNewSpace(_ id: String?, not taken: [String] = []) -> Bool {
+        guard let id else { return false }
+        return id.hasPrefix("sp") && id.count == 34 && !taken.contains(id)
+    }
+
+    @Test("a host without Herdr.app's spaces gets a new space too, one per sheet, the same on a retry")
+    func newSpacePerSheet() async throws {
         let host = ScriptedHost()
         let model = form(host)
         await model.load()
         _ = await model.start(size: nil)
         _ = await model.start(size: nil)
-        let spaces = host.started.compactMap(\.space)
-        #expect(spaces.count == 2)
-        #expect(Set(spaces).count == 2)
-        #expect(host.started.first?.params["labels"]?["herdr.space"]?.string == spaces.first)
+        let other = form(host)
+        _ = await other.start(size: nil)
+        let spaces = host.started.map(\.space)
+        #expect(spaces.count == 3)
+        #expect(spaces.allSatisfy { isNewSpace($0) })
+        #expect(spaces[0] == spaces[1], "Start tried again goes to the same new space")
+        #expect(spaces[2] != spaces[0], "another sheet, another space")
+        #expect(host.started.first?.params["labels"]?["herdr.space"]?.string == spaces[0])
+    }
+
+    @Test("changing the directory drops the pick made for the last one")
+    func directoryClearsPick() async {
+        let host = ScriptedHost()
+        host.spaceList = [HerdrSpace(id: "sp3", name: "", folder: "/home/pi/web")]
+        host.directories.insert("/home/pi/web")
+        let model = form(host)
+        await model.load()
+        model.directory = "api"
+        model.picked = .newSpace
+        model.directory = "web"
+        #expect(model.picked == nil)
+        #expect(model.placement == .space("sp3"), "web's own space, not the New space picked for api")
     }
 
     @Test("where the folder has a space, it is the default, and New space can be picked")
@@ -251,7 +274,7 @@ struct NewTerminalModelTests {
         let spaces = host.started.map(\.space)
         #expect(spaces[0] == "sp1")
         #expect(spaces[1] == "sp2")
-        #expect(spaces[2] != nil && !["sp1", "sp2", "sp3"].contains(spaces[2]))
+        #expect(isNewSpace(spaces[2], not: ["sp1", "sp2", "sp3"]))
     }
 
     @Test("a pick that is no choice for the directory typed now is not used")
@@ -291,7 +314,7 @@ struct NewTerminalModelTests {
         #expect(model.placement == .space("sp2"), "the typed path looks like sp2's folder")
         _ = await model.start(size: nil)
         #expect(host.started.first?.space == "sp1", "the link leads into sp1's folder")
-        #expect(host.started.last?.space != "sp2", "it really is /data/web")
+        #expect(isNewSpace(host.started.last?.space, not: ["sp1", "sp2"]), "it really is /data/web")
     }
 
     @Test("the folder's space closing while the sheet is open gives a new space")
@@ -303,7 +326,7 @@ struct NewTerminalModelTests {
         model.directory = "api"
         host.spaceList = []
         _ = await model.start(size: nil)
-        #expect(try #require(host.started.first).space != "sp1")
+        #expect(isNewSpace(host.started.first?.space, not: ["sp1"]))
     }
 
     @Test("a space picked by hand that closed meanwhile is said so, not swapped")
@@ -322,6 +345,25 @@ struct NewTerminalModelTests {
         #expect(host.started.isEmpty)
         #expect(model.phase == .failed("That space is no longer in Herdr on adam. Pick again."))
         #expect(model.placement == .space("sp1"), "the pick is dropped")
+    }
+
+    /// From review: the pick was checked only against the spaces, so a
+    /// typed path that was a symlink elsewhere swapped it for a new space.
+    @Test("a space picked by hand for a typed path that leads elsewhere is refused, not swapped")
+    func pickedSpaceOtherFolder() async {
+        let host = ScriptedHost()
+        host.spaceList = [
+            HerdrSpace(id: "sp2", name: "", folder: "/home/pi/web"),
+            HerdrSpace(id: "sp3", name: "", folder: "/home/pi/web"),
+        ]
+        host.spelling = ["/home/pi/web": "/data/web"]
+        let model = form(host)
+        await model.load()
+        model.directory = "web"
+        model.picked = .space("sp3")
+        #expect(await model.start(size: nil) == nil)
+        #expect(host.started.isEmpty)
+        #expect(model.phase == .failed("That space is for another folder: ~/web is /data/web on adam. Pick again."))
     }
 
     @Test("spaces that cannot be read are said so, and read again on Start")

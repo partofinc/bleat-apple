@@ -139,7 +139,9 @@ struct NewTerminalSheet: View {
         } header: {
             Text("Directory")
         } footer: {
-            if model.spacesForFolder.isEmpty, model.spacesProblem == nil {
+            // Only once home is known (from review): before that the folder
+            // is not, and Start may find it has a space.
+            if model.home != nil, model.spacesForFolder.isEmpty, model.spacesProblem == nil {
                 Text("On \(model.hostName). Empty is home; a path without / is under home. It gets a new space in Herdr, named after the folder.")
             } else {
                 Text("On \(model.hostName). Empty is home; a path without / is under home.")

@@ -126,14 +126,7 @@ final class HcPaneModel: PaneDriving {
     convenience init(peer: PairedPeer, address: String, connections: ConnectionStore) {
         self.init(
             address: address,
-            open: {
-                guard let hcPath = peer.herdrCore?.path else {
-                    throw HcPaneFailure.notChecked
-                }
-                let link = try await connections.link(for: peer)
-                guard let opener = link as? any HcStreamOpening else { throw HcPaneFailure.noRoute }
-                return try await opener.openHcConnection(hcPath: hcPath)
-            },
+            open: { try await connections.openHc(for: peer).stream },
             report: { error in await connections.handle(error) }
         )
     }

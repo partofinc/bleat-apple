@@ -66,9 +66,14 @@ struct TerminalsView: View {
             }
             #endif
             // iOS takes the socket in the background, and `RootView` releases
-            // the connection there too. Coming back, a list that failed for
-            // that reason reconnects by itself.
-            .onChange(of: scenePhase) { _, phase in
+            // the connection there too, so the list reconnects by itself only
+            // in front. Coming back, a list that failed for that reason
+            // reconnects.
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                // `.inactive` is still in front (from review): Control
+                // Center, a Face ID prompt, the app switcher. Only in the
+                // background is the connection released.
+                model.inForeground = phase != .background
                 guard phase == .active, case .failed = model.phase else { return }
                 attempt += 1
             }

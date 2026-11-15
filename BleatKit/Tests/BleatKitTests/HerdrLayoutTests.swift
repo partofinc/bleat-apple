@@ -43,7 +43,7 @@ struct HerdrLayoutTests {
 
     @Test("names are checked as the script checks them")
     func names() {
-        for good in ["Clinic", "clinic 2", "a.b_c-d", "9", String(repeating: "a", count: 64)] {
+        for good in ["Clinic", "clinic 2", "Clinic ", "a.b_c-d", "9", String(repeating: "a", count: 64)] {
             #expect(HerdrLayout.isValidName(good), "\(good)")
         }
         for bad in ["", " Clinic", "-x", "it's", "a/b", String(repeating: "a", count: 65)] {

@@ -139,6 +139,24 @@ struct LayoutsModelTests {
         #expect(shell.commands.count == 2)
     }
 
+    @Test("a refused rename is shown in the script's words, and says Renaming… while it runs")
+    func renameRefused() async {
+        let taken = ShellError(command: "", exitCode: 1, stderr: "herdr-layout: there's already a layout called 'Studio'\n")
+        let layouts = model(Shell([.failure(taken)]))
+        let task = layouts.perform(.rename(to: "Studio"), on: "Clinic")
+        #expect(layouts.running?.action.progress == "Renaming…")
+        await task?.value
+        #expect(layouts.outcome == .init(message: "there's already a layout called 'Studio'", failed: true))
+        #expect(layouts.stillWorking == nil)
+    }
+
+    @Test("a name is sent as typed, trailing space and all")
+    func renameAsTyped() async {
+        let shell = Shell([.success("renamed Clinic to Clinic \n")])
+        await model(shell).perform(.rename(to: "Clinic "), on: "Clinic")?.value
+        #expect(shell.commands[0].hasSuffix("'rename' 'Clinic' 'Clinic '"))
+    }
+
     // MARK: - From review
 
     @Test("a script that ran and failed is still there: the button shows, and the sheet says why")

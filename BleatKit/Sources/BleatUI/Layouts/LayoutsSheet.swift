@@ -70,7 +70,7 @@ struct LayoutsSheet: View {
             .task { await model.load() }
             .confirmationDialog(
                 chosen?.name ?? "",
-                isPresented: Binding { chosen != nil } set: { if !$0 { chosen = nil } },
+                isPresented: Binding(isPresent: $chosen),
                 titleVisibility: .visible,
                 presenting: chosen
             ) { layout in
@@ -88,14 +88,16 @@ struct LayoutsSheet: View {
                 Text(Self.explanation(for: layout, on: model.hostName))
             }
             .alert(
-                "Rename \(renaming?.name ?? "")",
-                isPresented: Binding { renaming != nil } set: { if !$0 { renaming = nil } },
+                // A fixed title (from review): one read from `renaming`
+                // changed to "Rename " as the alert went away.
+                "Rename Layout",
+                isPresented: Binding(isPresent: $renaming),
                 presenting: renaming
             ) { layout in
                 TextField("Name", text: $newName)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Button("Rename") { model.perform(.rename(to: trimmedName), on: layout.name) }
+                Button("Rename") { model.perform(.rename(to: newName), on: layout.name) }
                     .disabled(!canRename(layout))
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
@@ -103,7 +105,7 @@ struct LayoutsSheet: View {
             }
             .alert(
                 "Agents are still working",
-                isPresented: Binding { model.stillWorking != nil } set: { if !$0 { model.stillWorking = nil } },
+                isPresented: Binding(isPresent: $model.stillWorking),
                 presenting: model.stillWorking
             ) { name in
                 Button("Close Anyway", role: .destructive) { model.perform(.closeAnyway, on: name) }
@@ -114,12 +116,20 @@ struct LayoutsSheet: View {
         }
     }
 
-    private var trimmedName: String { newName.trimmingCharacters(in: .whitespaces) }
-
     /// A name the script takes, and not the one it has: the script refuses
     /// an unchanged name, and allows a change of case alone.
+    ///
+    /// **As typed, not trimmed** (from review): the script allows trailing
+    /// spaces, so trimming offered "Clinic " a rename to "Clinic" with no
+    /// edit, and could never set one. A leading space fails the rule.
+    ///
+    /// Kept from review, to check on a device: SwiftUI updating this
+    /// button's enabled state inside an alert as the field changes, and the
+    /// alert showing when set from the action sheet's button. If Rename
+    /// shows nothing on the first tap, the second is why: move it to a
+    /// swipe action.
     private func canRename(_ layout: HerdrLayout) -> Bool {
-        trimmedName != layout.name && HerdrLayout.isValidName(trimmedName)
+        newName != layout.name && HerdrLayout.isValidName(newName)
     }
 
     private func progress(for layout: HerdrLayout) -> String? {

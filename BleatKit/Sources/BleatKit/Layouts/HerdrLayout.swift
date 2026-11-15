@@ -23,6 +23,11 @@ public struct HerdrLayout: Sendable, Equatable, Identifiable, Decodable {
     public let claude: Int
 
     public var id: String { name }
+    /// Open as soon as any of its spaces is. **A partly open layout is not
+    /// offered Restore, kept from review**: the script refuses it, since
+    /// opening it again would run its Claude sessions twice; and `update`
+    /// keeps the saved copy of every space that is not open, so Save Now
+    /// loses none.
     public var isOpen: Bool { openSpaces > 0 }
 
     public init(name: String, savedAt: Date? = nil, openSpaces: Int = 0, spaces: [String] = [], panes: Int = 0, claude: Int = 0) {
@@ -54,8 +59,10 @@ public struct HerdrLayout: Sendable, Equatable, Identifiable, Decodable {
     /// script sorts them.
     ///
     /// The JSON is the last line that starts with `[`, so a login shell's
-    /// banner before it does no harm. A record that does not read is
-    /// skipped, not fatal to the list.
+    /// banner before it does no harm. **One line, kept from review**: the
+    /// script prints it with `json.dumps` and this project owns both sides,
+    /// and a login shell's banner comes before a command's output, not after.
+    /// A record that does not read is skipped, not fatal to the list.
     ///
     /// - Throws: `DecodingError` when there is no list at all.
     public static func list(inOutput output: String) throws -> [HerdrLayout] {

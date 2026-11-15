@@ -37,6 +37,10 @@ public enum HerdrLayoutCommand: Sendable, Equatable {
     ///   after that would fail on a closed pipe and stop it half way, with
     ///   some spaces open and the rest not. So its output goes to files, and
     ///   is sent once it has finished; `HUP` is ignored for the same reason.
+    /// - **`HUP` ignored is passed on to what the script starts** (kept from
+    ///   review): that is only the `caffeinate` keeping the Mac awake while
+    ///   Herdr.app runs, which ends with Herdr.app. The panes' Claude
+    ///   sessions are started by Herdr.app through herdr-core, not by it.
     /// - The exit status is the script's, so a refusal still throws
     ///   `ShellError` with the script's words on stderr.
     static let script = """
@@ -63,9 +67,13 @@ public enum HerdrLayoutCommand: Sendable, Equatable {
             + arguments.map(SSHTransport.quote)).joined(separator: " ")
     }
 
-    /// The host has no `herdr-layout`: the shell's "not found", status 127.
+    /// The host has no `herdr-layout`: the shell's "not found", status 127,
+    /// naming the script. **Only when it names it** (from review): `env`
+    /// also exits 127 when the script is there and `python3` is not, and
+    /// that host has the script, which cannot run.
     public static func isMissing(_ error: any Error) -> Bool {
-        (error as? ShellError)?.exitCode == 127
+        guard let error = error as? ShellError, error.exitCode == 127 else { return false }
+        return error.stderr.contains("herdr-layout")
     }
 
     /// `close` refused because agents in the layout are still working:

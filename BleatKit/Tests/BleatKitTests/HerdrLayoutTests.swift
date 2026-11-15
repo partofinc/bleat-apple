@@ -57,6 +57,10 @@ struct HerdrLayoutTests {
         #expect(HerdrLayoutCommand.isMissing(missing))
         #expect(!HerdrLayoutCommand.isStillWorking(missing))
         #expect(!HerdrLayoutCommand.isMissing(busy))
+        // From review: `env` exits 127 too when the script is there and
+        // python3 is not.
+        let noPython = ShellError(command: "", exitCode: 127, stderr: "env: python3: No such file or directory\n")
+        #expect(!HerdrLayoutCommand.isMissing(noPython))
     }
 
     @Test("the summary is the last line printed")

@@ -24,6 +24,9 @@ struct TerminalsView: View {
 
     init(peer: PairedPeer, connections: ConnectionStore) {
         let terminals = TerminalsModel(peer: peer, connections: connections)
+        // Where hc is, as the gate stored it before this screen was built
+        // (kept from review): a later visit builds a new screen, and
+        // `~/.local/bin` is on the command's PATH regardless.
         _model = State(initialValue: terminals)
         _layouts = State(initialValue: LayoutsModel(
             hostName: peer.name, hcPath: peer.herdrCore?.path, shell: { try await terminals.shell() }

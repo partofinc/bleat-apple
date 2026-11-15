@@ -453,10 +453,15 @@ depends on it.
 
 - **Found by asking, not checked.** Each time the host's terminal list goes
   live, `LayoutsModel` runs `herdr-layout list --json` on the list's own
-  connection (`TerminalsModel.shell()`, never a dial). Status 127, the
-  shell's "not found", is a host without layouts, and the button stays
-  hidden; any other failure keeps what was known, so a dropped connection
-  does not take the button away.
+  connection (`TerminalsModel.shell()`, never a dial). Status 127 naming
+  `herdr-layout`, the shell's "not found", is a host without layouts, and
+  the button stays hidden; `env` also exits 127 when `python3` is missing,
+  and that host has the script. **A script that ran and failed is still
+  there** (from review): the button shows and the sheet says why. Only a
+  host that could not be reached leaves it unknown, and a dropped
+  connection does not take the button away. Reads can overlap (going
+  live, opening the sheet, after an action); the latest one's answer is
+  kept.
 - **The button sits beside `+`** on the terminal list, opening
   `LayoutsSheet`: one row per layout, newest first, with its spaces, panes,
   Claude count, when it was saved and whether it is open. Tapping a closed

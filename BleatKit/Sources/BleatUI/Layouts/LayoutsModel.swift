@@ -53,7 +53,14 @@ final class LayoutsModel {
 
     private(set) var availability: Availability = .unknown
     private(set) var layouts: [HerdrLayout] = []
-    private(set) var isLoading = false
+    /// Whether a read is in flight.
+    var isLoading: Bool { loadsInFlight > 0 }
+    /// Reads can overlap (from review): one as the list goes live, one as
+    /// the sheet opens, one after an action. Counted, so the first to end
+    /// does not hide the spinner of another, and numbered, so only the
+    /// latest one's answer is kept.
+    private var loadsInFlight = 0
+    private var loadGeneration = 0
     /// Why the list could not be read just now.
     private(set) var loadProblem: String?
     /// The layout an action is running on, and which.
@@ -74,20 +81,37 @@ final class LayoutsModel {
     }
 
     /// Reads the list.
+    ///
+    /// **The script is there whenever it ran** (from review): a list it
+    /// failed to give, Herdr.app not running or output that does not read,
+    /// still shows the button, and the sheet says why. Only a failure to
+    /// reach the host leaves that unknown.
     func load() async {
-        isLoading = true
-        defer { isLoading = false }
+        loadGeneration += 1
+        let generation = loadGeneration
+        loadsInFlight += 1
+        defer { loadsInFlight -= 1 }
+        let result: Result<[HerdrLayout], any Error>
         do {
             let output = try await shell().run(shell: HerdrLayoutCommand.list.command(hcPath: hcPath))
-            layouts = try HerdrLayout.list(inOutput: output)
+            result = .success(try HerdrLayout.list(inOutput: output))
+        } catch {
+            result = .failure(error)
+        }
+        guard generation == loadGeneration else { return }
+        switch result {
+        case .success(let read):
+            layouts = read
             availability = .available
             loadProblem = nil
-        } catch is CancellationError {
+        case .failure(is CancellationError):
             return
-        } catch let error where HerdrLayoutCommand.isMissing(error) {
+        case .failure(let error) where HerdrLayoutCommand.isMissing(error):
             availability = .absent
             layouts = []
-        } catch {
+            loadProblem = nil
+        case .failure(let error):
+            if error is ShellError || error is DecodingError { availability = .available }
             loadProblem = Self.message(for: error)
         }
     }
@@ -100,7 +124,6 @@ final class LayoutsModel {
         running = (name, action)
         outcome = nil
         return Task {
-            defer { running = nil }
             do {
                 let output = try await shell().run(shell: action.command(for: name).command(hcPath: hcPath))
                 outcome = Outcome(message: HerdrLayoutCommand.summary(inOutput: output) ?? "Done.", failed: false)
@@ -109,6 +132,10 @@ final class LayoutsModel {
             } catch {
                 outcome = Outcome(message: Self.message(for: error), failed: true)
             }
+            // Done before the list is read again (from review): the alert
+            // offering Close Anyway is up during that read, and its tap
+            // was turned away as a second action.
+            running = nil
             await load()
         }
     }

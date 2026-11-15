@@ -14,13 +14,19 @@ struct LayoutsModelTests {
         private let lock = NSLock()
         private var replies: [Result<String, any Error>]
         private var asked: [String] = []
-        init(_ replies: [Result<String, any Error>]) { self.replies = replies }
+        /// How long each reply takes, in order; none past the end.
+        private var delays: [Duration]
+        init(_ replies: [Result<String, any Error>], delays: [Duration] = []) {
+            self.replies = replies
+            self.delays = delays
+        }
         var commands: [String] { lock.withLock { asked } }
         func run(shell command: String) async throws -> String {
-            let reply = lock.withLock { () -> Result<String, any Error> in
+            let (reply, delay) = lock.withLock { () -> (Result<String, any Error>, Duration?) in
                 asked.append(command)
-                return replies.isEmpty ? .success("[]") : replies.removeFirst()
+                return (replies.isEmpty ? .success("[]") : replies.removeFirst(), delays.isEmpty ? nil : delays.removeFirst())
             }
+            if let delay { try? await Task.sleep(for: delay) }
             return try reply.get()
         }
     }
@@ -121,5 +127,97 @@ struct LayoutsModelTests {
         let shell = Shell([.success("[]")])
         await model(shell).load()
         #expect(shell.commands.first?.contains("sh '/Users/robin/.local/bin' 'list'") == true)
+    }
+
+    // MARK: - From review
+
+    @Test("a script that ran and failed is still there: the button shows, and the sheet says why")
+    func scriptFailedStillAvailable() async {
+        let failed = ShellError(command: "", exitCode: 1, stderr: "herdr-layout: herdr-app ls: no window\n")
+        let layouts = model(Shell([.failure(failed)]))
+        await layouts.load()
+        #expect(layouts.availability == .available)
+        #expect(layouts.loadProblem == "herdr-app ls: no window")
+    }
+
+    @Test("a host that could not be reached is still unknown")
+    func unreachableUnknown() async {
+        let layouts = model(Shell([.failure(TransportError.channelClosed)]))
+        await layouts.load()
+        #expect(layouts.availability == .unknown)
+    }
+
+    @Test("a 127 that does not name the script is the script failing, not missing")
+    func envMissingPython() async {
+        let noPython = ShellError(command: "", exitCode: 127, stderr: "env: python3: No such file or directory\n")
+        let layouts = model(Shell([.failure(noPython)]))
+        await layouts.load()
+        #expect(layouts.availability == .available)
+    }
+
+    @Test("Close Anyway can be tapped while the list is read again")
+    func closeAnywayDuringReload() async {
+        let busy = ShellError(command: "", exitCode: 1, stderr: "herdr-layout: 1 agent(s) still working in studio: wait, or close anyway with --force\n")
+        let shell = Shell(
+            [.failure(busy), .success(Self.list), .success("closed Studio: 1 space(s), saved first\n")],
+            delays: [.zero, .milliseconds(300)]
+        )
+        let layouts = model(shell)
+        let first = layouts.perform(.close, on: "Studio")
+        for _ in 0..<100 where layouts.stillWorking == nil { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(layouts.stillWorking == "Studio")
+        let anyway = layouts.perform(.closeAnyway, on: "Studio")
+        #expect(anyway != nil, "the reload after the refusal does not count as an action")
+        await first?.value
+        await anyway?.value
+    }
+
+    /// The first command waits until `release()`; the rest answer at once.
+    final class GatedShell: ShellRunner, @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls = 0
+        private var gate: CheckedContinuation<Void, Never>?
+        private var released = false
+        let first: String, rest: String
+        init(first: String, rest: String) { self.first = first; self.rest = rest }
+
+        func run(shell command: String) async throws -> String {
+            let isFirst = lock.withLock { calls += 1; return calls == 1 }
+            guard isFirst else { return rest }
+            await withCheckedContinuation { continuation in
+                let open = lock.withLock { () -> Bool in
+                    if released { return true }
+                    gate = continuation
+                    return false
+                }
+                if open { continuation.resume() }
+            }
+            return first
+        }
+
+        func release() {
+            let waiting = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                released = true
+                defer { gate = nil }
+                return gate
+            }
+            waiting?.resume()
+        }
+    }
+
+    @Test("overlapping reads keep the spinner until the last ends, and the latest answer")
+    func overlappingLoads() async {
+        let shell = GatedShell(first: #"[{"name":"Old"}]"#, rest: #"[{"name":"New"}]"#)
+        let gated = LayoutsModel(hostName: "kestrel", hcPath: nil, shell: { shell })
+        let slow = Task { await gated.load() }
+        // The slow read is in flight before the fast one starts.
+        for _ in 0..<100 where !gated.isLoading { await Task.yield() }
+        await gated.load()
+        #expect(gated.isLoading, "the slower read is still in flight")
+        #expect(gated.layouts.map(\.name) == ["New"])
+        shell.release()
+        await slow.value
+        #expect(!gated.isLoading)
+        #expect(gated.layouts.map(\.name) == ["New"], "the older answer, arriving last, is dropped")
     }
 }

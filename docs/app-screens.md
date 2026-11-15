@@ -398,6 +398,14 @@ a first message (Template appears only where the host has one); a
     - The retries come back only after 10 seconds live, so a core that
       goes live and drops at once ends at Try Again.
     - A dial another screen's `release()` called off is retried.
+    - **A stream has 10 seconds to reach its first snapshot**, or it is
+      closed and counts as a quiet end (`TerminalListStalled`). Neither
+      `hello` nor the subscription has a limit of its own, so a channel
+      that opened and stayed silent kept the list "connecting" for good.
+      Suspected, not caught, on a phone on adam (15 Nov 2026): after the
+      phone re-dialled as a new terminal opened, the sheet said "still
+      reconnecting" on a connection the host's log shows was up. Watched
+      live on adam afterwards, it did not happen again.
   - **The sheet's questions wait for it**, up to 15 seconds in all. The two
     reads, the spaces and the templates, are asked once more on the next
     stream if the stream closes under them. `terminal.run` is not, since

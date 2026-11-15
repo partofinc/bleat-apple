@@ -65,6 +65,8 @@ final class TerminalsModel {
     private let retryDelays: [Duration]
     /// How long a list must stay live to earn its retries back.
     private let steadyLive: Duration
+    /// How long a stream may take from opening to its first snapshot.
+    private let handshakeLimit: Duration
     /// How long the sheet's questions wait for a reconnecting list.
     private let liveWait: Duration
 
@@ -87,6 +89,7 @@ final class TerminalsModel {
         release: @escaping () async -> Void,
         retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4), .seconds(8)],
         steadyLive: Duration = .seconds(10),
+        handshakeLimit: Duration = .seconds(10),
         liveWait: Duration = .seconds(15)
     ) {
         self.peer = peer
@@ -95,6 +98,7 @@ final class TerminalsModel {
         self.release = release
         self.retryDelays = retryDelays
         self.steadyLive = steadyLive
+        self.handshakeLimit = handshakeLimit
         self.liveWait = liveWait
     }
 
@@ -164,7 +168,7 @@ final class TerminalsModel {
     /// anything: a core that restarted, or an SSH connection that died.
     private nonisolated static func quietEnd(_ error: any Error) -> Bool {
         switch error {
-        case HcProtocolError.closed, HcProtocolError.noHello: true
+        case HcProtocolError.closed, HcProtocolError.noHello, is TerminalListStalled: true
         default: false
         }
     }
@@ -179,7 +183,7 @@ final class TerminalsModel {
     /// reconnect is for.
     nonisolated static func isWorthRetrying(_ error: any Error) -> Bool {
         switch error {
-        case HcProtocolError.closed, HcProtocolError.noHello, is CancellationError:
+        case HcProtocolError.closed, HcProtocolError.noHello, is TerminalListStalled, is CancellationError:
             return true
         case let transport as TransportError:
             switch transport {
@@ -192,6 +196,28 @@ final class TerminalsModel {
     }
 
     private func follow(_ opened: Opened) async throws {
+        // **A limit on reaching the first snapshot.** Neither `hello` nor
+        // the subscription has one of its own, so a channel that opened and
+        // then stayed silent kept the list "connecting" for good. Closing
+        // the stream ends both waits; the failure is then a quiet end, and
+        // two in a row drop the connection for a fresh dial.
+        // Whether it fired: cancelled first, it says false.
+        let watchdog = Task { [stream = opened.stream, handshakeLimit] in
+            do { try await Task.sleep(for: handshakeLimit) } catch { return false }
+            await stream.close()
+            return true
+        }
+        do {
+            try await following(opened, live: { watchdog.cancel() })
+            watchdog.cancel()
+        } catch {
+            watchdog.cancel()
+            if await watchdog.value { throw TerminalListStalled(limit: handshakeLimit) }
+            throw error
+        }
+    }
+
+    private func following(_ opened: Opened, live: () -> Void) async throws {
         let client = try await HcClient.connect(over: opened.stream)
         session = Session(client: client, shell: opened.shell)
         defer {
@@ -206,7 +232,7 @@ final class TerminalsModel {
         let subscription = try await client.subscribe()
         for try await update in subscription.updates {
             publish(update.terminals)
-            if liveSince == nil { liveSince = .now }
+            if liveSince == nil { liveSince = .now; live() }
             phase = .live
         }
         // The stream ended without an error: the host closed it.

@@ -155,6 +155,13 @@ Re-verify before relying on any of it; the host wins over this file.
 | **A — Pipe** | `HcKit` (the framed codec from the start, not only for attach) and the console tool on it. `docs/hc-facts.md` verified live. Fixtures captured from `hc schema` and live replies. | From a Mac terminal, over SSH `hc connect` to a Pi, on **one framed connection**: hello, subscribe and print live events while sending requests, list spaces and terminals, attach and see live frames, send keys, resize, detach cleanly, survive a dropped connection. No UI code. |
 | **B — App on hc** | The existing screens on `HcKit`: events instead of polling, pane view on attach, key bar, composer, creating. The herdr backend is deleted. The watch relay is ported. | Every 1.x screen works on a real phone over Tailscale, against both the Mac core and a Pi. A terminal created from the phone keeps running after the phone disconnects. Viewing on the phone clears the Mac's `done`, as Herdr.app's own clients do (`herdr.seen`, decided 13 Nov 2026). Sessions on the watch work. |
 | **C — New capabilities** | Federated machines in the host list, templates when creating, anything else hc enables that we choose to take. | Agreed scope only; each item listed before work starts. |
+
+**Phase C scope, as agreed:**
+
+- **Layouts from the phone** (Ravil, 15 Nov 2026): list, restore, save and
+  close the Mac's `herdr-layout` layouts, where the script is installed. It
+  is Ravil's own script, not part of Herdr. See
+  [app screens](app-screens.md), "Layouts".
 | **D — Release 2.0** | Demo host rebuilt on `hc`, docs and README updated, App Store listing and review notes revised, TestFlight. | Approved on the App Store as 2.0, same listing. |
 
 Out of scope until after D: the same list as for 1.x (pairing/relay

@@ -12,6 +12,10 @@ struct TerminalsView: View {
     @State private var attempt = 0
     /// The new-terminal sheet, while it is up.
     @State private var creating: NewTerminalModel?
+    /// The host's `herdr-layout` layouts; the button shows only where the
+    /// script was found.
+    @State private var layouts: LayoutsModel
+    @State private var showsLayouts = false
     /// The list's width in points: a terminal opened from it is as wide, so
     /// the grid remembered for that width is the one to start a new one at.
     @State private var width = 0
@@ -19,7 +23,11 @@ struct TerminalsView: View {
     @Environment(AppContext.self) private var context
 
     init(peer: PairedPeer, connections: ConnectionStore) {
-        _model = State(initialValue: TerminalsModel(peer: peer, connections: connections))
+        let terminals = TerminalsModel(peer: peer, connections: connections)
+        _model = State(initialValue: terminals)
+        _layouts = State(initialValue: LayoutsModel(
+            hostName: peer.name, hcPath: peer.herdrCore?.path, shell: { try await terminals.shell() }
+        ))
     }
 
     var body: some View {
@@ -42,8 +50,19 @@ struct TerminalsView: View {
             }
             .refreshable { await context.hostLoad.refresh(for: model.peer, force: true) }
             .task(id: attempt) { await model.run() }
+            // Each time the list goes live: whether the host has layouts,
+            // and which are open, on the connection that just came up.
+            .task(id: model.phase == .live) {
+                guard model.phase == .live else { return }
+                await layouts.load()
+            }
             #if os(iOS)
             .toolbar {
+                if layouts.availability == .available {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Layouts", systemImage: "rectangle.3.group") { showsLayouts = true }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("New Terminal", systemImage: "plus") {
                         creating = NewTerminalModel(
@@ -55,6 +74,7 @@ struct TerminalsView: View {
                     .disabled(model.phase != .live)
                 }
             }
+            .sheet(isPresented: $showsLayouts) { LayoutsSheet(model: layouts) }
             .onGeometryChange(for: Int.self) { Int($0.size.width) } action: { width = $0 }
             .sheet(item: $creating) { form in
                 NewTerminalSheet(model: form, size: HcPaneModel.lastViewport(forWidth: width)) { address, title in

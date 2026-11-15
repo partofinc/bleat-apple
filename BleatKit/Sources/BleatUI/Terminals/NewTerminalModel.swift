@@ -18,11 +18,14 @@ import Observation
 /// that never gets ready is open (plan, question 9). Cancel is the way out;
 /// see `NewTerminalSheet`.
 ///
-/// **Where it shows in Herdr.app** (`HerdrSpace`): by default the space whose
-/// folder holds its directory, in a new tab; or a space picked by hand; or
-/// none, and Herdr.app does not show it. The spaces are read when the sheet
-/// opens and again on Start, so a space closed on the Mac meanwhile is not
-/// sent: an unknown id would make Herdr.app create a new, unnamed space.
+/// **Where it shows in Herdr.app** (`HerdrSpace`; decided by Ravil, 14 Nov
+/// 2026): in a space of its own, made for it and named after its folder.
+/// Only where Herdr.app already has a space for that very folder is there a
+/// choice: that space, in a new tab, or a new one beside it; the existing
+/// one first. A parent folder's space does not count, and there is no
+/// "hidden": every terminal started from the phone shows in Herdr.app. The
+/// spaces are read when the sheet opens and again on Start, so a space
+/// closed on the Mac meanwhile is not sent as an existing one.
 @Observable
 final class NewTerminalModel: Identifiable {
     enum Kind: String, CaseIterable, Identifiable {
@@ -39,10 +42,9 @@ final class NewTerminalModel: Identifiable {
 
     /// Which Herdr.app space it goes in.
     enum Placement: Hashable {
-        /// The space whose folder holds the directory, if one does.
-        case matching
-        /// None: Herdr.app does not show it.
-        case hidden
+        /// A new space, named after its folder.
+        case newSpace
+        /// A space Herdr.app already has for the directory.
         case space(String)
     }
 
@@ -57,9 +59,19 @@ final class NewTerminalModel: Identifiable {
     var templateName: String?
     var task = ""
     /// As typed: `~/api`, `api`, `/srv/web`, or empty for home.
-    var directory = ""
+    var directory = "" {
+        // A pick was for the folder it was made in (from review): carried
+        // to another, "New space" would skip that folder's own space.
+        didSet { if directory != oldValue { picked = nil } }
+    }
     var name = ""
-    var placement: Placement = .matching
+    /// What was picked in the selector, for the directory typed now; nil
+    /// until something is, and again whenever the directory changes.
+    var picked: Placement?
+
+    /// The id a new space gets: one per sheet (from review), so a Start
+    /// tried again after a failure goes to the same new space.
+    @ObservationIgnored private let newSpaceID = HerdrSpace.newID()
 
     private(set) var phase: Phase = .editing
     private(set) var templates: [HcTemplate] = []
@@ -96,35 +108,34 @@ final class NewTerminalModel: Identifiable {
         home.map { HcRunRequest.resolve(directory: directory, home: $0) }
     }
 
-    /// The space it will be shown in, as the form stands.
-    var space: HerdrSpace? { space(placement, for: typedDirectory) }
+    /// The spaces Herdr.app already has for the typed directory: the
+    /// selector's choices besides a new space. None until home is known.
+    var spacesForFolder: [HerdrSpace] { spaces(for: typedDirectory) }
 
-    /// What "By folder" would choose, whatever is picked.
-    var spaceByFolder: HerdrSpace? { space(.matching, for: typedDirectory) }
+    /// Where it goes as the form stands: what was picked, while that is still
+    /// a choice here; otherwise the folder's first space, or a new one.
+    var placement: Placement { placement(for: typedDirectory) }
 
-    /// Whether "By folder" is chosen and finds no space, so the terminal will
-    /// not show in Herdr.app although it has spaces here — the case to warn
-    /// about: a phone's terminal went missing on the Mac this way, its folder
-    /// having no space yet (14 Nov 2026). "None", picked, is not warned about.
-    ///
-    /// The sheet's hint, from the typed path; Start decides again from the
-    /// host's spelling of it (`startsUnplaced`). The conditions are spelled
-    /// out here rather than left to the footer's order of checks (from
-    /// review): the property has to be right however the view asks.
-    var noSpaceForFolder: Bool {
-        placement == .matching && home != nil && !spaces.isEmpty && spaceByFolder == nil
+    /// The space it goes in, when that is an existing one.
+    var space: HerdrSpace? {
+        guard case .space(let id) = placement else { return nil }
+        return spaces.first { $0.id == id }
     }
 
-    /// Whether "By folder" cannot be told yet: home is not known, so neither
-    /// is the directory. Start asks for home and places it then.
-    var spaceAwaitsHome: Bool { placement == .matching && home == nil }
+    private func spaces(for cwd: String?) -> [HerdrSpace] {
+        cwd.map { HerdrSpace.spaces(for: $0, in: spaces) } ?? []
+    }
 
-    /// The one rule: the space a placement puts a terminal in `cwd` in.
-    private func space(_ placement: Placement, for cwd: String?) -> HerdrSpace? {
-        switch placement {
-        case .matching: cwd.flatMap { HerdrSpace.matching($0, in: spaces) }
-        case .hidden: nil
-        case .space(let id): spaces.first { $0.id == id }
+    /// The one rule, for the typed path and again for the host's spelling.
+    private func placement(for cwd: String?) -> Placement {
+        let existing = spaces(for: cwd)
+        switch picked {
+        case .newSpace?:
+            return .newSpace
+        case .space(let id)? where existing.contains(where: { $0.id == id }):
+            return .space(id)
+        default:
+            return existing.first.map { .space($0.id) } ?? .newSpace
         }
     }
 
@@ -186,19 +197,34 @@ final class NewTerminalModel: Identifiable {
             }
             // Again, as they are now: the sheet may have been open a while.
             await readSpaces()
-            if case .space(let id) = placement, !spaces.contains(where: { $0.id == id }) {
-                phase = .failed("That space is no longer in Herdr on \(hostName). Pick another.")
-                return nil
-            }
-            if startsUnplaced(cwd: cwd) {
-                phase = .failed(
-                    "No space in Herdr on \(hostName) holds \(HcRunSuggestions.abbreviate(cwd, home: home)). Pick a space, or None to start it hidden."
-                )
+            // If this read fails, the list from when the sheet opened is used
+            // (kept from review): a space in it that has closed since comes
+            // back as a new space under its old id, with this folder, the
+            // same as the new-space default; refusing would stop every
+            // start on a core that cannot read the document.
+            //
+            // A space picked by hand is used or the start refused, never
+            // swapped for another: the user chose to join it. Checked
+            // against the host's spelling (from review): a typed path that
+            // is a symlink elsewhere is not that space's folder.
+            if case .space(let id)? = picked, !spaces(for: cwd).contains(where: { $0.id == id }) {
+                picked = nil
+                if spaces.contains(where: { $0.id == id }) {
+                    phase = .failed(
+                        "That space is for another folder: \(HcRunSuggestions.abbreviate(typed, home: home)) is \(HcRunSuggestions.abbreviate(cwd, home: home)) on \(hostName). Pick again."
+                    )
+                } else {
+                    phase = .failed("That space is no longer in Herdr on \(hostName). Pick again.")
+                }
                 return nil
             }
             let name = name.trimmingCharacters(in: .whitespaces)
+            let space: String = switch placement(for: cwd) {
+            case .newSpace: newSpaceID
+            case .space(let id): id
+            }
             let request = HcRunRequest(
-                program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space(placement, for: cwd)?.id
+                program: program, name: name.isEmpty ? nil : name, cwd: cwd, size: size, space: space
             )
             let address = try await host.start(request)
             // Cancelled while it started (the sheet's Cancel): the terminal
@@ -214,17 +240,6 @@ final class NewTerminalModel: Identifiable {
             phase = .failed(Self.message(for: error))
             return nil
         }
-    }
-
-    /// Whether Start would put a terminal in `cwd` nowhere in Herdr.app
-    /// without having been told to: "By folder", on a host that has spaces,
-    /// and none holds it. Refused rather than started (from review, 14 Nov
-    /// 2026): the warning was a footer and a footer can be read past, the
-    /// typed path can be a symlink to one no space holds, and the folder's
-    /// space can close while the sheet is open. None is the way to say
-    /// hidden on purpose.
-    private func startsUnplaced(cwd: String) -> Bool {
-        placement == .matching && !spaces.isEmpty && space(.matching, for: cwd) == nil
     }
 
     private var program: HcRunRequest.Program {

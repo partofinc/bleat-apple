@@ -20,7 +20,7 @@ public enum HostDirectory {
     /// `developer` back; `/bin/pwd -P` asks the system and says `Developer`,
     /// as on disk (live, 13 Nov 2026). Symlinks come out resolved too
     /// (`/tmp` is `/private/tmp`). That spelling is what Herdr.app's space
-    /// folders are matched against (`HerdrSpace.matching`).
+    /// folders are matched against (`HerdrSpace.spaces(for:in:)`).
     public static func physical(_ path: String) -> String {
         let script = "cd -P -- \(SSHTransport.quote(path)) 2>/dev/null || { echo no; exit 0; }; /bin/pwd -P 2>/dev/null || pwd -P"
         return "/bin/sh -c " + SSHTransport.quote(script)

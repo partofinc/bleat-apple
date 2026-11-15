@@ -371,16 +371,26 @@ a first message (Template appears only where the host has one); a
     now hands out the connection its stream rides. A dropped transport
     refuses commands rather than dialling (`SSHTransport.disconnect`), so
     holding it cannot open a session.
-  - **The list reconnects by itself** while the app is in front: a closed
-    stream or a dropped connection is dialled again after 1, 2, 4 and 8
-    seconds, and the list says `.connecting` meanwhile. Then it fails with
-    Try Again. Not for a refusal that would repeat: an old core, a refused
-    key, a changed host key. Never in the background, where `RootView`
-    releases the connection.
-  - **The sheet's questions wait for it**, up to 15 seconds. The two reads,
-    the spaces and the templates, are asked once more on the next stream if
-    the stream closes under them. `terminal.run` is not, since the terminal
-    may have started.
+  - **The list reconnects by itself** while the app is in front (active
+    or inactive): a closed stream or a dropped connection is dialled again
+    after 1, 2, 4 and 8 seconds, and the list says `.connecting` meanwhile.
+    Then it fails with Try Again. Not for a refusal that would repeat: an
+    old core, a refused key, a changed host key. Never in the background,
+    where `RootView` releases the connection. From review:
+    - **A closed stream does not release the shared connection** the first
+      time: that took an open terminal's stream down with it, once per
+      retry, when the core had only restarted. Two quiet ends in a row
+      without going live is how a dead SSH connection looks, and that one
+      is released, so the next open dials afresh.
+    - The retries come back only after 10 seconds live, so a core that
+      goes live and drops at once ends at Try Again.
+    - A dial another screen's `release()` called off is retried.
+  - **The sheet's questions wait for it**, up to 15 seconds in all. The two
+    reads, the spaces and the templates, are asked once more on the next
+    stream if the stream closes under them. `terminal.run` is not, since
+    the terminal may have started. When the list has failed the sheet says
+    why ("the terminal list could not connect: …"), or that it is still
+    reconnecting, not "the connection to herdr-core closed".
 - **Two shell questions first** (`HostDirectory`): `$HOME`, since the core
   expands no `~` and defaults to its own `/`; and the directory's physical
   path, or `no`, since a missing one fails as "cannot start /bin/sh". The

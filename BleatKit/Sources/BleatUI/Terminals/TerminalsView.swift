@@ -70,7 +70,10 @@ struct TerminalsView: View {
             // in front. Coming back, a list that failed for that reason
             // reconnects.
             .onChange(of: scenePhase, initial: true) { _, phase in
-                model.inForeground = phase == .active
+                // `.inactive` is still in front (from review): Control
+                // Center, a Face ID prompt, the app switcher. Only in the
+                // background is the connection released.
+                model.inForeground = phase != .background
                 guard phase == .active, case .failed = model.phase else { return }
                 attempt += 1
             }

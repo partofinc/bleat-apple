@@ -16,6 +16,11 @@ import Testing
 struct TerminalsModelTests {
 
     /// Plays herdr-core over one `hc connect` stream for the list.
+    ///
+    /// **A second fake beside `HcPaneModelTests.FakeCore`, kept from
+    /// review**: the framing is alike, but the two answer different methods
+    /// (attach and labels there; spaces, templates and run here), and one
+    /// shared fake would mean reworking those tests for little.
     final class ListCore: DuplexStream, @unchecked Sendable {
         let output: AsyncThrowingStream<Data, any Error>
         private let feed: AsyncThrowingStream<Data, any Error>.Continuation
@@ -27,9 +32,12 @@ struct TerminalsModelTests {
         /// A method whose request closes the stream instead of being
         /// answered: the stream going while a request is out.
         let dropOn: String?
+        /// Closes right after the snapshot: a core that goes live and drops.
+        let endAfterSnapshot: Bool
 
-        init(dropOn: String? = nil) {
+        init(dropOn: String? = nil, endAfterSnapshot: Bool = false) {
             self.dropOn = dropOn
+            self.endAfterSnapshot = endAfterSnapshot
             (output, feed) = AsyncThrowingStream<Data, any Error>.makeStream()
         }
 
@@ -43,7 +51,7 @@ struct TerminalsModelTests {
                 if !sawHello, let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
                     sawHello = true
                     buffer = Data(buffer[buffer.index(after: newline)...])
-                    replies.append(Data(#"{"jsonrpc":"2.0","id":0,"result":{"framed":true,"generation":1,"version":"0.1.20"}}"#.utf8) + Data("\n".utf8))
+                    replies.append(TerminalsModelTests.hello)
                 }
                 guard sawHello, let frames = try? decoder.push(buffer) else { return }
                 buffer = Data()
@@ -69,7 +77,7 @@ struct TerminalsModelTests {
                 }
             }
             replies.forEach { feed.yield($0) }
-            if drop { end() }
+            if drop || (endAfterSnapshot && methods.contains("events.subscribe")) { end() }
         }
 
         /// The host closes the stream.
@@ -90,6 +98,12 @@ struct TerminalsModelTests {
         }
     }
 
+    /// `Fixtures/hc-hello.json` as the core sends it: one line.
+    nonisolated static let hello: Data = {
+        let reply = fixture("hc-hello.json")
+        return ((try? JSONEncoder().encode(reply)) ?? Data()) + Data("\n".utf8)
+    }()
+
     nonisolated static func fixture(_ name: String) -> HcJSON {
         let url = URL(filePath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -100,33 +114,42 @@ struct TerminalsModelTests {
     private let peer = PairedPeer(hostKey: "ssh-ed25519 AAAAKEY", name: "adam", username: "pi", endpoints: [])
 
     /// Records how many times the list opened, what each open handed out,
-    /// and what was reported.
+    /// what was handled, and how often the connection was released.
     final class Opens {
         var count = 0
         var shells: [Shell] = []
-        var reported: [String] = []
+        var handled: [String] = []
+        var releases = 0
     }
 
-    /// A list over `cores`, one per open, the last repeated; or failing with
-    /// `failure` on every open.
+    /// A list over `cores`, one per open, the last repeated; each open first
+    /// throws the next of `failures`, then `failure` if given, every time.
     private func list(
         _ cores: [ListCore] = [],
+        failures: [any Error] = [],
         failure: (any Error)? = nil,
         retryDelays: [Duration] = [.milliseconds(20), .milliseconds(20)],
+        steadyLive: Duration = .seconds(10),
         liveWait: Duration = .seconds(2)
     ) -> (TerminalsModel, Opens) {
         let opens = Opens()
+        var failures = failures[...]
+        var served = 0
         let model = TerminalsModel(
             peer: peer,
             open: {
-                defer { opens.count += 1 }
+                opens.count += 1
+                if let next = failures.popFirst() { throw next }
                 if let failure { throw failure }
                 let shell = Shell()
                 opens.shells.append(shell)
-                return .init(stream: cores[min(opens.count, cores.count - 1)], shell: shell)
+                defer { served += 1 }
+                return .init(stream: cores[min(served, cores.count - 1)], shell: shell)
             },
-            report: { opens.reported.append(ErrorMessage.of($0)) },
+            handle: { opens.handled.append(ErrorMessage.of($0)) },
+            release: { opens.releases += 1 },
             retryDelays: retryDelays,
+            steadyLive: steadyLive,
             liveWait: liveWait
         )
         return (model, opens)
@@ -148,7 +171,73 @@ struct TerminalsModelTests {
         await eventually { opens.count == 2 && model.phase == .live }
         #expect(opens.count == 2)
         #expect(model.phase == .live)
-        #expect(opens.reported.count == 1, "the closed stream was reported, so the connection is dropped and dialled again")
+        #expect(opens.releases == 0, "a core that restarted does not cost an open terminal its connection")
+    }
+
+    /// From review: a closed stream released the shared connection every
+    /// time, and an open terminal's stream went with it.
+    @Test("a stream that ends quietly twice running without going live drops the connection")
+    func deadConnectionReleased() async {
+        let first = ListCore()
+        let dead = ListCore(dropOn: "events.subscribe")
+        let (model, opens) = list(
+            [first, dead, dead, ListCore()],
+            retryDelays: [.milliseconds(20), .milliseconds(20), .milliseconds(20)]
+        )
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .live }
+        first.end()
+        await eventually { opens.count == 4 && model.phase == .live }
+        #expect(opens.count == 4)
+        #expect(opens.releases == 1, "only the second quiet end in a row, so the next open dials afresh")
+    }
+
+    @Test("a core that goes live and drops at once is not retried forever")
+    func crashLoopEnds() async {
+        let (model, opens) = list([ListCore(endAfterSnapshot: true)])
+        await model.run()
+        #expect(opens.count == 3, "the first open and both retries: going live briefly earns none back")
+        guard case .failed = model.phase else { Issue.record("not failed: \(model.phase)"); return }
+    }
+
+    @Test("a list that stayed live a while earns its retries back")
+    func steadyEarnsRetries() async {
+        let first = ListCore(), second = ListCore()
+        let (model, opens) = list([first, second, ListCore()], retryDelays: [.milliseconds(20)], steadyLive: .milliseconds(50))
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .live }
+        first.end()
+        await eventually { opens.count == 2 && model.phase == .live }
+        try? await Task.sleep(for: .milliseconds(100))
+        second.end()
+        await eventually { opens.count == 3 && model.phase == .live }
+        #expect(opens.count == 3)
+        #expect(model.phase == .live)
+    }
+
+    /// From review: another screen's `release()` calls off the dial the
+    /// list joined, and that surfaced as a failure for good.
+    @Test("a dial called off under the list by another screen is retried")
+    func cancelledDialRetried() async {
+        let (model, opens) = list([ListCore()], failures: [CancellationError()])
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .live }
+        #expect(opens.count == 2)
+        #expect(model.phase == .live)
+    }
+
+    @Test("the sheet waits no longer than its limit, and says the list is still reconnecting")
+    func sheetWaitIsBounded() async {
+        let (model, _) = list(failure: TransportError.connectionFailed("no route"), retryDelays: [.seconds(5)], liveWait: .milliseconds(150))
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+        await eventually { model.phase == .connecting }
+        let started = ContinuousClock.now
+        await #expect(throws: TerminalListUnavailable.reconnecting) { try await model.spaces() }
+        #expect(ContinuousClock.now - started < .seconds(1))
     }
 
     @Test("the sheet's shell is the list's own connection: nothing is opened or dialled for it")
@@ -217,9 +306,9 @@ struct TerminalsModelTests {
     func notRetried(failure: any Error) async throws {
         let (model, opens) = list(failure: failure)
         await model.run()
-        guard case .failed = model.phase else { Issue.record("not failed: \(model.phase)"); return }
+        guard case .failed(let reason) = model.phase else { Issue.record("not failed: \(model.phase)"); return }
         #expect(opens.count == 1)
-        await #expect(throws: HcProtocolError.closed) { try await model.spaces() }
+        await #expect(throws: TerminalListUnavailable.failed(reason), "the sheet says why, not \"closed\"") { try await model.spaces() }
     }
 
     @Test("an unreachable host is tried a few times, then the list fails and the sheet is not kept waiting")
@@ -227,8 +316,9 @@ struct TerminalsModelTests {
         let (model, opens) = list(failure: TransportError.connectionFailed("no route"))
         await model.run()
         #expect(opens.count == 3, "the first dial and both retries")
-        #expect(model.phase == .failed(ErrorMessage.of(TransportError.connectionFailed("no route"))))
-        await #expect(throws: HcProtocolError.closed) { try await model.spaces() }
+        let reason = ErrorMessage.of(TransportError.connectionFailed("no route"))
+        #expect(model.phase == .failed(reason))
+        await #expect(throws: TerminalListUnavailable.failed(reason)) { try await model.spaces() }
     }
 
     @Test("in the background a lost list is not dialled again")

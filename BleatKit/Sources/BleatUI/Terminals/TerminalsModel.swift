@@ -31,8 +31,8 @@ final class TerminalsModel {
     private(set) var terminals: [HcTerminal] = []
     /// What `hello` said, for the screen to show beside the host's name.
     private(set) var coreVersion: String?
-    /// Whether the app is in front, which is when a lost list may be dialled
-    /// again by itself. Set by the view from its scene phase: in the
+    /// Whether the app is in front (active or inactive), which is when a
+    /// lost list may be dialled again by itself. Set by the view from its scene phase: in the
     /// background iOS takes the socket and `RootView` releases the
     /// connection, and dialling then would only fight it.
     var inForeground = true
@@ -56,11 +56,15 @@ final class TerminalsModel {
 
     let peer: PairedPeer
     private let open: () async throws -> Opened
-    /// Told how a connect ended, so the connection can be dropped when it is
-    /// the connection that failed.
-    private let report: (any Error) async -> Void
+    /// Told of an error that may mean the connection itself is finished
+    /// (`ConnectionStore.handle`).
+    private let handle: (any Error) async -> Void
+    /// Drops the shared connection, so the next open dials afresh.
+    private let release: () async -> Void
     /// The waits before each reconnect; once they are spent the list fails.
     private let retryDelays: [Duration]
+    /// How long a list must stay live to earn its retries back.
+    private let steadyLive: Duration
     /// How long the sheet's questions wait for a reconnecting list.
     private let liveWait: Duration
 
@@ -68,37 +72,29 @@ final class TerminalsModel {
         self.init(
             peer: peer,
             open: {
-                guard let hcPath = peer.herdrCore?.path else { throw HcPaneFailure.notChecked }
-                let link = try await connections.link(for: peer)
-                guard let opener = link as? any HcStreamOpening else { throw HcPaneFailure.noRoute }
-                return Opened(stream: try await opener.openHcConnection(hcPath: hcPath), shell: link)
+                let opened = try await connections.openHc(for: peer)
+                return Opened(stream: opened.stream, shell: opened.link)
             },
-            report: { error in
-                if case HcProtocolError.closed = error {
-                    // The stream ended without an error, which is how a dead
-                    // SSH connection can look from here. `handle` keeps the
-                    // connection for anything but a `TransportError`, so the
-                    // retry would reuse the same dead link; dropping it makes
-                    // the retry dial afresh.
-                    await connections.release()
-                } else {
-                    await connections.handle(error)
-                }
-            }
+            handle: { await connections.handle($0) },
+            release: { await connections.release() }
         )
     }
 
     init(
         peer: PairedPeer,
         open: @escaping () async throws -> Opened,
-        report: @escaping (any Error) async -> Void,
+        handle: @escaping (any Error) async -> Void,
+        release: @escaping () async -> Void,
         retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4), .seconds(8)],
+        steadyLive: Duration = .seconds(10),
         liveWait: Duration = .seconds(15)
     ) {
         self.peer = peer
         self.open = open
-        self.report = report
+        self.handle = handle
+        self.release = release
         self.retryDelays = retryDelays
+        self.steadyLive = steadyLive
         self.liveWait = liveWait
     }
 
@@ -106,8 +102,12 @@ final class TerminalsModel {
     /// it may. Never throws: how it ended is `phase`.
     func run() async {
         var retries = retryDelays[...]
+        // Whether the attempt before this one also ended quietly without
+        // going live: see `quietEnd`.
+        var endedQuietly = false
         while !Task.isCancelled {
             phase = .connecting
+            liveSince = nil
             let error: any Error
             do {
                 let opened = try await open()
@@ -121,10 +121,27 @@ final class TerminalsModel {
                 error = thrown
             }
             guard !Task.isCancelled else { return }
-            await report(error)
-            // A list that was live has earned its retries back.
-            if wasLive { retries = retryDelays[...] }
-            wasLive = false
+            let wasSteady = liveSince.map { ContinuousClock.now - $0 >= steadyLive } ?? false
+            let wentLive = liveSince != nil
+            liveSince = nil
+            if Self.quietEnd(error) {
+                // **Not released on the first** (from review): the
+                // connection is shared, and dropping it took an open
+                // terminal's stream down with it, once per retry, for a
+                // core that had only restarted. A stream that ends quietly
+                // twice running without going live is how a dead SSH
+                // connection looks, and that one is dropped, so the next
+                // open dials afresh rather than reusing it until Try Again.
+                if endedQuietly { await release() }
+                endedQuietly = !wentLive
+            } else {
+                endedQuietly = false
+                await handle(error)
+            }
+            // A list that stayed live a while has earned its retries back;
+            // one that goes live and drops at once has not (from review), or
+            // a core in a crash loop would be retried forever.
+            if wasSteady { retries = retryDelays[...] }
             guard inForeground, Self.isWorthRetrying(error), let delay = retries.popFirst() else {
                 phase = .failed(ErrorMessage.of(error))
                 return
@@ -140,15 +157,29 @@ final class TerminalsModel {
         }
     }
 
-    /// Whether this run's stream reached `.live` since the last failure.
-    @ObservationIgnored private var wasLive = false
+    /// When this run's stream went live; nil while it is not.
+    @ObservationIgnored private var liveSince: ContinuousClock.Instant?
+
+    /// The stream ended, or never said hello, without the network saying
+    /// anything: a core that restarted, or an SSH connection that died.
+    private nonisolated static func quietEnd(_ error: any Error) -> Bool {
+        switch error {
+        case HcProtocolError.closed, HcProtocolError.noHello: true
+        default: false
+        }
+    }
 
     /// Whether another dial could help. Not when the host was reached and
     /// said no, or will say the same again: an old core, a key it refuses, a
     /// changed host key, a host never checked for herdr-core.
+    ///
+    /// A `CancellationError` is retried (from review): this run's own task
+    /// being cancelled returns before here, so one that reaches here is a
+    /// dial another screen's `release()` called off under it, the race a
+    /// reconnect is for.
     nonisolated static func isWorthRetrying(_ error: any Error) -> Bool {
         switch error {
-        case HcProtocolError.closed, HcProtocolError.noHello:
+        case HcProtocolError.closed, HcProtocolError.noHello, is CancellationError:
             return true
         case let transport as TransportError:
             switch transport {
@@ -175,8 +206,8 @@ final class TerminalsModel {
         let subscription = try await client.subscribe()
         for try await update in subscription.updates {
             publish(update.terminals)
+            if liveSince == nil { liveSince = .now }
             phase = .live
-            wasLive = true
         }
         // The stream ended without an error: the host closed it.
         if !Task.isCancelled { throw HcProtocolError.closed }
@@ -188,34 +219,40 @@ final class TerminalsModel {
 
     // MARK: - Starting a terminal
 
-    /// The list's session once it is live, waiting up to `liveWait` while it
-    /// connects or reconnects, and never for `stale`: a session whose stream
-    /// was just seen to close, which can still be installed for a moment
-    /// before its run notices.
-    private func liveSession(not stale: HcClient? = nil) async throws -> Session {
-        let clock = ContinuousClock()
-        let deadline = clock.now + liveWait
+    /// The list's session once it is live, waiting while it connects or
+    /// reconnects until `deadline` (`liveWait` from now by default), and
+    /// never for `stale`: a session whose stream was just seen to close,
+    /// which can still be installed for a moment before its run notices.
+    ///
+    /// **Polled, kept from review**: a continuation resumed where `phase`
+    /// changes would wake it once instead of every 100 ms, but it would need
+    /// its own cancellation and timeout handling, and this only runs while
+    /// the sheet waits on a reconnecting list, for 15 seconds at most.
+    private func liveSession(
+        not stale: HcClient? = nil, by deadline: ContinuousClock.Instant? = nil
+    ) async throws -> Session {
+        let deadline = deadline ?? .now + liveWait
         while true {
             if let session, phase == .live, session.client !== stale { return session }
             // A list that failed for good is not coming back by itself.
-            guard !isFailed, clock.now < deadline else { throw HcProtocolError.closed }
+            if case .failed(let reason) = phase { throw TerminalListUnavailable.failed(reason) }
+            guard ContinuousClock.now < deadline else { throw TerminalListUnavailable.reconnecting }
             try await Task.sleep(for: .milliseconds(100))
         }
     }
 
-    private var isFailed: Bool {
-        if case .failed = phase { true } else { false }
-    }
-
     /// A request that only reads, on the live session. Asked once more on
     /// the next session if the stream closes under it: reading twice is
-    /// harmless, and the stream closing is what a reconnect looks like.
+    /// harmless, and the stream closing is what a reconnect looks like. Both
+    /// waits share one deadline (from review), so the sheet waits
+    /// `liveWait` in all, not twice that.
     private func read(_ method: String, _ params: [String: HcJSON] = [:]) async throws -> HcJSON {
-        let session = try await liveSession()
+        let deadline = ContinuousClock.now + liveWait
+        let session = try await liveSession(by: deadline)
         do {
             return try await session.client.call(method, params)
         } catch HcProtocolError.closed {
-            return try await liveSession(not: session.client).client.call(method, params)
+            return try await liveSession(not: session.client, by: deadline).client.call(method, params)
         }
     }
 

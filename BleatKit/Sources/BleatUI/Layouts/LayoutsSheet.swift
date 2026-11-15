@@ -11,6 +11,9 @@ struct LayoutsSheet: View {
     @State private var model: LayoutsModel
     /// The layout whose actions are up.
     @State private var chosen: HerdrLayout?
+    /// The layout being renamed, and the name typed for it.
+    @State private var renaming: HerdrLayout?
+    @State private var newName = ""
     @Environment(\.dismiss) private var dismiss
 
     init(model: LayoutsModel) {
@@ -77,8 +80,26 @@ struct LayoutsSheet: View {
                 } else {
                     Button("Restore") { model.perform(.restore, on: layout.name) }
                 }
+                Button("Rename…") {
+                    newName = layout.name
+                    renaming = layout
+                }
             } message: { layout in
                 Text(Self.explanation(for: layout, on: model.hostName))
+            }
+            .alert(
+                "Rename \(renaming?.name ?? "")",
+                isPresented: Binding { renaming != nil } set: { if !$0 { renaming = nil } },
+                presenting: renaming
+            ) { layout in
+                TextField("Name", text: $newName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Rename") { model.perform(.rename(to: trimmedName), on: layout.name) }
+                    .disabled(!canRename(layout))
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Letters, digits, spaces, . _ or -, up to 64, starting with a letter or digit.")
             }
             .alert(
                 "Agents are still working",
@@ -91,6 +112,14 @@ struct LayoutsSheet: View {
                 Text("Closing \(name) now ends them mid-task.")
             }
         }
+    }
+
+    private var trimmedName: String { newName.trimmingCharacters(in: .whitespaces) }
+
+    /// A name the script takes, and not the one it has: the script refuses
+    /// an unchanged name, and allows a change of case alone.
+    private func canRename(_ layout: HerdrLayout) -> Bool {
+        trimmedName != layout.name && HerdrLayout.isValidName(trimmedName)
     }
 
     private func progress(for layout: HerdrLayout) -> String? {

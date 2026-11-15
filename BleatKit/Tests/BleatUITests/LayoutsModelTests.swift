@@ -129,6 +129,16 @@ struct LayoutsModelTests {
         #expect(shell.commands.first?.contains("sh '/Users/robin/.local/bin' 'list'") == true)
     }
 
+    @Test("a rename sends both names, and the list is read again")
+    func rename() async {
+        let shell = Shell([.success("renamed Clinic to Clinic 2\n"), .success(Self.list)])
+        let layouts = model(shell)
+        await layouts.perform(.rename(to: "Clinic 2"), on: "Clinic")?.value
+        #expect(shell.commands[0].hasSuffix("'rename' 'Clinic' 'Clinic 2'"))
+        #expect(layouts.outcome?.message == "renamed Clinic to Clinic 2")
+        #expect(shell.commands.count == 2)
+    }
+
     // MARK: - From review
 
     @Test("a script that ran and failed is still there: the button shows, and the sheet says why")

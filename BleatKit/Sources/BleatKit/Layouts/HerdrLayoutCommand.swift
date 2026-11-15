@@ -4,15 +4,17 @@ import Foundation
 /// and how its answer is read.
 ///
 /// **Only what makes sense away from the Mac**: list, restore, save an open
-/// layout as it is now, and close. `show` moves the Mac's own window, which
-/// nobody at the phone is looking at; rename, delete, save and add are left
-/// to the Mac.
+/// layout as it is now, close, and rename (asked for by Ravil after the
+/// first restore from a phone, 15 Nov 2026). `show` moves the Mac's own
+/// window, which nobody at the phone is looking at; delete, save and add are
+/// left to the Mac.
 public enum HerdrLayoutCommand: Sendable, Equatable {
     case list
     case restore(String)
     case update(String)
     /// `force` closes even while agents in it are working.
     case close(String, force: Bool)
+    case rename(String, to: String)
 
     /// The script's own arguments.
     public var arguments: [String] {
@@ -21,6 +23,7 @@ public enum HerdrLayoutCommand: Sendable, Equatable {
         case .restore(let name): ["restore", name]
         case .update(let name): ["update", name]
         case .close(let name, let force): ["close", name] + (force ? ["--force"] : [])
+        case .rename(let name, let new): ["rename", name, new]
         }
     }
 

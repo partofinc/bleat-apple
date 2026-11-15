@@ -25,6 +25,7 @@ final class LayoutsModel {
 
     enum Action: Equatable {
         case restore, update, close, closeAnyway
+        case rename(to: String)
 
         func command(for name: String) -> HerdrLayoutCommand {
             switch self {
@@ -32,6 +33,7 @@ final class LayoutsModel {
             case .update: .update(name)
             case .close: .close(name, force: false)
             case .closeAnyway: .close(name, force: true)
+            case .rename(let new): .rename(name, to: new)
             }
         }
 
@@ -41,6 +43,7 @@ final class LayoutsModel {
             case .restore: "Restoring…"
             case .update: "Saving…"
             case .close, .closeAnyway: "Closing…"
+            case .rename: "Renaming…"
             }
         }
     }

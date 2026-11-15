@@ -23,6 +23,17 @@ public struct HerdrLayout: Sendable, Equatable, Identifiable, Decodable {
     public let claude: Int
 
     public var id: String { name }
+
+    /// Whether `name` is one the script accepts: a letter or digit, then up
+    /// to 63 letters, digits, spaces, `.`, `_` or `-` (its `NAME_RE`). Checked
+    /// here so the rename field can say so before anything is sent; the
+    /// script checks again. **A copy, kept from review**: the script is not
+    /// something the phone can ask for its rule, and a refusal from a rule
+    /// that drifted arrives in the script's words. ASCII only, so Swift's
+    /// characters and Python's code points count alike.
+    public static func isValidName(_ name: String) -> Bool {
+        name.wholeMatch(of: /[A-Za-z0-9][A-Za-z0-9._ -]{0,63}/) != nil
+    }
     /// Open as soon as any of its spaces is. **A partly open layout is not
     /// offered Restore, kept from review**: the script refuses it, since
     /// opening it again would run its Claude sessions twice; and `update`

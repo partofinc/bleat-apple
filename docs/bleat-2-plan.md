@@ -162,8 +162,8 @@ transport, push notifications, Live Activities).
 
 **Phase C scope, as agreed:**
 
-- **Layouts from the phone** (Ravil, 15 Nov 2026): list, restore, save and
-  close the Mac's `herdr-layout` layouts, where the script is installed. It
+- **Layouts from the phone** (Ravil, 15 Nov 2026): list, restore, save,
+  close and rename the Mac's `herdr-layout` layouts, where the script is installed. It
   is Ravil's own script, not part of Herdr. See
   [app screens](app-screens.md), "Layouts".
 

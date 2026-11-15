@@ -466,8 +466,13 @@ depends on it.
   `LayoutsSheet`: one row per layout, newest first, with its spaces, panes,
   Claude count, when it was saved and whether it is open. Tapping a closed
   one offers **Restore**; an open one, **Save Now** (`update`) and **Close**,
-  which the script saves first. Left to the Mac: `show`, which moves the
-  Mac's own window, and `save`, `add`, `rename`, `delete`.
+  which the script saves first; every one, **Rename…** (asked for by Ravil
+  after the first restore from a phone, 15 Nov 2026). The field checks the
+  name as the script's `NAME_RE` does, as typed (trailing spaces are
+  allowed there), and refuses an unchanged one; a change of case alone is
+  allowed, as the script allows it. Left to the
+  Mac: `show`, which moves the Mac's own window, and `save`, `add`,
+  `delete`.
 - **Close refuses while agents in it are working**, as the script does
   without `--force`; the sheet then asks "Close Anyway", which passes it.
   Told apart by the script's own words, "still working in", since this
@@ -491,8 +496,12 @@ depends on it.
   failed.
 - `Fixtures/herdr-layout-list.json` is the list captured on this Mac, 15 Nov
   2026, **with layout and space names replaced**: the repository is public.
-- **Not verified yet over a real SSH login** from the phone: built and
-  tested against a stand-in script run through zsh with a bare `PATH`.
+- **Verified live, 15 Nov 2026**: Ravil restored a 5-space layout from
+  the iPhone (TestFlight build 8) over SSH to this Mac, and the script
+  listed it open, 5 of 5 spaces. So the `PATH` and `herdr-app`'s socket
+  work from an SSH login. **Rename is not yet tried live**; nor whether
+  the Rename alert shows from the action sheet's button and enables its
+  button as the name is typed, which SwiftUI should do.
 - **Not on the watch**: the sheet is iOS-only, like the new-terminal sheet.
 
 ## Bleat 2: a host opens to the herdr-core gate (12 Nov 2026)

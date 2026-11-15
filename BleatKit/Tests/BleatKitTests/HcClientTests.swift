@@ -289,4 +289,58 @@ struct HcClientTests {
         await #expect(throws: TransportError.channelClosed) { try await pending.value }
         await #expect(throws: TransportError.channelClosed) { try await client.call("server.status") }
     }
+
+    // MARK: - The answer limit (from review of #102)
+
+    @Test("a core that never says hello fails the connect as a network error")
+    func helloLimit() async throws {
+        let core = ScriptedCore()
+        await #expect(throws: TransportError.connectionFailed("herdr-core did not answer within 1 second")) {
+            try await HcClient.connect(over: core, answerWithin: .milliseconds(50))
+        }
+    }
+
+    @Test("a stream that fails first is reported, not the limit")
+    func earlierFailureWins() async throws {
+        let core = ScriptedCore()
+        let connecting = Task { try await HcClient.connect(over: core, answerWithin: .milliseconds(200)) }
+        _ = await core.written(atLeast: 1)
+        core.end(throwing: TransportError.channelClosed)
+        await #expect(throws: TransportError.channelClosed) { try await connecting.value }
+    }
+
+    @Test("a call given a limit fails the connection when unanswered, and fails the rest with it")
+    func callLimit() async throws {
+        let (client, core) = try await connected()
+        let other = Task { try await client.call("server.status") }
+        _ = try await core.frames(atLeast: 1)
+        let limited = TransportError.connectionFailed("herdr-core did not answer within 1 second")
+        await #expect(throws: limited) {
+            try await client.call("events.subscribe", answerWithin: .milliseconds(50))
+        }
+        await #expect(throws: limited) { try await other.value }
+    }
+
+    @Test("an answer that came in time is not undone by its limit")
+    func answeredInTime() async throws {
+        let (client, core) = try await connected()
+        let call = Task { try await client.call("server.status", answerWithin: .milliseconds(100)) }
+        _ = try await core.frames(atLeast: 1)
+        let reply = json(#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#)
+        core.reply(HcFrame(channel: 0, kind: .data, payload: reply).encoded())
+        #expect(try await call.value["ok"] == .bool(true))
+        // Past the limit, the connection is still good.
+        try await Task.sleep(for: .milliseconds(200))
+        let next = Task { try await client.call("server.status") }
+        _ = try await core.frames(atLeast: 2)
+        core.reply(HcFrame(channel: 0, kind: .data, payload: json(#"{"jsonrpc":"2.0","id":2,"result":{"ok":true}}"#)).encoded())
+        #expect(try await next.value["ok"] == .bool(true))
+    }
+
+    @Test("a limit reads in whole seconds, rounded up", arguments: [
+        (Duration.seconds(10), "10 seconds"), (.milliseconds(50), "1 second"), (.milliseconds(1500), "2 seconds"),
+    ])
+    func limitWords(limit: Duration, words: String) {
+        #expect(HcClient.seconds(limit) == words)
+    }
 }

@@ -379,7 +379,7 @@ final class HcPaneModel: PaneDriving {
                     "cols": .number(Double(size.cols)),
                     "rows": .number(Double(size.rows)),
                     "history": .number(Double(Self.history)),
-                ]))
+                ], answerWithin: HcClient.answerLimit))
                 let screen = await connected.channel(attachment.channel)
                 // **After the last suspension, right before anything is
                 // written.** Checked any earlier, a run replaced while it hopped

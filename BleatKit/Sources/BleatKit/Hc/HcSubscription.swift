@@ -13,8 +13,11 @@ extension HcClient {
     ///
     /// - Parameter params: the schema's filters — `terminal`, `labels`,
     ///   `children_of`. Empty for everything.
-    public func subscribe(_ params: [String: HcJSON] = [:]) async throws -> HcSubscription {
-        let result = try await call("events.subscribe", params)
+    /// - Parameter limit: how long the snapshot may take (`call`).
+    public func subscribe(
+        _ params: [String: HcJSON] = [:], answerWithin limit: Duration? = nil
+    ) async throws -> HcSubscription {
+        let result = try await call("events.subscribe", params, answerWithin: limit)
         guard let channel = result["channel"]?.uint32 else { throw HcProtocolError.notFramed }
         let reader = HcLineReader(self.channel(channel), client: self, channel: channel)
         // Pulled one at a time, so credit follows what the caller has read.

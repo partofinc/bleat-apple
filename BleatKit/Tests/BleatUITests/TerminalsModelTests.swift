@@ -135,7 +135,7 @@ struct TerminalsModelTests {
         failure: (any Error)? = nil,
         retryDelays: [Duration] = [.milliseconds(20), .milliseconds(20)],
         steadyLive: Duration = .seconds(10),
-        handshakeLimit: Duration = .seconds(10),
+        answerLimit: Duration = .seconds(10),
         liveWait: Duration = .seconds(2)
     ) -> (TerminalsModel, Opens) {
         let opens = Opens()
@@ -156,7 +156,7 @@ struct TerminalsModelTests {
             release: { opens.releases += 1 },
             retryDelays: retryDelays,
             steadyLive: steadyLive,
-            handshakeLimit: handshakeLimit,
+            answerLimit: answerLimit,
             liveWait: liveWait
         )
         return (model, opens)
@@ -205,28 +205,33 @@ struct TerminalsModelTests {
     @Test("a stream that never answers is given up on, and the next one goes live")
     func silentStreamGivenUp() async {
         let silent = ListCore(silent: true)
-        let (model, opens) = list([silent, ListCore()], handshakeLimit: .milliseconds(150))
+        let (model, opens) = list([silent, ListCore()], answerLimit: .milliseconds(150))
         let running = Task { await model.run() }
         defer { running.cancel() }
         await eventually { model.phase == .live }
         #expect(model.phase == .live)
         #expect(opens.count == 2)
-        #expect(opens.releases == 0, "one stall alone keeps the connection")
+        // From review: as a network error, so the store drops the connection
+        // after the first stall, not the second, and the retry dials afresh.
+        #expect(opens.handled == [Self.stalled])
     }
 
-    @Test("streams that keep stalling drop the connection, then end at Try Again")
+    @Test("streams that keep stalling end at Try Again, saying so")
     func stallsEndAtTryAgain() async {
         let silent = (0..<3).map { _ in ListCore(silent: true) }
-        let (model, opens) = list(silent, handshakeLimit: .milliseconds(50))
+        let (model, opens) = list(silent, answerLimit: .milliseconds(50))
         await model.run()
         #expect(opens.count == 3)
-        #expect(opens.releases == 2, "the second and third stalls in a row: a dead connection")
-        #expect(model.phase == .failed(TerminalListStalled(limit: .milliseconds(50)).description))
+        #expect(opens.handled == Array(repeating: Self.stalled, count: 3))
+        #expect(model.phase == .failed(Self.stalled))
     }
+
+    /// What a stall says, a limit under a second rounded up.
+    private static let stalled = "could not connect: herdr-core did not answer within 1 second"
 
     @Test("a live list is not cut off by the handshake limit")
     func liveOutlastsLimit() async {
-        let (model, opens) = list([ListCore()], handshakeLimit: .milliseconds(50))
+        let (model, opens) = list([ListCore()], answerLimit: .milliseconds(50))
         let running = Task { await model.run() }
         defer { running.cancel() }
         await eventually { model.phase == .live }

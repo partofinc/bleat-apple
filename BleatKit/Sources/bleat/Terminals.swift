@@ -11,7 +11,7 @@ enum Terminals {
     static func run(opener: any HcStreamOpening, hcPath: String, watch: Bool) async throws {
         let client = try await HcClient.connect(over: try await opener.openHcConnection(hcPath: hcPath))
         let hello = await client.hello
-        let subscription = try await client.subscribe()
+        let subscription = try await client.subscribe(answerWithin: HcClient.answerLimit)
         print(header(hello))
         // Each update is printed as it happens, to a pipe or file too.
         setvbuf(stdout, nil, _IOLBF, 0)

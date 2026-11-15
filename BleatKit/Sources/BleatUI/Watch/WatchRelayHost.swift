@@ -115,10 +115,14 @@ public final class WatchRelayHost: NSObject {
     /// the client is no good: it is dropped — only if it is still the one
     /// cached, so a call failing late cannot close a newer one — and the
     /// watch's next poll opens another.
+    ///
+    /// **Each call has `HcClient.answerLimit`** (from review of #102): the
+    /// watch asks only quick reads and a label, and a channel gone silent
+    /// would otherwise hold the watch's command for good.
     private func hc(_ hostKey: String, _ method: String, _ params: [String: HcJSON]) async throws -> HcJSON {
         let (lease, client) = try await hcClient(for: hostKey)
         do {
-            return try await client.call(method, params)
+            return try await client.call(method, params, answerWithin: HcClient.answerLimit)
         } catch let refusal as HcError {
             throw refusal
         } catch {

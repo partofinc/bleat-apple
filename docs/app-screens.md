@@ -443,6 +443,58 @@ a first message (Template appears only where the host has one); a
 - Measured facts behind all of this are in
   [`hc-facts.md`](hc-facts.md#creating-terminals-source-schema).
 
+## Layouts: a Mac's `herdr-layout`, from the phone (Phase C, 15 Nov 2026)
+
+Ravil's own script, `~/.local/bin/herdr-layout`, saves Herdr.app's spaces,
+tabs and panes under a name and restores them, resuming each pane's Claude
+session. **It is not part of Herdr** (Ravil, 15 Nov 2026), so the feature is
+there only on a host that has the script, and nothing else in the app
+depends on it.
+
+- **Found by asking, not checked.** Each time the host's terminal list goes
+  live, `LayoutsModel` runs `herdr-layout list --json` on the list's own
+  connection (`TerminalsModel.shell()`, never a dial). Status 127 naming
+  `herdr-layout`, the shell's "not found", is a host without layouts, and
+  the button stays hidden; `env` also exits 127 when `python3` is missing,
+  and that host has the script. **A script that ran and failed is still
+  there** (from review): the button shows and the sheet says why. Only a
+  host that could not be reached leaves it unknown, and a dropped
+  connection does not take the button away. Reads can overlap (going
+  live, opening the sheet, after an action); the latest one's answer is
+  kept.
+- **The button sits beside `+`** on the terminal list, opening
+  `LayoutsSheet`: one row per layout, newest first, with its spaces, panes,
+  Claude count, when it was saved and whether it is open. Tapping a closed
+  one offers **Restore**; an open one, **Save Now** (`update`) and **Close**,
+  which the script saves first. Left to the Mac: `show`, which moves the
+  Mac's own window, and `save`, `add`, `rename`, `delete`.
+- **Close refuses while agents in it are working**, as the script does
+  without `--force`; the sheet then asks "Close Anyway", which passes it.
+  Told apart by the script's own words, "still working in", since this
+  project owns both sides.
+- **The command** (`HerdrLayoutCommand`) is `/bin/sh -c '<script>'`, like
+  the load probe, so fish or zsh only pass a quoted string. It puts
+  `~/.local/bin` and the directory `hc` was found in on `PATH`: the script
+  calls `hc` and `herdr-app` by bare name, and an SSH login's `PATH` on a Mac
+  has neither. `herdr-app` reaches the running window over
+  `~/.config/herdr-app/herdr-app.sock`, which an SSH login as the same user
+  can open; Herdr.app must be running for a restore.
+- **A restore outlives the phone.** It starts a Claude per pane and takes a
+  while, and iOS drops the socket when the app leaves the front. Written
+  straight to the channel, the script's next line would fail on the closed
+  pipe and stop it half way. So its output goes to files and is sent when it
+  has finished, `HUP` is ignored, and on the phone the action runs in a task
+  of its own: closing the sheet or leaving the host does not cancel it.
+- **Results are the script's words**: its last line on success ("restored
+  …: 5/5 space(s), …"), stderr without its `herdr-layout: ` prefix on a
+  refusal. A partial restore exits 1, and its stderr names the spaces that
+  failed.
+- `Fixtures/herdr-layout-list.json` is the list captured on this Mac, 15 Nov
+  2026, **with layout and space names replaced**: the repository is public.
+- **Not verified yet over a real SSH login** from the phone: built and
+  tested against a stand-in script run through zsh with a bare `PATH`.
+- **Not on the watch**: the sheet is iOS-only, like the new-terminal sheet.
+
 ## Bleat 2: a host opens to the herdr-core gate (12 Nov 2026)
 
 `RouteView`'s `.peer` route resolves to `HerdrCoreGateView` (1.x's

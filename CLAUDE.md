@@ -32,7 +32,9 @@ the phone (#86), into Herdr.app's spaces (#87); multi-line prompts as one
 paste (#89); marking terminals seen as Herdr.app does (#88); terminals on
 the watch, read through the phone. Phase A's console gate is met only in part — `bleat
 terminals --watch` follows events; attaching from the console is not built.
-**Left for B:** the watch on a real device, and whether a core
+**Phase C has begun alongside**, at Ravil's direction (15 Nov 2026): its
+first item is restoring the Mac's `herdr-layout` layouts from the phone
+(scope in the plan). **Left for B:** the watch on a real device, and whether a core
 outlives the SSH login on a fresh Pi (linger; [hc facts](docs/hc-facts.md)). Two product questions are Ravil's before release: the listing's
 name and promise, and whether 1.x's unbuilt Control items carry over.
 

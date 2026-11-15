@@ -160,6 +160,13 @@ Re-verify before relying on any of it; the host wins over this file.
 Out of scope until after D: the same list as for 1.x (pairing/relay
 transport, push notifications, Live Activities).
 
+**Phase C scope, as agreed:**
+
+- **Layouts from the phone** (Ravil, 15 Nov 2026): list, restore, save and
+  close the Mac's `herdr-layout` layouts, where the script is installed. It
+  is Ravil's own script, not part of Herdr. See
+  [app screens](app-screens.md), "Layouts".
+
 ## The migration gate (built 12 Nov 2026)
 
 The first Bleat 2 change. It keeps 1.x's peers and moves each one through a

@@ -97,6 +97,9 @@ struct LayoutsSheet: View {
                 TextField("Name", text: $newName)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                // `perform` turns a tap away while an action runs; kept from
+                // review, since the rows are disabled then and this alert
+                // cannot be opened.
                 Button("Rename") { model.perform(.rename(to: newName), on: layout.name) }
                     .disabled(!canRename(layout))
                 Button("Cancel", role: .cancel) {}

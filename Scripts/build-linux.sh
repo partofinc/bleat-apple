@@ -22,6 +22,7 @@ swift_version=6.4.2
 bundle=swift-${swift_version}-RELEASE_static-linux-0.1.0.artifactbundle
 # The version the SDK's own build script pins (swiftlang/swift-docker,
 # swift-ci/sdks/static-linux/scripts/fetch-source.sh); keep them in step.
+# The installed SDK says which it shipped: mimalloc in its sbom.spdx.json.
 mimalloc_version=2.2.4
 mimalloc_sha256=754a98de5e2912fddbeaf24830f982b4540992f1bab4a0a8796ee118e0752bda
 
@@ -81,7 +82,9 @@ marker=$sdk/.armv8.0-mimalloc-$mimalloc_version
 
 if [[ ! -f $marker ]]; then
     echo "== copying the SDK"
-    rm -rf "$sdk"
+    # All of $sdks, not only this bundle: a work dir from an older SDK keeps
+    # that copy, and two bundles would both match the triple.
+    rm -rf "$sdks"
     mkdir -p "$sdks"
     cp -c -R "$installed" "$sdks/"     # an APFS clone: instant, and no extra space
 

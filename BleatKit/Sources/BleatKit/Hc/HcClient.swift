@@ -30,6 +30,12 @@ import Foundation
 /// reason, and the caller dials again. `hello` is cheap and the subscription
 /// snapshot rebuilds everything, which is what makes reconnecting the
 /// recovery path.
+///
+/// **Its owner must call `close()`.** The reader task holds the client for
+/// as long as the stream is open, so a client dropped without `close()` lives
+/// on, with its `hc connect` channel open on the host, until the transport
+/// itself goes. Every owner closes: `bleat terminals`, `TerminalsModel`,
+/// `HcPaneModel` and `WatchRelayHost` (from review).
 public actor HcClient {
     /// What `hello` said about the core.
     public struct Hello: Sendable, Equatable {
@@ -131,14 +137,16 @@ public actor HcClient {
     }
 
     private func start(limit: Duration?) async throws {
+        // Made in an actor method and holding `self`, the task runs on the
+        // actor: `receive` and `fail` are plain calls here, not hops.
         reader = Task { [stream] in
             do {
                 for try await chunk in stream.output {
-                    await self.receive(chunk)
+                    self.receive(chunk)
                 }
-                await self.fail(HcProtocolError.closed)
+                self.fail(HcProtocolError.closed)
             } catch {
-                await self.fail(error)
+                self.fail(error)
             }
         }
         let request: HcJSON = .object([

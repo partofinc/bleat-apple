@@ -18,7 +18,7 @@
 # Needs: swiftly with the toolchain below, that SDK installed, cmake and ninja.
 set -euo pipefail
 
-swift_version=6.4.1
+swift_version=6.4.2
 bundle=swift-${swift_version}-RELEASE_static-linux-0.1.0.artifactbundle
 # The version the SDK's own build script pins (swiftlang/swift-docker,
 # swift-ci/sdks/static-linux/scripts/fetch-source.sh); keep them in step.

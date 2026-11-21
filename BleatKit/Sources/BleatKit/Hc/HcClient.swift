@@ -30,6 +30,12 @@ import Foundation
 /// reason, and the caller dials again. `hello` is cheap and the subscription
 /// snapshot rebuilds everything, which is what makes reconnecting the
 /// recovery path.
+///
+/// **Its owner must call `close()`.** The reader task holds the client for
+/// as long as the stream is open, so a client dropped without `close()` lives
+/// on, with its `hc connect` channel open on the host, until the transport
+/// itself goes. Every owner closes: `bleat terminals`, `TerminalsModel`,
+/// `HcPaneModel` and `WatchRelayHost` (from review).
 public actor HcClient {
     /// What `hello` said about the core.
     public struct Hello: Sendable, Equatable {

@@ -131,14 +131,16 @@ public actor HcClient {
     }
 
     private func start(limit: Duration?) async throws {
+        // Made in an actor method and holding `self`, the task runs on the
+        // actor: `receive` and `fail` are plain calls here, not hops.
         reader = Task { [stream] in
             do {
                 for try await chunk in stream.output {
-                    await self.receive(chunk)
+                    self.receive(chunk)
                 }
-                await self.fail(HcProtocolError.closed)
+                self.fail(HcProtocolError.closed)
             } catch {
-                await self.fail(error)
+                self.fail(error)
             }
         }
         let request: HcJSON = .object([
